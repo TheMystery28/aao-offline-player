@@ -1,0 +1,24 @@
+{
+  "id": 99903,
+  "title": "Test B1 - Action=0",
+  "author": "TestBot",
+  "author_id": 0,
+  "language": "en",
+  "format": "Def6",
+  "can_read": true,
+  "can_write": false,
+  "last_edit_date": 1700000000,
+  "sequence": {
+    "title": "Test B - Auto-Continue (action=0)",
+    "list": [
+      {
+        "id": 99903,
+        "title": "Test B1 - Action=0"
+      },
+      {
+        "id": 99904,
+        "title": "Test B2 - Destination"
+      }
+    ]
+  }
+}

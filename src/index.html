@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AAO Offline Player</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <!-- Launcher view -->
+    <main id="launcher">
+      <h1>AAO Offline Player</h1>
+      <p class="subtitle">Play Ace Attorney Online cases offline.</p>
+
+      <section id="download-section">
+        <h2>Download a Case</h2>
+        <div class="download-row">
+          <input type="text" id="case-id-input"
+                 placeholder="Case ID or URL (e.g. 69063 or https://aaonline.fr/player.php?trial_id=69063)" />
+          <button id="download-btn">Download</button>
+        </div>
+        <div id="progress-container" class="hidden">
+          <p id="progress-phase"></p>
+          <div id="progress-bar-outer">
+            <div id="progress-bar-inner"></div>
+          </div>
+          <p id="progress-text"></p>
+        </div>
+        <p id="download-result"></p>
+      </section>
+
+      <section id="import-section">
+        <h2>Import</h2>
+        <p class="subtitle">Import from an <a href="https://github.com/falko17/aaoffline" target="_blank">aaoffline</a> folder or a <code>.aaocase</code> file.</p>
+        <div class="download-row">
+          <button id="import-folder-btn">Select Folder...</button>
+          <button id="import-file-btn">Select File...</button>
+        </div>
+        <p id="import-result"></p>
+      </section>
+
+      <section id="cases">
+        <h2>Your Library <button id="new-collection-btn" type="button" class="small-btn collection-btn">+ Collection</button></h2>
+        <div id="case-list">
+          <p id="empty-library" class="muted">No cases downloaded yet.</p>
+          <p id="library-loading" class="muted">Loading library...</p>
+        </div>
+      </section>
+
+      <section id="settings-section">
+        <h2>
+          <button id="settings-toggle" type="button">Settings</button>
+        </h2>
+        <div id="settings-panel" class="hidden">
+          <div class="settings-group">
+            <label for="settings-language">Player Language</label>
+            <select id="settings-language">
+              <option value="en">English</option>
+              <option value="fr">Fran&ccedil;ais</option>
+              <option value="de">Deutsch</option>
+              <option value="es">Espa&ntilde;ol</option>
+            </select>
+          </div>
+
+          <div class="settings-group">
+            <label for="settings-concurrency">Concurrent Downloads</label>
+            <div class="range-row">
+              <input type="range" id="settings-concurrency" min="1" max="10" value="3" />
+              <span id="concurrency-value">3</span>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label for="settings-autosave" class="checkbox-label">
+              <input type="checkbox" id="settings-autosave" checked />
+              Auto-save on quit
+            </label>
+          </div>
+
+          <div class="settings-group">
+            <label>Data Directory</label>
+            <div class="data-dir-row">
+              <span id="data-dir-path" class="data-dir-text">Loading...</span>
+              <button id="open-data-dir-btn" type="button" class="small-btn">Open</button>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label>Storage</label>
+            <div id="storage-info">
+              <span id="storage-text" class="muted">Calculating...</span>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label>Default Assets Cache</label>
+            <button id="clear-cache-btn" type="button" class="small-btn danger-btn">Clear Cache</button>
+            <p class="settings-hint">Removes downloaded default assets (sprites, backgrounds, sounds). They will be re-downloaded when you next download or play a case.</p>
+          </div>
+        </div>
+      </section>
+
+      <p id="status-msg"></p>
+    </main>
+
+    <!-- Player view (hidden by default) -->
+    <div id="player-container" class="hidden">
+      <div id="player-toolbar">
+        <button id="back-btn">&larr; Back to Library</button>
+        <span id="player-title"></span>
+      </div>
+      <iframe id="game-frame" allowfullscreen></iframe>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<script type="text/javascript" src="bridge.js"></script>
+	<script type="text/javascript" src="Javascript/common.js"></script>
+	<script type="text/javascript" src="Javascript/Modules.js"></script>
+	<script type="text/javascript">Modules.request('player');</script>
+	<title>Ace Attorney Online - Trial Player</title>
+	<link rel="stylesheet" type="text/css" href="CSS/style_main.css" />
+	<link rel="stylesheet" type="text/css" href="CSS/style_form.css" />
+	<link rel="stylesheet" type="text/css" href="CSS/player_global.css" />
+	<link rel="stylesheet" type="text/css" href="CSS/player_pwstyle.css" />
+	<link rel="stylesheet" type="text/css" href="CSS/court_records.css" />
+	<link rel="stylesheet" type="text/css" href="CSS/top_screen_engine.css" />
+	<link rel="stylesheet" type="text/css" href="CSS/player_dark.css" />
+</head>
+<body>
+
+<div id="loading-mask">Loading...</div>
+
+<header class="compact">
+	<h1 id="title">Loading trial ...</h1>
+	<h2 id="author"></h2>
+</header>
+
+<div id="content">
+	<section>
+		<div id="screens" class="start">
+			<div id="screen-meta">
+				<div id="lifebar">
+					<div id="lifebar-green" style="width:120px;"></div>
+					<div id="lifebar-flash" style="width:0px;"></div>
+					<div id="lifebar-red" style="width:0px;"></div>
+				</div>
+			</div>
+
+			<div id="screen-loading"></div>
+
+			<div id="screen-top"></div>
+
+			<div id="screen-bottom">
+				<div class="buttonbar-top">
+					<a class="bs-button topleft" id="press" data-locale-content="press"></a>
+					<a class="bs-button topmiddle" id="present-center" data-locale-content="present"></a>
+					<a id="locks"><img src="img/magatama.gif" alt="Psyche locks" /></a>
+					<a class="bs-button topright"  id="present-topright" data-locale-content="present"></a>
+				</div>
+
+				<a class="bs-button center" id="start">
+					<span data-locale-content="start"></span>
+				</a>
+				<span class="bs-button center" id="end" data-locale-content="end"></span>
+				<a class="bs-button center" id="proceed">
+					<img src="img/player/proceed.gif" alt="Proceed" width="219" height="107" />
+				</a>
+				<a class="bs-button center" id="skip">
+					<img src="img/player/skip.gif" alt="Skip" width="219" height="107" />
+				</a>
+				<span class="bs-button center" id="wait"></span>
+				<a class="bs-button left" id="statement-backwards">
+					<img src="img/player/statement_backwards.gif" alt="Back" width="102" height="76" />
+				</a>
+				<a class="bs-button right" id="statement-forwards">
+					<img src="img/player/statement_forwards.gif" alt="Forwards" width="102" height="76" />
+				</a>
+				<span class="bs-button left" id="statement-wait-backwards"></span>
+				<a class="bs-button right" id="statement-skip-forwards">
+					<img src="img/player/statement_skip_forwards.gif" alt="Skip" width="102" height="76" />
+				</a>
+
+				<div id="options">
+				</div>
+
+				<form id="inputs" action="#">
+				</form>
+
+				<div id="options-investigation">
+					<a id="options-investigation-examine" data-locale-content="examine"></a>
+					<a id="options-investigation-move" data-locale-content="move"></a>
+					<a id="options-investigation-talk" data-locale-content="talk"></a>
+					<a id="options-investigation-present" data-locale-content="present"></a>
+				</div>
+
+				<div id="evidence-display" class="evidence_display">
+				</div>
+
+				<div class="buttonbar-bottom">
+					<a class="bs-button bottomleft" id="back" data-locale-content="back"></a>
+				</div>
+			</div>
+
+			<div id="screen-examination" class="thin-bars">
+				<div class="buttonbar-top">
+				</div>
+				<div id="examination"></div>
+				<div class="buttonbar-bottom">
+					<a class="bs-button bottomleft" id="examination-back" data-locale-content="back"></a>
+				</div>
+			</div>
+		</div>
+
+		<div id="courtrecord" class="evidence">
+
+			<section id="cr_evidence">
+				<div class="courtrecord-header">
+					<h1 data-locale-content="evidence"></h1>
+					<a id="cr_profiles_switch" class="courtrecord-switchview" data-locale-content="profiles"></a>
+				</div>
+
+				<div id="cr_evidence_list" class="evidence-list"></div>
+			</section>
+
+			<section id="cr_profiles">
+				<div class="courtrecord-header">
+					<h1 data-locale-content="profiles"></h1>
+					<a id="cr_evidence_switch" class="courtrecord-switchview" data-locale-content="evidence"></a>
+				</div>
+
+				<div id="cr_profiles_list" class="evidence-list"></div>
+			</section>
+
+			<aside id="cr_item_check">
+				<div id="screen-cr-item-check" class="thin-bars">
+					<div class="buttonbar-top"></div>
+
+					<div id="cr-item-check-contents"></div>
+
+					<div id="cr-item-check-pagination"></div>
+
+					<div class="buttonbar-bottom">
+						<a id="cr-item-check-back" class="bs-button bottomleft" data-locale-content="back"></a>
+					</div>
+				</div>
+			</aside>
+		</div>
+
+		<div id="player-parametres">
+			<section>
+				<h2 data-locale-content="player_settings"></h2>
+
+				<div id="player_settings">
+
+				</div>
+			</section>
+
+			<section>
+				<h2 data-locale-content="player_saves"></h2>
+
+				<div id="player_saves">
+
+				</div>
+			</section>
+
+			<section id="player_debug" hidden="hidden">
+				<h2 data-locale-content="player_debug"></h2>
+
+				<details>
+					<summary class="h3" data-locale-content="debug_status"></summary>
+					<div id="debug_status"></div>
+				</details>
+
+				<details>
+					<summary class="h3" data-locale-content="debug_vars"></summary>
+					<div id="debug_vars"></div>
+					<button id="debug_add_var" data-locale-content="add_var"></button>
+				</details>
+
+				<details>
+					<summary class="h3" data-locale-content="debug_cr"></summary>
+
+					<section>
+						<h4 data-locale-content="profiles"></h4>
+						<div id="debug_cr_profiles">
+						</div>
+					</section>
+
+					<section>
+						<h4 data-locale-content="evidence"></h4>
+						<div id="debug_cr_evidence">
+						</div>
+					</section>
+				</details>
+
+				<details>
+					<summary class="h3" data-locale-content="debug_scenes"></summary>
+					<div id="debug_scenes">
+					</div>
+				</details>
+
+				<details>
+					<summary class="h3" data-locale-content="debug_frames"></summary>
+					<div id="debug_frames">
+					</div>
+					<button id="debug_show_frame" data-locale-content="show_frame"></button>
+				</details>
+			</section>
+
+		</div>
+	</section>
+</div>
+
+<script>
+// Workaround for Android WebView: static <img> tags in HTML sometimes fail
+// to load from localhost HTTP server, while dynamically-loaded images work.
+// After page load, retry any images that failed to decode.
+window.addEventListener('load', function() {
+	"use strict";
+	var imgs = document.getElementsByTagName('img');
+	for (var i = 0; i < imgs.length; i++) {
+		if (!imgs[i].complete || imgs[i].naturalWidth === 0) {
+			var src = imgs[i].src;
+			imgs[i].removeAttribute('src');
+			// Use closure to capture correct img reference
+			(function(img, originalSrc) {
+				setTimeout(function() { img.src = originalSrc; }, 10);
+			})(imgs[i], src);
+		}
+	}
+});
+</script>
+</body>
+</html>

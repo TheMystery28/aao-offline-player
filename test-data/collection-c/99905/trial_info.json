@@ -1,0 +1,24 @@
+{
+  "id": 99905,
+  "title": "Test C1 - No GameOver",
+  "author": "TestBot",
+  "author_id": 0,
+  "language": "en",
+  "format": "Def6",
+  "can_read": true,
+  "can_write": false,
+  "last_edit_date": 1700000000,
+  "sequence": {
+    "title": "Test C - Auto-Continue (no GameOver)",
+    "list": [
+      {
+        "id": 99905,
+        "title": "Test C1 - No GameOver"
+      },
+      {
+        "id": 99906,
+        "title": "Test C2 - Destination"
+      }
+    ]
+  }
+}

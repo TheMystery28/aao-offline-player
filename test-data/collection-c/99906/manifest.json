@@ -1,0 +1,29 @@
+{
+  "case_id": 99906,
+  "title": "Test C2 - Destination",
+  "author": "TestBot",
+  "language": "en",
+  "download_date": "2025-01-01T00:00:00Z",
+  "format": "Def6",
+  "sequence": {
+    "title": "Test C - Auto-Continue (no GameOver)",
+    "list": [
+      {
+        "id": 99905,
+        "title": "Test C1 - No GameOver"
+      },
+      {
+        "id": 99906,
+        "title": "Test C2 - Destination"
+      }
+    ]
+  },
+  "assets": {
+    "case_specific": 0,
+    "shared_defaults": 0,
+    "total_downloaded": 0,
+    "total_size_bytes": 0
+  },
+  "asset_map": {},
+  "failed_assets": []
+}

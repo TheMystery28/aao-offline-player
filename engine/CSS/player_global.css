@@ -1,0 +1,881 @@
+@charset "UTF-8";
+
+body
+{
+	max-width: 1090px;
+	margin: auto !important;
+}
+
+body > #content
+{
+	position: relative;
+	background: #f0f0f0;
+}
+
+body > #content > section
+{
+	display: flex;
+	flex-direction: row;
+	justify-content: space-evenly;
+	padding: 0;
+	border: 0;
+}
+
+
+/* The screen container should shift when in portrait mode to allow full screen */
+@media (orientation: portrait) {
+	body > #content > section
+	{
+		flex-direction: column;
+	}
+}
+
+/* Override to allow evenly spaced sections when playing */
+#content > section::after
+{
+	content: none;
+}
+
+
+/* -------------
+ * SCREENS SECTION
+ * ------------- */
+ 
+#screens
+{
+	width:256px;
+}
+
+/*Additional magnification for mobile devices in portrait orientation*/
+@media (orientation: portrait) {
+	#screens
+	{
+		transform: scale(1.4);
+		margin: auto;
+		margin-bottom: 9em;
+		margin-top: 6em;
+	}
+}
+
+
+#screen-meta,
+#screen-top,
+#screen-bottom { position:relative; }
+
+#screen-meta {
+	height:18px;
+	background:white;
+	border:1px solid lightgrey;
+}
+
+#lifebar {
+	position:absolute;
+	top:2px; right:2px; bottom:2px;
+	width:120px; height:10px;
+	background:black;
+	border:2px ridge lightgrey;
+	border-radius:2px;
+}
+
+#lifebar div { 
+	float:left;
+	height:10px; 
+	transition: 0.2s;
+}
+#lifebar-green 
+{ 
+	/*background: linear-gradient(to bottom, #40d840 0%,#80f880 11%,#00b800 22%,#00b800 78%,#009800 89%,#007000 100%);*/
+	background:url(img/bar_green.gif) repeat-x green; 
+}
+#lifebar-red 
+{ 
+	/*background: linear-gradient(to bottom, #400810 0%,#680010 11%,#680010 100%); */
+	background:url(img/bar_red.gif) repeat-x red;
+}
+#lifebar-flash 
+{ 
+	/*animation: lifebar_flash 1s infinite;*/
+	background:url(img/bar_flash.gif) repeat-x gold;
+}
+@keyframes lifebar_flash
+{  
+    from {background: linear-gradient(to bottom, #40d840 0%,#80f880 11%,#00b800 22%,#00b800 78%,#009800 89%,#007000 100%);}
+    to {background: linear-gradient(to bottom, #f1a327 0%,#ffb538 11%,#ff892d 22%,#fd9526 33%,#fd9429 44%,#f6952a 56%,#ff8e2e 67%,#ff8e38 78%,#fb7f39 89%,#d67530 100%);}
+}
+
+[id|=screen] {
+	background: black;
+	box-shadow: 0 0 3px black;
+}
+
+#screen-top {
+	z-index:2;
+	width:256px;
+	height:192px;
+	margin:0.7em 0 0 0;
+	overflow:hidden;
+}
+
+#screen-bottom {
+	position:relative;
+	width:256px;
+	height:192px;
+	margin:0.7em 0 0 0;
+	z-index:2;
+}
+
+#screen-loading
+{
+	visibility: hidden;
+	
+	position: absolute;
+    z-index: 3;
+    box-sizing: border-box;
+    width:256px;
+	height:192px;
+	margin:0.7em 0 0 0;
+	padding: 0 0.7em;
+	
+    font-size: 16px;
+    color: white;
+}
+
+[id|=screen] :focus { outline:none; }
+
+/* Generic screen buttons */
+
+[id|=screen] a {
+	cursor: pointer;
+	text-decoration: none;
+	user-select: none;
+}
+
+[id|=screen] .bs-button.center,
+[id|=screen] .bs-button.left,
+[id|=screen] .bs-button.right {
+	display:block;
+	box-sizing:border-box;
+	background-clip:padding-box;
+	
+	font:30px Ubuntu, sans-serif;
+	text-align:center;
+	line-height:107px;
+}
+
+[id|=screen] .bs-button.center {
+	position:absolute;
+	top:40px; left:16px;
+	width:223px; height:111px;
+}
+
+[id|=screen] .bs-button.left,
+[id|=screen] .bs-button.right {
+	position:absolute;
+	width:106px; height:80px;
+}
+
+[id|=screen] .bs-button.left {
+	top:65px; left:16px;
+}
+
+[id|=screen] .bs-button.right {
+	top:65px; left:134px;
+}
+
+[id|=screen] .bs-button img {
+	display:block;
+	margin: auto;
+}
+
+/* Button bars */
+[id|=screen] .buttonbar-top {
+	position:absolute;
+	top:0; right:0; left:0;
+	z-index:2;
+	box-sizing:border-box;
+}
+
+[id|=screen] .buttonbar-bottom {
+	position:absolute;
+	right:0; bottom:0; left:0;
+	z-index:2;
+	box-sizing:border-box;
+}
+
+[id|=screen] .buttonbar-top .bs-button,
+[id|=screen] .buttonbar-bottom .bs-button {
+	display:block;
+	position:absolute;
+	padding:8px 4px 8px 4px;
+	box-sizing:border-box;
+	min-width:70px;
+	outline:none;
+	font-size:12px;
+	text-align:center;
+	white-space:nowrap;
+	
+	border: 0;
+}
+
+[id|=screen].thin-bars .buttonbar-top a,
+[id|=screen].thin-bars .buttonbar-bottom a { padding-top:3px; padding-bottom:3px; }
+
+[id|=screen] .buttonbar-top .bs-button.topleft {
+	top:0; left:0;
+	border-right:1px solid;
+	border-bottom:1px solid;
+}
+
+[id|=screen] .buttonbar-top .bs-button.topmiddle {
+	top:0; right:88px; left:88px;
+	border-right:1px solid;
+	border-bottom:1px solid;
+	border-left:1px solid;
+}
+
+[id|=screen] .buttonbar-top .bs-button.topright {
+	top:0; right:0;
+	border-bottom:1px solid;
+	border-left:1px solid;
+}
+
+[id|=screen] .buttonbar-bottom .bs-button.bottomleft {
+	bottom:0; left:0;
+	border-top:1px solid;
+	border-right:1px solid;
+}
+
+[id|=screen] .buttonbar-bottom .bs-button.bottomright {
+	bottom:0; right:0;
+	border-top:1px solid;
+	border-left:1px solid;
+}
+
+/* Bottom screen items */
+
+#screen-bottom .bs-button,
+#screen-bottom #options,
+#screen-bottom #inputs,
+#screen-bottom #options-investigation,
+#screen-bottom #evidence-display,
+#screen-bottom + #screen-examination,
+#screen-bottom + #screen-examination .bs-button,
+#screen-bottom #locks {
+	visibility: hidden; /* Hidden unless the screen specifically has a class that displays them */
+}
+
+#screens.start #screen-bottom > *:not(#start)
+{
+	visibility: hidden;
+}
+
+/* Psyche locks button */
+#locks
+{
+	position: absolute;
+	top: 0;
+	right: 99px;
+	left: 99px;
+	overflow: hidden;
+	padding: 0;
+}
+
+#locks img
+{
+	display: block;
+	margin: auto;
+}
+
+/* Options and inputs */
+#options,
+#options-investigation,
+#inputs {
+	position:absolute;
+	top: 18px; bottom: 18px;
+	right:0;  left:0;
+	padding:14px 0;
+	overflow:auto;
+}
+
+#options a,
+#inputs input {
+	display:block;
+	position:relative;
+	margin:0 15px;
+	padding: 0 2px;
+	min-height:26px;
+	border:1px solid;
+	font-size:16px;
+	text-align:center;
+	line-height:26px;
+}
+
+#options a
+{
+	cursor: pointer;
+}
+
+#options a + a,
+#inputs input + input
+{ 
+	margin-top:5px; 
+}
+
+/* TODO: add handling for that later, maybe
+#options a.done::before {
+	display:block;
+	position:absolute;
+	top:-7px; left:-7px;
+	
+	content:url("../images/player/tick.png");
+}*/
+
+#options-investigation a {
+	display:block;
+	position:absolute;
+	width:110px; height:26px;
+	overflow:hidden;
+	border:1px solid;
+	font-size:14px;
+	text-align:center;
+	line-height:26px;
+	white-space:nowrap;
+}
+
+#options-investigation-examine { top:36px; left:8px; }
+#options-investigation-move    { top:36px; left:136px; }
+#options-investigation-talk    { top:92px; left:8px; }
+#options-investigation-present { top:92px; left:136px; }
+
+/* CR element display */
+#evidence-display {
+	position: absolute;
+	top: 29px;
+	z-index: 3;
+}
+
+/* Bottom screen items visibility */
+
+#screens.start #start,
+#screens.start #screen-loading,
+
+#screen-bottom.end #end,
+
+#screen-bottom.wait #wait,
+
+#screen-bottom.skip #skip,
+
+#screen-bottom.proceed #proceed,
+
+#screen-bottom.options #options,
+
+#screen-bottom.inputs #inputs,
+
+#screen-bottom.ce-skip #statement-wait-backwards,
+#screen-bottom.ce-skip #statement-skip-forwards,
+
+#screen-bottom.ce #statement-backwards,
+#screen-bottom.ce #statement-forwards,
+#screen-bottom.ce #present-topright,
+
+#screen-bottom.ce.press #press,
+
+#screen-bottom.options-investigation #options-investigation,
+#screen-bottom.locks #locks,
+
+#screen-bottom.present #evidence-display,
+#screen-bottom.present #present-center,
+
+#screen-bottom.examination + #screen-examination,
+#screen-bottom.examination-back + #screen-examination #examination-back,
+
+#screen-bottom.back #back
+{
+	visibility: visible;
+}
+
+/* Pointing area/object panel */
+
+#screen-examination
+{
+	position: absolute;
+	margin-top: -192px;
+	z-index: 100;
+	
+	box-shadow: 0 0 3px black, 0 0 10px black;
+}
+
+#examination
+{
+	padding: 16px 0;
+}
+
+#examination #render
+{
+	position: relative;
+}
+
+#examination #render *
+{
+	display: block;
+}
+
+#examination #render .background
+{
+	z-index: 0;
+}
+
+#examination #render .back.inactive
+{
+	z-index: 1;
+}
+
+#examination #render .front.inactive
+{
+	z-index: 2;
+}
+
+#examination #render #examination_imgmap_handler
+{
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 3;
+}
+
+#examination #render .back.active
+{
+	z-index: 4;
+}
+
+#examination #render .front.active
+{
+	z-index: 5;
+}
+
+#examination #examination_imgmap_handler
+{
+	opacity: 0; /* Map handler is transparent */
+}
+
+/* -------------
+ * COURT RECORDS
+ * ------------- */
+
+#courtrecord #cr_evidence,
+#courtrecord #cr_profiles
+{
+	display: none;
+}
+
+#courtrecord.evidence #cr_evidence,
+#courtrecord.profiles #cr_profiles
+{
+	display: block;
+}
+
+#courtrecord
+{
+	/*position:absolute; */
+	/*top:10px; right:230px; bottom:10px; left:276px;*/
+	width: calc(58% - 80px/2);
+	align-self: stretch;
+	background:white;
+	border:1px solid lightgrey;
+}
+
+
+
+.courtrecord-header {
+	position:relative;
+	margin: 0 0 0.07em -0.07em;
+	height:33px;
+	
+	border-bottom: 1px solid #484848;
+	
+	background-color: #dedede;
+	background-image: linear-gradient(to bottom, #dedede 0%,#dedede 48%,#959595 52%,#2d2d2d 55%,#2d2d2d 64%,#484848 67%,#595959 70%,#595959 100%);
+}
+
+/* When in portrait mode, we can take all the width we want */
+@media (orientation: portrait) {
+	#courtrecord
+	{
+		width: calc(100% - 0.15em);
+	}
+}
+
+.courtrecord-header h1 {
+	position:absolute;
+	top:0; left:0;
+	box-sizing: border-box;
+	margin:0;
+	height:33px;
+	padding:10px 8px 0 4px;
+	min-width:5em; 
+	
+	border: 0;
+	
+	background-color: #dedede;
+	background-image: linear-gradient(to bottom, #dedede 0%,#dedede 21%,#959595 24%,#2d2d2d 27%,#2d2d2d 36%,#484848 39%,#595959 42%,#595959 100%);
+	box-shadow: none;
+	border-radius: 0;
+	
+	font:18px sans-serif;
+	text-align:left;
+	text-shadow:1px 1px #484848;
+	color:white;
+}
+
+.courtrecord-header h1::after {
+	display:block;
+	position:absolute;
+	top:0; right:0;
+	width:8px; height:33px;
+	
+	background-color: #dedede;
+	background-image: linear-gradient(47deg, #484848 0%,#595959 6%,#595959 43%,#484848 46%,#2D2D2D 49%,#2D2D2D 58%,#959595 61%,#DEDEDE 64%,#DEDEDE 100%);
+	
+	content:"";
+}
+
+a.courtrecord-switchview {
+	display:block;
+	position:absolute;
+	top:0; right:0;
+	padding:6px 0 0 0;
+	min-width:5em; height:26px;
+	background-color:#8C481B;
+	background-image:linear-gradient(rgba(255,255,255,0.25), rgba(255,255,255,0));
+	border-bottom:2px solid grey;
+	border-left:2px solid grey;
+	border-radius:0 0 0 20px;
+	text-align:center;
+	color:white;
+	transition:0.2s;
+}
+
+a.courtrecord-switchview:hover,
+a.courtrecord-switchview:focus {
+	background-color:#A67351;
+	box-shadow:0 0 3px grey;
+}
+
+a.courtrecord-switchview:active {
+	box-shadow:inset 0 0 3px black;
+}
+
+.evidence-list {
+	/*position: absolute;*/
+	top: 34px;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	overflow: auto;
+	height: 30em;
+	padding: 5px;
+}
+
+@media (orientation: portrait) {
+	.evidence-list
+	{
+		padding: 0;
+		margin: 0;
+	}
+}
+
+
+.evidence-list .evidence_display
+{
+	display: inline-block;
+	width: 268px;
+	height: 86px;
+	margin: 0 5px 5px 0;
+	padding: 5px 0;
+	vertical-align: top;
+	
+	border: 1px solid lightgrey;
+	border-radius: 4px;
+	
+	background-color: white;
+}
+
+.evidence-list .evidence_display .details
+{
+	display: none;
+	
+	padding: 5px;
+	padding-bottom: 20px;
+	border-bottom: 1px solid lightgrey;
+	border-radius: 0 0 4px 4px;
+	
+	background-color: white;
+	box-shadow: 0 3px 6px -1px black;
+}
+
+.evidence-list .evidence_display:hover .details,
+.evidence-list .evidence_display:active .details
+{
+	display: block;
+	position: relative;
+	max-height: none;
+	z-index: 3;
+	top: 3px;
+}
+
+.evidence-list .evidence_display .details .description
+{
+	margin: 0 auto 5px;
+	padding: 1px 2px;
+
+	border: 1px solid #735A42;
+	
+	background: #847342;
+	color: white;
+	font: 10px sans-serif;
+}
+
+.evidence-list .evidence_display .details .buttonbar-bottom,
+.evidence-list .evidence_display .details .bs-button.bottomleft
+{
+	border-bottom-left-radius: 4px;
+}
+
+.evidence-list .evidence_display .details .buttonbar-bottom,
+.evidence-list .evidence_display .details .bs-button.bottomright
+{
+	border-bottom-right-radius: 4px;
+}
+
+#content.cr-select.cr-all .evidence-list .evidence_display .summary,
+#content.cr-select.cr-profiles #cr_profiles .evidence-list .evidence_display .summary,
+#content.cr-select.cr-evidence #cr_evidence .evidence-list .evidence_display .summary
+{
+	cursor: pointer;
+	box-shadow: 0 0 7px 3px #7B3100;
+}
+
+#content.cr-select.cr-all .evidence-list .evidence_display .summary:hover,
+#content.cr-select.cr-profiles #cr_profiles .evidence-list .evidence_display .summary:hover,
+#content.cr-select.cr-evidence #cr_evidence .evidence-list .evidence_display .summary:hover
+{
+	box-shadow: 0 0 7px 3px #FFD652;
+}
+
+#content.cr-select.cr-all .evidence-list .evidence_display .summary:active,
+#content.cr-select.cr-profiles #cr_profiles .evidence-list .evidence_display .summary:active,
+#content.cr-select.cr-evidence #cr_evidence .evidence-list .evidence_display .summary:active
+{
+	box-shadow: 0 0 7px 3px #EFA521;
+}
+
+/* CR element check panel */
+#cr_item_check
+{
+	display: none; /* hidden by default */
+	
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	z-index: 3;
+	background: rgba(0, 0, 0, 0.5);
+}
+
+#screen-cr-item-check
+{
+	position: fixed;
+	width: 80%;
+	height: 80%;
+	margin: 0 5vw 5vh;
+	display: flex;
+	flex-direction: row-reverse;
+	padding: 1em 0;
+
+	
+	background: white;
+	border: 1px solid grey;
+	border-radius: 0 0 4px 4px;
+	box-shadow: 0 0 3px 3px rgba(0,0,0,0.5);
+}
+
+
+
+#cr-item-check-contents
+{
+
+	width: 90%;
+	height: 100%;
+	align-self: stretch;
+	overflow: auto;
+	padding: 0 2px;
+	
+	background: black;
+	
+	font: 13px sans-serif;
+	color: white;
+}
+
+#cr-item-check-contents > div
+{
+	display: none;
+}
+
+#cr-item-check-contents > div.txt
+{
+	max-width: 80%;
+	margin: 20px auto;
+}
+
+#cr-item-check-contents > div.open
+{
+	display: block;
+}
+
+#cr-item-check-pagination {
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-start;
+	align-items: center;
+	gap: 0.7em;
+
+	width: 10%;
+	height: 100%;
+	align-self: stretch;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding: 5px;
+
+	border-right: 1px solid grey;
+}
+
+#cr-item-check-pagination a {
+	display: block;
+	
+	width: 64px; 
+	height: 48px;
+	overflow: hidden;
+	
+	background: black;
+	font: 10px sans-serif;
+	line-height: 10px;
+	color: white;
+	text-decoration: none;
+	white-space: normal;
+}
+
+#cr-item-check-pagination a.open {
+	box-shadow: 0 0 3px black;
+}
+
+#cr-item-check-pagination a img {
+	display: block;
+	max-width: 64px;
+	max-height: 48px;
+	margin: auto;
+}
+
+#content.cr-check #cr_item_check
+{
+	display: block; /* Shown when in check mode */
+}
+
+/* The left bar is moved up on mobile, for better evidence view */
+@media (orientation: portrait) {
+	#screen-cr-item-check
+	{
+		flex-direction: column-reverse;
+	}
+
+	#cr-item-check-pagination
+	{
+		width: 100%;
+		height: 10%;
+	}
+
+	#cr-item-check-contents
+	{
+		height: 90%;
+		width: auto;
+	}
+
+	#cr-item-check-pagination
+	{
+		flex-direction: row;
+	}
+}
+
+/* -------------
+ * PLAYER SETTINGS
+ * ------------- */
+ 
+#player-parametres {
+	/*position:absolute;
+	top:10px; right:10px; bottom:10px; */
+	width: calc(38% - 410px/2);
+	overflow: auto;
+	padding:5px;
+	align-self: stretch;
+	border:1px solid lightgrey;
+	background:white;
+	
+	font-size:small;
+}
+
+/* In portrait mode, we have all the horizontal space we want */
+@media (orientation: portrait) {
+	#player-parametres {
+		width: calc(100% - 12px);
+	}
+}
+
+
+#player-parametres section {
+	margin-bottom: 10px;
+}
+
+#player-parametres section h2 {
+	margin: 0 0 5px 0;
+	padding: 0 5px;
+}
+
+#player_saves button {
+	display: block;
+	float: right;
+	clear: both;
+}
+
+#player_saves a {
+	display: block;
+	line-height: 2em;
+}
+
+#player_saves .save_new {
+	display: block;
+	width: 100%;
+}
+
+#player_debug > details {
+	margin: 5px 0;
+	padding: 3px 5px;
+	border: 1px solid #CCC;
+	border-radius: 4px;
+}
+
+#player_debug .h3 {
+	border-bottom:thin dashed lightgrey;
+	
+	font: large Georgia;
+	color: #782201;
+}
+
+#player_debug h4 {
+	margin: 10px 0 5px;
+}
+
+#debug_add_var,
+#debug_show_frame {
+	display: block;
+	width: 100%;
+}
