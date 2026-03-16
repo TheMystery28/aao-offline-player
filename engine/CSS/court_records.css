@@ -1,0 +1,155 @@
+/*
+Styling court records elements
+*/
+
+@charset "UTF-8";
+
+/*Evidence display*/
+.evidence_display
+{
+	position: relative;
+	height: 130px;
+}
+
+.evidence_display > .summary
+{
+	position: relative;
+	height: 70px;
+	width: 218px;
+	margin: 2px auto;
+	padding: 0 19px;
+	
+	padding: 0 19px;
+	
+	border-bottom: 6px solid #CECECE;
+	border-top: 6px solid #CECECE;
+	
+	background: #847342;
+}
+
+.evidence_display > .summary > img
+{
+	position: absolute;
+	bottom: 0;
+	left: 18px;
+	right: 168px;
+	top: 0;
+	
+	height: 70px;
+	width: 70px;
+}
+
+.evidence_display > .summary > .name
+{
+	display: block;
+	position: absolute;
+	left: 89px;
+	top: 0;
+	z-index: 1;
+	
+	height: 17px;
+	width: 144px;
+	padding: 0;
+	overflow: hidden;
+	
+	border: 2px ridge lightgrey;
+	border-bottom: 0;
+	
+	background: #393939;
+	
+	text-align: center;
+	color: #FFAD18;
+	font: 12px sans-serif;
+	
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	/* Important should not be needed, but both Chrome and Firefox override it to normal = 15px otherwise... and their debuggers are no help in finding out why. */
+	line-height: 17px !important;
+}
+
+.evidence_display > .summary > .name:hover {
+	height: auto;
+	white-space: normal;
+}
+
+.evidence_display > .summary > .name:-moz-placeholder,
+.evidence_display > .summary > .name::-webkit-input-placeholder
+{
+	color: #CC9512;
+}
+
+.evidence_display > .summary > .civil_status
+{
+	position: absolute;
+	left: 89px;
+	top: 18px;
+	height: 48px;
+	width: 139px;
+	padding: 1px 0 0 5px;
+	
+	border: 2px ridge lightgrey;
+	border-top: 0;
+	
+	background: #9CCE94;
+	font: 12px sans-serif;
+	color: black;
+	
+	resize: none;
+}
+
+.evidence_display > .summary > .civil_status:-moz-placeholder,
+.evidence_display > .summary > .civil_status::-webkit-input-placeholder
+{
+	color: #777777;
+}
+
+.evidence_display > .description
+{
+	display: block;
+	min-height: 42px;
+	max-height: 42px;
+	width: 234px;
+	overflow: hidden;
+	margin: 0 auto 5px;
+	padding: 1px 2px;
+	
+	border: 1px solid #735A42;
+	
+	background: #847342;
+	color: white;
+	font: 10px sans-serif;
+	
+	resize: none;
+}
+
+.evidence_display > textarea.description
+{
+	overflow: auto;
+}
+
+.evidence_display > div.description:hover
+{
+	position: relative;
+	max-height: none;
+	z-index: 1;
+}
+
+.evidence_display > .description:-moz-placeholder
+{
+	color: #C4B382;
+}
+.evidence_display > .description::-webkit-input-placeholder
+{
+	color: #C4B382;
+}
+
+/* Portrait mode: evidence cards scale proportionally to fill available width.
+   The --card-zoom custom property is set by JS based on actual container width.
+   Zoom affects layout (unlike transform), so spacing works naturally. */
+@media (orientation: portrait) {
+	.evidence-list .evidence_display {
+		zoom: var(--card-zoom, 1);
+		display: block;
+		margin: 0 0 5px 0;
+	}
+}

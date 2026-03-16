@@ -1,0 +1,105 @@
+{
+  "frames": [
+    0,
+    {
+      "id": 1,
+      "action_name": "",
+      "action_parameters": [],
+      "characters": [],
+      "characters_erase_previous": false,
+      "hidden": false,
+      "merged_to_next": false,
+      "music": 0,
+      "place": 0,
+      "place_position": 0,
+      "place_transition": 0,
+      "popups": [],
+      "sound": 0,
+      "speaker_id": -3,
+      "speaker_name": "",
+      "speaker_use_name": false,
+      "speaker_voice": -4,
+      "text_colour": "white",
+      "text_content": "You arrived at Collection A, Part 2!",
+      "text_speed": 0.67,
+      "wait_time": 0
+    },
+    {
+      "id": 2,
+      "action_name": "",
+      "action_parameters": [],
+      "characters": [],
+      "characters_erase_previous": false,
+      "hidden": false,
+      "merged_to_next": false,
+      "music": 0,
+      "place": 0,
+      "place_position": 0,
+      "place_transition": 0,
+      "popups": [],
+      "sound": 0,
+      "speaker_id": -3,
+      "speaker_name": "",
+      "speaker_use_name": false,
+      "speaker_voice": -4,
+      "text_colour": "white",
+      "text_content": "This was via the explicit GameOver(action=1) redirect.",
+      "text_speed": 0.67,
+      "wait_time": 0
+    },
+    {
+      "id": 3,
+      "action_name": "",
+      "action_parameters": [],
+      "characters": [],
+      "characters_erase_previous": false,
+      "hidden": false,
+      "merged_to_next": false,
+      "music": 0,
+      "place": 0,
+      "place_position": 0,
+      "place_transition": 0,
+      "popups": [],
+      "sound": 0,
+      "speaker_id": -3,
+      "speaker_name": "",
+      "speaker_use_name": false,
+      "speaker_voice": -4,
+      "text_colour": "white",
+      "text_content": "This is the last part. The end screen should appear next.",
+      "text_speed": 0.67,
+      "wait_time": 0
+    }
+  ],
+  "profiles": [
+    0
+  ],
+  "evidence": [
+    0
+  ],
+  "places": [
+    0
+  ],
+  "music": [
+    0
+  ],
+  "sounds": [
+    0
+  ],
+  "popups": [
+    0
+  ],
+  "scenes": [
+    0
+  ],
+  "scenes_aai": [
+    0
+  ],
+  "cross_examinations": [
+    0
+  ],
+  "ui": {
+    "base": "classic",
+    "elements": []
+  }
+}

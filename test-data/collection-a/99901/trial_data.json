@@ -1,0 +1,133 @@
+{
+  "frames": [
+    0,
+    {
+      "id": 1,
+      "action_name": "",
+      "action_parameters": [],
+      "characters": [],
+      "characters_erase_previous": false,
+      "hidden": false,
+      "merged_to_next": false,
+      "music": 0,
+      "place": 0,
+      "place_position": 0,
+      "place_transition": 0,
+      "popups": [],
+      "sound": 0,
+      "speaker_id": -3,
+      "speaker_name": "",
+      "speaker_use_name": false,
+      "speaker_voice": -4,
+      "text_colour": "white",
+      "text_content": "Welcome to Collection A, Part 1.",
+      "text_speed": 0.67,
+      "wait_time": 0
+    },
+    {
+      "id": 2,
+      "action_name": "",
+      "action_parameters": [],
+      "characters": [],
+      "characters_erase_previous": false,
+      "hidden": false,
+      "merged_to_next": false,
+      "music": 0,
+      "place": 0,
+      "place_position": 0,
+      "place_transition": 0,
+      "popups": [],
+      "sound": 0,
+      "speaker_id": -3,
+      "speaker_name": "",
+      "speaker_use_name": false,
+      "speaker_voice": -4,
+      "text_colour": "white",
+      "text_content": "This case uses the explicit GameOver(action=1) to redirect.",
+      "text_speed": 0.67,
+      "wait_time": 0
+    },
+    {
+      "id": 3,
+      "action_name": "",
+      "action_parameters": [],
+      "characters": [],
+      "characters_erase_previous": false,
+      "hidden": false,
+      "merged_to_next": false,
+      "music": 0,
+      "place": 0,
+      "place_position": 0,
+      "place_transition": 0,
+      "popups": [],
+      "sound": 0,
+      "speaker_id": -3,
+      "speaker_name": "",
+      "speaker_use_name": false,
+      "speaker_voice": -4,
+      "text_colour": "white",
+      "text_content": "The next click will trigger the redirect to Part 2.",
+      "text_speed": 0.67,
+      "wait_time": 0
+    },
+    {
+      "id": 4,
+      "action_name": "GameOver",
+      "action_parameters": {
+        "global": {
+          "action": "val=1",
+          "data_transfer": "val=0"
+        }
+      },
+      "characters": [],
+      "characters_erase_previous": false,
+      "hidden": false,
+      "merged_to_next": false,
+      "music": 0,
+      "place": 0,
+      "place_position": 0,
+      "place_transition": 0,
+      "popups": [],
+      "sound": 0,
+      "speaker_id": -3,
+      "speaker_name": "",
+      "speaker_use_name": false,
+      "speaker_voice": -4,
+      "text_colour": "white",
+      "text_content": "",
+      "text_speed": 0.67,
+      "wait_time": 0
+    }
+  ],
+  "profiles": [
+    0
+  ],
+  "evidence": [
+    0
+  ],
+  "places": [
+    0
+  ],
+  "music": [
+    0
+  ],
+  "sounds": [
+    0
+  ],
+  "popups": [
+    0
+  ],
+  "scenes": [
+    0
+  ],
+  "scenes_aai": [
+    0
+  ],
+  "cross_examinations": [
+    0
+  ],
+  "ui": {
+    "base": "classic",
+    "elements": []
+  }
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html><head><title>Storage Bridge</title></head>
+<body><script>
+// Bridge page for cross-origin localStorage access between the launcher and the game server.
+// Uses postMessage to communicate safely.
+//
+// On load: sends current game_saves to parent.
+// Listens for: { type: "write_saves", data: { caseId: { timestamp: saveJson, ... }, ... } }
+//   Merges incoming saves into localStorage's game_saves (won't overwrite existing timestamps).
+//   Responds with: { type: "write_saves_result", success: true/false }
+
+// Extract bridgeId from URL for message routing (prevents cross-talk between concurrent iframes)
+var bridgeId = (function() {
+  var match = window.location.search.match(/[?&]id=([^&]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+})();
+
+// 1. Send current game_saves on load (backward compatible)
+try {
+  var raw = localStorage.getItem("game_saves");
+  window.parent.postMessage({ type: "game_saves", data: raw, bridgeId: bridgeId }, "*");
+} catch (e) {
+  window.parent.postMessage({ type: "game_saves", data: null, error: e.message, bridgeId: bridgeId }, "*");
+}
+
+// 2. Listen for write_saves messages from the launcher
+window.addEventListener("message", function(event) {
+  if (!event.data || event.data.type !== "write_saves") return;
+  // Only handle messages meant for this bridge instance
+  if (event.data.bridgeId && bridgeId && event.data.bridgeId !== bridgeId) return;
+  try {
+    var incoming = event.data.data;
+    if (!incoming || typeof incoming !== "object") {
+      window.parent.postMessage({ type: "write_saves_result", success: false, error: "Invalid data", bridgeId: bridgeId }, "*");
+      return;
+    }
+    var existing = JSON.parse(localStorage.getItem("game_saves") || "{}");
+    var merged = 0;
+    for (var caseId in incoming) {
+      if (!existing[caseId]) existing[caseId] = {};
+      for (var ts in incoming[caseId]) {
+        if (!(ts in existing[caseId])) {
+          existing[caseId][ts] = incoming[caseId][ts];
+          merged++;
+        }
+      }
+    }
+    localStorage.setItem("game_saves", JSON.stringify(existing));
+    window.parent.postMessage({ type: "write_saves_result", success: true, merged: merged, bridgeId: bridgeId }, "*");
+  } catch (e) {
+    window.parent.postMessage({ type: "write_saves_result", success: false, error: e.message, bridgeId: bridgeId }, "*");
+  }
+});
+</script></body></html>

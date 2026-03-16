@@ -1,0 +1,20 @@
+{
+  "name": "aao-offline-player",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build --apk"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-fs": "^2.4.5",
+    "@tauri-apps/plugin-http": "^2.5.7",
+    "@tauri-apps/plugin-shell": "^2.3.5"
+  }
+}

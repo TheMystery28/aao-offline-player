@@ -1,0 +1,29 @@
+{
+  "case_id": 99904,
+  "title": "Test B2 - Destination",
+  "author": "TestBot",
+  "language": "en",
+  "download_date": "2025-01-01T00:00:00Z",
+  "format": "Def6",
+  "sequence": {
+    "title": "Test B - Auto-Continue (action=0)",
+    "list": [
+      {
+        "id": 99903,
+        "title": "Test B1 - Action=0"
+      },
+      {
+        "id": 99904,
+        "title": "Test B2 - Destination"
+      }
+    ]
+  },
+  "assets": {
+    "case_specific": 0,
+    "shared_defaults": 0,
+    "total_downloaded": 0,
+    "total_size_bytes": 0
+  },
+  "asset_map": {},
+  "failed_assets": []
+}

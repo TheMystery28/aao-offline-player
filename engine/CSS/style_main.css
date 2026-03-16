@@ -1,0 +1,848 @@
+@charset "UTF-8";
+
+@font-face {
+	font-family:aaDialogueText;
+	src:url("PWExtended.woff") format("woff"),
+		url("PWExtended.ttf") format("truetype");
+}
+
+/* HTML5 compatibility */
+
+header, footer, section, article, nav, aside, hgroup, details, summary { display:block; }
+
+header, footer, section, nav { margin:0; }
+
+[hidden], datalist { display:none !important; }
+
+/* Loading mask */
+
+#loading-mask
+{
+	display: block;
+	position: absolute;
+	left: 0;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+	
+	background: #666;
+}
+
+/* -------------
+ * PAGE LAYOUT
+ * ------------- */
+
+html 
+{
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+}
+
+body 
+{
+    position: relative;
+    height: 100%;
+    /*min-width:940px;*/
+    margin: 0 0.8em;
+
+    background-color:#999;
+
+    font-family:sans-serif;
+}
+
+/* Header */
+
+header 
+{	
+	position: relative;
+}
+
+header h1, header h2
+{
+	margin: 0;
+	
+	color:#782201;
+	white-space:nowrap;
+}
+
+header h1
+{
+	font:24px Georgia, serif;
+}
+
+header h2
+{
+	font:18px Georgia, serif;
+}
+
+/* Compact header, used in player and editor */
+
+header.compact
+{
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: stretch;
+	
+	width: 100%;
+	height: 3.8em;
+	
+	margin-bottom: 0.7em;
+	
+	background-color:#F0F0F0;
+	background-image:linear-gradient(white, rgba(255,255,255,0));
+	border-radius:0 0 0.7em 0.7em;
+}
+
+header.compact > *
+{
+	/* Elements don't grow nor shrink, but stay to the correct size for their content */
+	flex: 0 0 auto;
+	/* Standard elements are displayed first */
+	order: 1;
+	
+	padding: 0 5px;
+	line-height: 60px;
+	
+	white-space: nowrap;
+}
+
+header.compact h1 
+{
+	/* The title can grow or shrink according to available space */
+	flex: 1 1 auto;
+	
+	white-space: normal;
+	overflow:hidden;
+	text-overflow: ellipsis;
+}
+
+header.compact h1 > *
+{
+	max-height: 100%;
+}
+
+header.compact h2
+{
+	font-style: italic;
+}
+header.compact h2:not(:empty)::before
+{
+	content: "-- ";
+}
+
+header.compact nav
+{
+	/* Navigation is displayed in the middle */
+	order: 2;
+}
+
+header.compact aside
+{
+	/* Actions are displayed last */
+	order: 3;
+}
+
+header.compact nav a,
+header.compact aside button,
+header.compact aside a.button
+{
+	box-sizing: border-box;
+	height: 28px;
+	vertical-align: middle;
+}
+
+header.compact nav 
+{
+	text-align: center;
+	white-space: nowrap;
+	
+	font-size:0; /* Hide spaces between inline-block elements... */
+}
+
+header.compact nav a 
+{
+    transition: all 0.2s ease 0s;
+    background-color: #8C481B;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0));
+    border-left: thin solid grey;
+    color: white;
+    display: inline-block;
+    font: small/28px 'Open Sans',Arial,sans-serif;
+    outline: medium none;
+    padding: 0 0.5em;
+    text-decoration: none;
+    cursor: pointer;
+}
+header.compact nav a:first-child 
+{
+    border-left: medium none;
+    border-radius: 4px 0 0 4px;
+}
+header.compact nav a:last-child 
+{
+    border-radius: 0 4px 4px 0;
+}
+header.compact nav a:hover, nav a:focus 
+{
+    background-color: #A67351;
+}
+header.compact nav a:active, nav a.open 
+{
+    box-shadow: 0 0 3px black inset;
+}
+
+header.compact aside + nav
+{
+	border-right: thin solid lightGrey;
+}
+
+/* Tall header, for website and manager */
+header.tall h1
+{
+	position: relative;
+	margin: 0;
+	padding: 0;
+	height: 8em;
+	overflow: hidden;
+	
+	background: url("img/header/background.jpg") center no-repeat #B59F63;
+	border-radius: 0 0 0 0.7em;
+	
+	text-align: center;
+	line-height: 8em;
+}
+
+/* Resize the logo to the correct scale */
+header.tall h1 img
+{
+	object-fit: contain;
+	width: min(96%, 567px);
+	height: auto;
+}
+
+header.tall h1 > *
+{
+	vertical-align: middle;
+}
+
+/* Gif/png of AA characters, they get scaled down if they pose too much problem for the logo */
+header.tall h1::before,
+header.tall h1::after
+{
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	background-size: contain;
+	background-position: bottom;
+	background-repeat: no-repeat;
+	width: min(256px, 30%);
+	height: 192px;
+
+}
+
+/* On portrait mode, the images are a bother and block the logo, so disable them */
+@media (orientation: portrait){
+	header.tall h1::before,
+	header.tall h1::after
+	{
+		content: none;
+	}
+}
+
+header.tall h1::before
+{
+	left: 0;
+	background-image: url("img/header/left-desk.png"), url("img/header/left-sprite-1.gif");
+}
+
+header.tall h1::after
+{
+	right: 0;
+	background-image: url("img/header/right-desk.png"), url("img/header/right-sprite-1.gif");
+}
+
+header.tall.s2 h1::before
+{
+	left: 0;
+	background-image: url("img/header/left-desk.png"), url("img/header/left-sprite-2.gif");
+}
+
+header.tall.s2 h1::after
+{
+	right: 0;
+	background-image: url("img/header/right-desk.png"), url("img/header/right-sprite-2.gif");
+}
+
+header.tall.s3 h1::before
+{
+	left: 0;
+	background-image: url("img/header/left-desk.png"), url("img/header/left-sprite-3.gif");
+}
+
+header.tall.s3 h1::after
+{
+	right: 0;
+	background-image: url("img/header/right-desk.png"), url("img/header/right-sprite-3.gif");
+}
+
+header.tall.s4 h1::before
+{
+	left: 0;
+	background-image: url("img/header/left-desk.png"), url("img/header/left-sprite-4.gif");
+}
+
+header.tall.s4 h1::after
+{
+	right: 0;
+	background-image: url("img/header/right-desk.png"), url("img/header/right-sprite-4.gif");
+}
+
+header.tall nav
+{
+	text-align: center;
+	font-size:0; /* Hide spaces between inline-block elements... */
+}
+
+header.tall nav a
+{
+	display: inline-block;
+	margin: 0.6em 0.15em 0 0.15em;
+	padding: 0.2em 0.5em;
+	
+	border: 0.2em solid lightGrey;
+	border-bottom: none;
+	border-radius: 0.7em 0.7em 0 0;
+	
+	background-color: #8C481B;
+	background-image: linear-gradient(rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0));
+	
+	font-family: 'Open Sans', Arial, sans-serif;
+	font-size: large;
+	text-decoration: none;
+	color: white;
+	
+	transition: 0.2s;
+}
+
+/* Tweaks on the navigation bar to avoid double layer*/
+@media (orientation: portrait)
+{
+
+	header.tall nav a
+	{
+		font-size: 15.5px;
+
+		padding: 0.1em 0.2em;
+		border: 0.1em solid lightgrey;
+		border-bottom: none;
+
+		margin: 2.5em 0.1em 0 0.1em;
+	}
+}
+
+
+header.tall nav a:hover,
+header.tall nav a:focus 
+{
+	background-color:#A67351;
+}
+header.tall nav a:active 
+{
+	box-shadow:inset 0 0 3px black;
+}
+
+header.tall aside
+{
+	position: absolute;
+	top: 192px;
+	right: 0;
+	padding: 5px;
+	
+	background: white;
+	box-shadow: inset 0 0 5px lightGrey;
+	border-radius: 0 0 0.7em 0.7em;
+}
+
+header.tall aside button,
+header.tall aside a.button
+{
+	display: inline-block;
+	padding: 0.2em 0.5em;
+	vertical-align: middle;
+	
+	border: 1px solid grey;
+	border-radius: 4px;
+	background-color: #F0F0F0;
+	background-image: linear-gradient(white, rgba(255, 255, 255, 0));
+	
+	font: small /*button-font*/'Open Sans', Arial, sans-serif;
+	text-decoration: none;
+	color: #07C;
+	
+	transition: 0.2s;
+}
+
+/* Content area */
+
+#content 
+{
+	position: relative;
+	
+	padding: 0.7em;
+	
+	background: #625949;
+	border-radius: 0.7em;
+}
+
+#content > section,
+#content > footer 
+{
+	padding: 0 0.7em;
+
+	border:thin solid #B99181;
+	
+	background: #F0F0F0;
+}
+
+#content > section::after,
+#content > footer::after
+{
+	content: "";
+	display: block;
+	clear: both;
+} 
+
+#content > section + section,
+#content > section + footer
+{
+	margin-top: 0.7em;
+}
+
+/* Mobiles need more space, as such, reduce the side padding */
+@media (orientation: portrait){
+	#content {
+		padding: 0.7em 0;
+	}
+}
+
+/* Side panel for landscape mode */
+@media (orientation: landscape) {
+	#content > section > aside
+	{
+		clear:both;
+        float: right;
+		box-sizing: border-box;
+
+		width: 30%;
+		margin-left: 1%;
+		padding-left: 1%;
+
+		border-left: 1px solid #DDD;
+	}
+
+	#content > section > aside ~ :not(aside)
+	{
+		width: 68%;
+	}
+}
+
+
+#content > section > aside.ad
+{
+	padding-top: 50px;
+	text-align: center;
+}
+
+/* Tabbed sections */
+nav.section-tabs:empty
+{
+	display: none;
+}
+
+#content > nav.section-tabs:not(:empty) ~ section.open
+{
+	margin-top: 0;
+}
+
+nav.section-tabs ~ section:not(:only-of-type):not(.open)
+{
+	display: none;
+}
+
+nav.section-tabs .tab
+{
+	display: inline-block;
+	position: relative;
+	height: 2em;
+	padding: 0 0.35em;
+	
+	border: 1px solid lightGrey;
+	border-radius: 0 2em 2em 0;
+	
+	background-color: #F0F0F0;
+	background-image: linear-gradient(white, rgba(200, 200, 200, 0));
+	
+	line-height: 2em;
+	font-size: xx-large;
+	font-family: Georgia, serif;
+	font-weight: normal;
+	color: #782201;
+}
+
+nav.section-tabs .tab.open
+{
+	background-image: linear-gradient(white, rgba(255, 255, 255, 0));
+}
+
+nav.section-tabs .tab:not(:first-of-type)
+{
+	padding-left: 2em;
+	margin-left: -2em;
+}
+
+nav.section-tabs .tab:nth-of-type(1) { z-index: 100; }
+nav.section-tabs .tab:nth-of-type(2) { z-index: 99; }
+nav.section-tabs .tab:nth-of-type(3) { z-index: 98; }
+nav.section-tabs .tab:nth-of-type(4) { z-index: 97; }
+nav.section-tabs .tab:nth-of-type(5) { z-index: 96; }
+
+nav.section-tabs .tab a
+{
+	margin-left: 0.35em;
+	margin-right: 0.35em;
+	vertical-align: middle;
+	
+	transition: 0.2s;
+}
+
+nav.section-tabs .tab .tab_link
+{
+	color: inherit;
+}
+
+nav.section-tabs .tab:not(.open) .tab_link
+{
+	font-size: x-large;
+	cursor: pointer;
+}
+
+/* Two column layout */
+.column
+{
+	display: block;
+	float: left;
+	box-sizing: border-box;
+	margin: 1em 0;
+	padding: 0;
+	padding-right: 0.5em;
+	border: 0;
+	vertical-align: top;
+	
+	clear: both;
+	border-right: 1px solid lightgrey;
+}
+
+.column + .column
+{
+	clear: none;
+	padding-left: 0.5em;
+	margin-left: -1px;
+	border-left: 1px solid lightgrey;
+}
+
+.column + :not(.column)
+{
+	clear: both;
+}
+
+.column.c2
+{
+	width: 50%;
+}
+
+.column.c2 + .column.c2
+{
+	padding-right: 0;
+	border-right: 0;
+}
+
+.column.c3
+{
+	width: 33.3%;
+}
+
+.column.c3 + .column.c3 + .column.c3
+{
+	padding-right: 0;
+	border-right: 0;
+}
+
+/* Centered column layout */
+
+.centered
+{
+	display: block;
+	padding: 0.5em;
+	text-align: center;
+}
+
+/* -------------
+ * CONTENT STYLING
+ * ------------- */
+
+/* Section titles */
+
+h1, h2, h3, h4
+{
+	font-family: Georgia, serif;
+	font-weight: normal;
+	color:#782201;
+}
+
+section h1 {
+	margin:0 0 5px 0;
+	padding:5px;
+	background:white;
+	border-right:thin solid lightgrey;
+	border-bottom:thin solid lightgrey;
+	border-left:thin solid lightgrey;
+	border-radius:0 0 4px 4px;
+	box-shadow:inset 0 0 5px lightgrey;
+	font-size:xx-large;
+	text-align:center;
+}
+
+section h2 {
+	margin:10px 0 5px 0;
+	padding:5px;
+	background-color:#F0F0F0;
+	background-image:linear-gradient(white, rgba(255,255,255,0));
+	border:thin solid lightgrey;
+	border-radius:4px;
+	box-shadow:inset 0 0 5px lightgrey;
+	font-size:x-large;
+}
+
+section h3 {
+	margin:10px 0 5px 0;
+	padding:5px;
+	border-top:thin solid lightgrey;
+	border-bottom:thin solid lightgrey;
+	font-size: large;
+}
+
+/* Links */
+a
+{
+	color: #0077CC;
+	text-decoration: none;
+	transition: color 0.2s;
+}
+
+a:hover, 
+a:focus
+{
+	color: #44BBFF;
+}
+
+a:active
+{
+	color: #003F6C;
+}
+
+/* Tables */
+
+table {
+	width:100%;
+	border:thin solid lightgrey;
+	border-collapse:collapse;
+	border-radius:4px;
+}
+
+th, td { padding:5px; }
+
+th:not(:last-child), td:not(:last-child) { border-right: 1px solid lightgrey; }
+
+thead th,
+tbody th {
+	background-color:#F0F0F0;
+	background-image:linear-gradient(white, rgba(255,255,255,0));
+	color:#782201;
+}
+
+thead th 
+{ 
+	font:bold large Georgia, serif; 
+	text-align:start; 
+}
+
+tbody th 
+{ 
+	font:medium Georgia, serif; 
+}
+
+tbody td { background:white; }
+tbody > tr:nth-of-type(odd) > td { background:#F8F2ED; /* #F4ECE3 */ }
+
+/* Definition lists */
+
+dt
+{
+	font: 1.2em Georgia, serif;
+	color: #782201;
+}
+
+/* Small list of controls */
+
+.controls span,
+.controls select,
+.controls .select,
+.controls button
+{ 
+	display:inline-block !important; 
+	width:5em;
+	overflow: hidden;
+}
+
+/* Loading bars */
+
+.loading-bar
+{
+	display: block;
+	height: 10px;
+	overflow: hidden;
+	
+	border: 2px ridge lightGrey;
+	border-radius: 2px;
+	background: linear-gradient(to bottom, #8c8c8c 0%,#bcbcbc 11%,#5c5c5c 22%,#5c5c5c 78%,#4c4c4c 89%,#383838 100%);
+}
+
+.loading-bar .loading-bar-loaded,
+.loading-bar .loading-bar-failed
+{
+	display: block;
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.loading-bar .loading-bar-loaded
+{
+	float: left;
+	background: linear-gradient(to bottom, #40d840 0%,#80f880 11%,#00b800 22%,#00b800 78%,#009800 89%,#007000 100%);
+}
+
+.loading-bar .loading-bar-failed
+{
+	float: right;
+	background: linear-gradient(to bottom, #400810 0%,#680010 11%,#680010 100%);
+}
+
+/* Buttons */
+
+button,
+a.button,
+input[type=button],
+input[type=submit]
+{
+	display: inline-block;
+	box-sizing: border-box;
+	padding:0.2em 0.5em;
+	background-color:#8C481B;
+	background-image:linear-gradient(rgba(255,255,255,0.25), rgba(255,255,255,0));
+	border:thin solid grey;
+	border-radius:4px;
+	font:small sans-serif;
+	color:white;
+	text-decoration: none;
+	transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+button.big,
+a.button.big,
+input[type=button].big,
+input[type=submit].big
+{
+	font-size: large;
+}
+
+button.wide,
+a.button.wide,
+input[type=button].wide,
+input[type=submit].wide
+{
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+}
+
+button:hover,
+button:focus,
+a.button:hover,
+a.button:focus,
+input[type=button]:hover,
+input[type=button]:focus,
+input[type=submit]:hover,
+input[type=submit]:focus 
+{
+	background-color:#A67351;
+	box-shadow:0 0 3px grey;
+}
+
+button:active,
+a.button:active,
+input[type=button]:active,
+input[type=submit]:active
+{
+	box-shadow:inset 0 0 3px black;
+}
+
+button.dblclick {
+	background-color:#F99;
+	background-image:linear-gradient(rgba(255,255,255,0.5), rgba(255,255,255,0));
+}
+
+button.dblclick:hover,
+button.dblclick:focus {
+	background-color:#FCC;
+}
+
+button.dblclick:active {
+	background-color:#F66;
+}
+
+button:disabled {
+	background:white !important;
+	border-color:lightgrey;
+	box-shadow:none !important;
+	color:grey !important;
+}
+
+button.feature::before { content:"★ "; }
+button.unfeature::before { content:"☆ "; }
+
+/* Errors */
+p.error
+{
+	font-weight: bold;
+	color: red;
+}
+
+p.error::before, p.error::after
+{
+	content: "⚠";
+	
+	font-size: 3em;
+	vertical-align: middle;
+	font-weight: normal;
+}
+
+a.error.button
+{
+	background-color: red;
+	margin-bottom: 1em;
+}

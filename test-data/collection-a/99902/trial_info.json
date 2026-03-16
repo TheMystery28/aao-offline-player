@@ -1,0 +1,24 @@
+{
+  "id": 99902,
+  "title": "Test A2 - Destination",
+  "author": "TestBot",
+  "author_id": 0,
+  "language": "en",
+  "format": "Def6",
+  "can_read": true,
+  "can_write": false,
+  "last_edit_date": 1700000000,
+  "sequence": {
+    "title": "Test A - Explicit Redirect",
+    "list": [
+      {
+        "id": 99901,
+        "title": "Test A1 - Explicit next"
+      },
+      {
+        "id": 99902,
+        "title": "Test A2 - Destination"
+      }
+    ]
+  }
+}

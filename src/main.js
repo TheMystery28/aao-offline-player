@@ -1,0 +1,2892 @@
+const { invoke, Channel } = window.__TAURI__.core;
+
+/**
+ * Parse a case ID from user input.
+ * Accepts: numeric ID, or full/partial AAO URL containing trial_id=N or id_proces=N.
+ */
+function parseCaseId(input) {
+  var trimmed = input.trim();
+  // Pure numeric
+  var num = parseInt(trimmed, 10);
+  if (!isNaN(num) && num > 0 && String(num) === trimmed) {
+    return num;
+  }
+  // URL patterns: trial_id=N or id_proces=N
+  var match = trimmed.match(/(?:trial_id|id_proces)=(\d+)/);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+  return null;
+}
+
+window.addEventListener("DOMContentLoaded", function () {
+  var launcher = document.getElementById("launcher");
+  var playerContainer = document.getElementById("player-container");
+  var gameFrame = document.getElementById("game-frame");
+  var backBtn = document.getElementById("back-btn");
+  var playerTitle = document.getElementById("player-title");
+  var statusMsg = document.getElementById("status-msg");
+  var caseList = document.getElementById("case-list");
+  var emptyLibrary = document.getElementById("empty-library");
+  var libraryLoading = document.getElementById("library-loading");
+
+  // Download UI
+  var downloadBtn = document.getElementById("download-btn");
+  var caseIdInput = document.getElementById("case-id-input");
+  var downloadResult = document.getElementById("download-result");
+  var progressContainer = document.getElementById("progress-container");
+  var progressPhase = document.getElementById("progress-phase");
+  var progressBarInner = document.getElementById("progress-bar-inner");
+  var progressText = document.getElementById("progress-text");
+
+  // Track known case IDs for duplicate detection
+  var knownCaseIds = [];
+  var downloadInProgress = false;
+
+  // --- Player ---
+
+  function showPlayer(title, url) {
+    console.log("[PLAYER] showPlayer title=" + title + " url=" + url);
+    playerTitle.textContent = title;
+    gameFrame.src = url;
+    launcher.classList.add("hidden");
+    playerContainer.classList.remove("hidden");
+
+    // Push history state so Android back button returns to launcher instead of blank screen
+    history.pushState({ player: true }, "", "");
+
+    // Debug: capture resource load errors from the iframe
+    gameFrame.addEventListener("load", function onFrameLoad() {
+      gameFrame.removeEventListener("load", onFrameLoad);
+      try {
+        var iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
+        console.log("[PLAYER] Iframe loaded. baseURI=" + iframeDoc.baseURI);
+        console.log("[PLAYER] Iframe location=" + gameFrame.contentWindow.location.href);
+
+        // List all <script> tags loaded in the iframe
+        var scripts = iframeDoc.querySelectorAll("script");
+        console.log("[PLAYER] Iframe scripts loaded: " + scripts.length);
+        for (var s = 0; s < scripts.length; s++) {
+          console.log("[PLAYER]   script[" + s + "] src=" + (scripts[s].src || "(inline)"));
+        }
+
+        // Listen for resource load failures (images, audio, scripts)
+        iframeDoc.addEventListener("error", function (e) {
+          var el = e.target;
+          var src = el.src || el.currentSrc || el.href || "(unknown)";
+          var tag = el.tagName || "?";
+          var id = el.id || "";
+          var cls = el.className || "";
+          console.error(
+            "[IFRAME RESOURCE ERROR] <" + tag + "> src=" + src +
+            (id ? " id=" + id : "") +
+            (cls ? " class=" + cls : "") +
+            " parentTag=" + (el.parentElement ? el.parentElement.tagName : "none")
+          );
+        }, true); // capture phase to catch all errors
+
+        // Also intercept successful loads for images (so we see what works)
+        iframeDoc.addEventListener("load", function (e) {
+          var el = e.target;
+          if (el.tagName === "IMG" || el.tagName === "AUDIO" || el.tagName === "SOURCE") {
+            var src = el.src || el.currentSrc || "(unknown)";
+            console.log("[IFRAME RESOURCE OK] <" + el.tagName + "> src=" + src);
+          }
+        }, true);
+
+        console.log("[PLAYER] Iframe error+load listeners attached");
+      } catch (ex) {
+        console.warn("[PLAYER] Cannot attach iframe listeners (cross-origin?): " + ex.message);
+      }
+    });
+  }
+
+  function showLauncher() {
+    // Auto-save before quitting (if enabled in settings).
+    // The iframe is cross-origin (localhost vs tauri.localhost), so use postMessage.
+    if (!settingsAutoSave || settingsAutoSave.checked) {
+      try {
+        if (gameFrame.contentWindow && gameFrame.src !== "about:blank") {
+          gameFrame.contentWindow.postMessage({ type: "auto_save" }, "*");
+        }
+      } catch (e) {
+        console.warn("[PLAYER] Auto-save failed:", e.message);
+      }
+    }
+    // Small delay to let the save complete, then close and back up saves
+    setTimeout(function () {
+      gameFrame.src = "about:blank";
+      playerContainer.classList.add("hidden");
+      launcher.classList.remove("hidden");
+      statusMsg.textContent = "";
+      // Back up all saves to file after leaving the player
+      backupSavesToFile();
+    }, 100);
+  }
+
+  backBtn.addEventListener("click", showLauncher);
+
+  // Android system back button: return to launcher if player is visible
+  window.addEventListener("popstate", function () {
+    if (!playerContainer.classList.contains("hidden")) {
+      showLauncher();
+      loadLibrary();
+    }
+  });
+
+  // --- Save Backup/Restore ---
+
+  // Back up saves from localStorage to a file (survives app updates/reinstalls)
+  function backupSavesToFile() {
+    findLastSequenceSave([{ id: 0 }]); // dummy call just to get server URL — actually, let's read all saves directly
+    invoke("get_server_url").then(function (serverUrl) {
+      var bridgeId = "backup_" + (++bridgeIdCounter);
+      var iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      var done = false;
+
+      function onMsg(event) {
+        if (done || !event.data || event.data.type !== "game_saves") return;
+        if (event.data.bridgeId && event.data.bridgeId !== bridgeId) return;
+        done = true;
+        window.removeEventListener("message", onMsg);
+        if (iframe.parentNode) document.body.removeChild(iframe);
+
+        var raw = event.data.data;
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          invoke("backup_saves", { saves: parsed }).then(function () {
+            console.log("[SAVE] Backed up saves to file");
+          }).catch(function (e) {
+            console.warn("[SAVE] Backup failed:", e);
+          });
+        }
+      }
+
+      window.addEventListener("message", onMsg);
+      setTimeout(function () {
+        if (!done) {
+          done = true;
+          window.removeEventListener("message", onMsg);
+          if (iframe.parentNode) document.body.removeChild(iframe);
+        }
+      }, 3000);
+      iframe.src = serverUrl + "/localstorage_bridge.html?id=" + bridgeId;
+      document.body.appendChild(iframe);
+    });
+  }
+
+  // Restore saves from backup file to localStorage (runs once on startup)
+  function restoreSavesFromBackup() {
+    invoke("load_saves_backup").then(function (saves) {
+      if (!saves) {
+        console.log("[SAVE] No saves backup to restore");
+        return;
+      }
+      console.log("[SAVE] Restoring saves from backup...");
+      writeGameSaves(saves).then(function (result) {
+        if (result && result.success) {
+          console.log("[SAVE] Restored " + result.merged + " saves from backup");
+        } else {
+          console.warn("[SAVE] Restore failed:", result && result.error);
+        }
+      });
+    }).catch(function (e) {
+      console.warn("[SAVE] Could not load backup:", e);
+    });
+  }
+
+  // Restore saves on startup
+  restoreSavesFromBackup();
+
+  // --- Library ---
+
+  function loadLibrary() {
+    console.log("[LIBRARY] loadLibrary called");
+    libraryLoading.classList.remove("hidden");
+    emptyLibrary.classList.add("hidden");
+    Promise.all([
+      invoke("list_cases"),
+      invoke("list_collections").catch(function () { return []; })
+    ])
+      .then(function (results) {
+        var cases = results[0];
+        var collections = results[1];
+        console.log("[LIBRARY] list_cases returned " + cases.length + " cases, " +
+          collections.length + " collections");
+        for (var i = 0; i < cases.length; i++) {
+          var c = cases[i];
+          console.log("[LIBRARY]   case " + c.case_id + ": \"" + c.title + "\" (" +
+            c.assets.total_downloaded + " assets, " +
+            (c.failed_assets ? c.failed_assets.length : 0) + " failed)");
+        }
+        knownCaseIds = cases.map(function (c) { return c.case_id; });
+        renderCaseList(cases, collections);
+      })
+      .catch(function (e) {
+        console.error("[LIBRARY] Failed to load library:", e);
+        libraryLoading.textContent = "Failed to load library.";
+      });
+  }
+
+  function renderCaseList(cases, collections) {
+    libraryLoading.classList.add("hidden");
+    // Remove old cards, groups, and collection groups
+    caseList.querySelectorAll(".case-card, .sequence-group, .collection-group").forEach(function (c) { c.remove(); });
+
+    collections = collections || [];
+
+    if (cases.length === 0 && collections.length === 0) {
+      emptyLibrary.classList.remove("hidden");
+      return;
+    }
+
+    emptyLibrary.classList.add("hidden");
+
+    // Build lookup maps
+    var casesById = {};
+    for (var ci = 0; ci < cases.length; ci++) {
+      casesById[cases[ci].case_id] = cases[ci];
+    }
+
+    // Group cases by sequence title
+    var sequenceGroups = {}; // title → { list: [...], cases: [...] }
+    var standalone = [];
+
+    for (var i = 0; i < cases.length; i++) {
+      var c = cases[i];
+      var seq = c.sequence;
+      if (seq && seq.title && seq.list && seq.list.length > 1) {
+        var key = seq.title;
+        if (!sequenceGroups[key]) {
+          sequenceGroups[key] = { list: seq.list, cases: [] };
+        }
+        sequenceGroups[key].cases.push(c);
+      } else {
+        standalone.push(c);
+      }
+    }
+
+    // Sort sequence groups
+    var groupKeys = Object.keys(sequenceGroups);
+    for (var g = 0; g < groupKeys.length; g++) {
+      var groupTitle = groupKeys[g];
+      var group = sequenceGroups[groupTitle];
+      var listIds = group.list.map(function (p) { return p.id; });
+      group.cases.sort(function (a, b) {
+        return listIds.indexOf(a.case_id) - listIds.indexOf(b.case_id);
+      });
+    }
+
+    // Determine which items are claimed by a collection
+    var claimedCaseIds = {};
+    var claimedSequenceTitles = {};
+    for (var col = 0; col < collections.length; col++) {
+      var items = collections[col].items || [];
+      for (var it = 0; it < items.length; it++) {
+        if (items[it].type === "case") {
+          claimedCaseIds[items[it].case_id] = true;
+        } else if (items[it].type === "sequence") {
+          claimedSequenceTitles[items[it].title] = true;
+        }
+      }
+    }
+
+    // Render collections first
+    for (var co = 0; co < collections.length; co++) {
+      appendCollectionGroup(collections[co], casesById, sequenceGroups);
+    }
+
+    // Render remaining uncollected sequences
+    for (var gs = 0; gs < groupKeys.length; gs++) {
+      if (!claimedSequenceTitles[groupKeys[gs]]) {
+        appendSequenceGroup(groupKeys[gs], sequenceGroups[groupKeys[gs]].list, sequenceGroups[groupKeys[gs]].cases);
+      }
+    }
+
+    // Render remaining uncollected standalone cases
+    for (var s = 0; s < standalone.length; s++) {
+      if (!claimedCaseIds[standalone[s].case_id]) {
+        appendCaseCard(standalone[s]);
+      }
+    }
+  }
+
+  function appendSequenceGroup(sequenceTitle, sequenceList, downloadedCases) {
+    var totalParts = sequenceList.length;
+    var downloadedCount = downloadedCases.length;
+    var totalSize = 0;
+    var downloadedIds = [];
+    for (var i = 0; i < downloadedCases.length; i++) {
+      totalSize += downloadedCases[i].assets.total_size_bytes;
+      downloadedIds.push(downloadedCases[i].case_id);
+    }
+    var missingIds = [];
+    for (var j = 0; j < sequenceList.length; j++) {
+      if (downloadedIds.indexOf(sequenceList[j].id) === -1) {
+        missingIds.push(sequenceList[j].id);
+      }
+    }
+
+    var group = document.createElement("div");
+    group.className = "sequence-group";
+
+    // Header
+    var header = document.createElement("div");
+    header.className = "sequence-header";
+    header.innerHTML =
+      '<span class="sequence-header-toggle">&#9660;</span> ' +
+      '<strong>' + escapeHtml(sequenceTitle) + '</strong>' +
+      '<span class="sequence-meta">' +
+        downloadedCount + '/' + totalParts + ' parts' +
+        ' &middot; ' + formatBytes(totalSize) +
+      '</span>';
+
+    var partsContainer = document.createElement("div");
+    partsContainer.className = "sequence-parts";
+
+    header.addEventListener("click", function () {
+      var isOpen = !partsContainer.classList.contains("hidden");
+      if (isOpen) {
+        partsContainer.classList.add("hidden");
+        header.querySelector(".sequence-header-toggle").innerHTML = "&#9654;";
+      } else {
+        partsContainer.classList.remove("hidden");
+        header.querySelector(".sequence-header-toggle").innerHTML = "&#9660;";
+      }
+    });
+
+    // Part rows
+    for (var k = 0; k < sequenceList.length; k++) {
+      var partInfo = sequenceList[k];
+      var downloaded = null;
+      for (var d = 0; d < downloadedCases.length; d++) {
+        if (downloadedCases[d].case_id === partInfo.id) {
+          downloaded = downloadedCases[d];
+          break;
+        }
+      }
+      appendSequencePart(partsContainer, partInfo, k + 1, downloaded);
+    }
+
+    // Footer actions
+    var footer = document.createElement("div");
+    footer.className = "sequence-actions";
+
+    // Play from Part 1 button
+    if (downloadedCases.length > 0) {
+      var firstCase = null;
+      for (var f = 0; f < sequenceList.length; f++) {
+        for (var fc = 0; fc < downloadedCases.length; fc++) {
+          if (downloadedCases[fc].case_id === sequenceList[f].id) {
+            firstCase = downloadedCases[fc];
+            break;
+          }
+        }
+        if (firstCase) break;
+      }
+      if (firstCase) {
+        var playFirstBtn = document.createElement("button");
+        playFirstBtn.className = "play-btn";
+        playFirstBtn.innerHTML = "&#9654; Play from Part 1";
+        playFirstBtn.addEventListener("click", (function (c) {
+          return function () { playCase(c.case_id, c.title); };
+        })(firstCase));
+        footer.appendChild(playFirstBtn);
+      }
+    }
+
+    // Continue (play from last save) button
+    if (downloadedCases.length > 0) {
+      var continueBtn = document.createElement("button");
+      continueBtn.className = "play-btn continue-btn";
+      continueBtn.innerHTML = "&#9654; Continue";
+      continueBtn.title = "Resume from your most recent save across all parts";
+      continueBtn.addEventListener("click", (function (seqList, dlCases) {
+        return function () {
+          statusMsg.textContent = "Checking saves...";
+          findLastSequenceSave(seqList).then(function (lastSave) {
+            if (!lastSave) {
+              statusMsg.textContent = "No saves found for this sequence. Use 'Play from Part 1' to start.";
+              return;
+            }
+            // Find the matching downloaded case for the title
+            var matchTitle = "Part " + lastSave.partId;
+            for (var mc = 0; mc < dlCases.length; mc++) {
+              if (dlCases[mc].case_id === lastSave.partId) {
+                matchTitle = dlCases[mc].title;
+                break;
+              }
+            }
+            statusMsg.textContent = "Resuming from save in \"" + matchTitle + "\"...";
+            invoke("open_game", { caseId: lastSave.partId })
+              .then(function (url) {
+                // Append save_data to the URL
+                var sep = url.indexOf("?") === -1 ? "?" : "&";
+                var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
+                showPlayer(matchTitle, fullUrl);
+              })
+              .catch(function (e) {
+                statusMsg.textContent = "Error: " + e;
+              });
+          });
+        };
+      })(sequenceList, downloadedCases));
+      footer.appendChild(continueBtn);
+    }
+
+    // Download remaining button
+    if (missingIds.length > 0) {
+      var dlRemBtn = document.createElement("button");
+      dlRemBtn.className = "update-btn";
+      dlRemBtn.textContent = "Download " + missingIds.length + " remaining";
+      dlRemBtn.addEventListener("click", (function (ids, title) {
+        return function () {
+          if (downloadInProgress) {
+            statusMsg.textContent = "A download is already in progress.";
+            return;
+          }
+          startSequenceDownload(ids, title);
+        };
+      })(missingIds, sequenceTitle));
+      footer.appendChild(dlRemBtn);
+    }
+
+    // Update All button
+    if (downloadedCases.length > 0) {
+      var updateAllBtn = document.createElement("button");
+      updateAllBtn.className = "update-btn";
+      updateAllBtn.textContent = "Update All";
+      updateAllBtn.addEventListener("click", (function (cases) {
+        return function () {
+          if (downloadInProgress) {
+            statusMsg.textContent = "A download is already in progress.";
+            return;
+          }
+          showUpdateModal(
+            "Update all " + cases.length + " parts?",
+            "Script/dialog only",
+            "Re-download all assets",
+            function (choice) {
+              var redownload = (choice === 2);
+
+              // Update each part sequentially
+              var idx = 0;
+              function updateNext() {
+                if (idx >= cases.length) {
+                  loadLibrary();
+                  statusMsg.textContent = "All " + cases.length + " parts updated.";
+                  return;
+                }
+                var c = cases[idx];
+                idx++;
+                statusMsg.textContent = "Updating part " + idx + "/" + cases.length + ": " + c.title + "...";
+                startUpdate(c.case_id, redownload, function () {
+                  updateNext();
+                });
+              }
+              updateNext();
+            }
+          );
+        };
+      })(downloadedCases));
+      footer.appendChild(updateAllBtn);
+    }
+
+    // Export sequence button
+    if (downloadedCases.length > 1) {
+      var exportSeqBtn = document.createElement("button");
+      exportSeqBtn.className = "export-btn";
+      exportSeqBtn.textContent = "Export Sequence";
+      exportSeqBtn.addEventListener("click", (function (ids, title, list) {
+        return function () {
+          var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+          var defaultName = safeName + ".aaocase";
+          statusMsg.textContent = "Choosing export location...";
+          invoke("pick_export_file", { defaultName: defaultName })
+            .then(function (destPath) {
+              if (!destPath) {
+                statusMsg.textContent = "";
+                return;
+              }
+              progressContainer.classList.remove("hidden");
+              progressPhase.textContent = "Exporting sequence...";
+              progressBarInner.style.width = "0%";
+              progressText.textContent = "";
+
+              var onEvent = new Channel();
+              onEvent.onmessage = function (msg) {
+                if (msg.event === "progress") {
+                  var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+                  progressBarInner.style.width = pct + "%";
+                  progressText.textContent =
+                    msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
+                } else if (msg.event === "finished") {
+                  progressBarInner.style.width = "100%";
+                  progressPhase.textContent = "Export complete!";
+                  progressText.textContent = formatBytes(msg.data.total_bytes);
+                }
+              };
+
+              // Ask whether to include game saves
+              var includeSaves = confirm("Include game saves in the export?");
+              var savesPromise = includeSaves
+                ? readGameSaves(ids)
+                : Promise.resolve(null);
+
+              return savesPromise.then(function (saves) {
+                return invoke("export_sequence", {
+                  caseIds: ids,
+                  sequenceTitle: title,
+                  sequenceList: list,
+                  destPath: destPath,
+                  saves: saves,
+                  onEvent: onEvent
+                }).then(function (size) {
+                  var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
+                  if (saves) msg += " with saves";
+                  statusMsg.textContent = msg;
+                });
+              });
+            })
+            .catch(function (e) {
+              console.error("[MAIN] export sequence error:", e);
+              statusMsg.textContent = "Export error: " + e;
+              progressContainer.classList.add("hidden");
+            });
+        };
+      })(downloadedIds, sequenceTitle, sequenceList));
+      footer.appendChild(exportSeqBtn);
+    }
+
+    // Delete all button
+    var delAllBtn = document.createElement("button");
+    delAllBtn.className = "delete-btn";
+    delAllBtn.textContent = "Delete All";
+    delAllBtn.addEventListener("click", (function (cases, title) {
+      return function () {
+        if (!confirm('Delete all ' + cases.length + ' parts of "' + title + '"?\nThis cannot be undone.')) {
+          return;
+        }
+        var deletePromises = cases.map(function (c) {
+          return invoke("delete_case", { caseId: c.case_id });
+        });
+        Promise.all(deletePromises)
+          .then(function () { loadLibrary(); })
+          .catch(function (e) { statusMsg.textContent = "Error deleting: " + e; });
+      };
+    })(downloadedCases, sequenceTitle));
+    footer.appendChild(delAllBtn);
+
+    group.appendChild(header);
+    group.appendChild(partsContainer);
+    group.appendChild(footer);
+    caseList.appendChild(group);
+  }
+
+  function appendSequencePart(container, partInfo, partNum, manifest) {
+    var row = document.createElement("div");
+    row.className = "sequence-part" + (manifest ? "" : " sequence-part-missing");
+
+    if (manifest) {
+      var sizeStr = formatBytes(manifest.assets.total_size_bytes);
+      var failedCount = manifest.failed_assets ? manifest.failed_assets.length : 0;
+      row.innerHTML =
+        '<span class="sequence-part-info">' +
+          '<span class="sequence-part-num">' + partNum + '.</span> ' +
+          escapeHtml(manifest.title) +
+          '<span class="muted"> &middot; ' + manifest.assets.total_downloaded + ' assets (' + sizeStr + ')' +
+          (failedCount > 0 ? ' &middot; <span class="case-failed">' + failedCount + ' failed</span>' : '') +
+          '</span>' +
+        '</span>';
+
+      var actions = document.createElement("span");
+      actions.className = "sequence-part-actions";
+
+      var playBtn = document.createElement("button");
+      playBtn.className = "play-btn";
+      playBtn.innerHTML = "&#9654;";
+      playBtn.title = "Play this part";
+      playBtn.addEventListener("click", (function (c) {
+        return function () { playCase(c.case_id, c.title); };
+      })(manifest));
+      actions.appendChild(playBtn);
+
+      var updatePartBtn = document.createElement("button");
+      updatePartBtn.className = "update-btn";
+      updatePartBtn.textContent = "Update";
+      updatePartBtn.addEventListener("click", (function (c) {
+        return function () { updateCase(c.case_id); };
+      })(manifest));
+      actions.appendChild(updatePartBtn);
+
+      if (failedCount > 0) {
+        var retryPartBtn = document.createElement("button");
+        retryPartBtn.className = "retry-btn";
+        retryPartBtn.textContent = "Retry (" + failedCount + ")";
+        retryPartBtn.title = "Retry failed assets (likely dead links — may not help)";
+        retryPartBtn.addEventListener("click", (function (c) {
+          return function () { retryCase(c.case_id, c.failed_assets); };
+        })(manifest));
+        actions.appendChild(retryPartBtn);
+      }
+
+      var linkPartBtn = document.createElement("button");
+      linkPartBtn.className = "link-btn";
+      linkPartBtn.textContent = "Link";
+      linkPartBtn.title = "Copy AAO link";
+      linkPartBtn.addEventListener("click", (function (id) {
+        return function () { copyTrialLink(id); };
+      })(manifest.case_id));
+      actions.appendChild(linkPartBtn);
+
+      var exportBtn = document.createElement("button");
+      exportBtn.className = "export-btn";
+      exportBtn.textContent = "Export";
+      exportBtn.addEventListener("click", (function (c) {
+        return function () { exportCase(c.case_id, c.title); };
+      })(manifest));
+      actions.appendChild(exportBtn);
+
+      var deleteBtn = document.createElement("button");
+      deleteBtn.className = "delete-btn";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.addEventListener("click", (function (c) {
+        return function () { deleteCase(c.case_id, c.title); };
+      })(manifest));
+      actions.appendChild(deleteBtn);
+
+      row.appendChild(actions);
+    } else {
+      row.innerHTML =
+        '<span class="sequence-part-info">' +
+          '<span class="sequence-part-num">' + partNum + '.</span> ' +
+          escapeHtml(partInfo.title || ("Case " + partInfo.id)) +
+          '<span class="muted"> &middot; not downloaded</span>' +
+        '</span>';
+    }
+
+    container.appendChild(row);
+  }
+
+  function appendCaseCard(c) {
+    var card = document.createElement("div");
+    card.className = "case-card";
+    card.dataset.caseId = c.case_id;
+
+    var sizeStr = formatBytes(c.assets.total_size_bytes);
+    var assetCount = c.assets.total_downloaded;
+    var dateStr = c.download_date ? formatDate(c.download_date) : "";
+    var failedCount = c.failed_assets ? c.failed_assets.length : 0;
+
+    card.innerHTML =
+      '<div class="case-info">' +
+        "<strong>" + escapeHtml(c.title) + "</strong>" +
+        '<p class="case-meta">' +
+          "by " + escapeHtml(c.author) +
+          " &middot; " + escapeHtml(c.language.toUpperCase()) +
+          " &middot; " + assetCount + " assets (" + sizeStr + ")" +
+          (failedCount > 0 ? ' &middot; <span class="case-failed">' + failedCount + " failed</span>" : "") +
+          (dateStr ? ' &middot; <span class="case-date">' + dateStr + "</span>" : "") +
+        "</p>" +
+      "</div>" +
+      '<div class="case-actions">' +
+        '<button class="play-btn">&#9654; Play</button>' +
+        '<button class="case-continue-btn play-btn" title="Resume from last save">&#9654; Continue</button>' +
+        '<button class="update-btn">Update</button>' +
+        (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
+        '<button class="link-btn" title="Copy AAO link">Link</button>' +
+        '<button class="export-btn">Export</button>' +
+        '<button class="delete-btn">Delete</button>' +
+      "</div>";
+
+    card.querySelector(".play-btn").addEventListener("click", function () {
+      playCase(c.case_id, c.title);
+    });
+
+    (function (caseId, caseTitle) {
+      card.querySelector(".case-continue-btn").addEventListener("click", function () {
+        statusMsg.textContent = "Checking saves...";
+        findLastSequenceSave([{ id: caseId }]).then(function (lastSave) {
+          if (!lastSave) {
+            statusMsg.textContent = "No saves found for this case.";
+            return;
+          }
+          statusMsg.textContent = 'Resuming "' + caseTitle + '"...';
+          invoke("open_game", { caseId: caseId })
+            .then(function (url) {
+              var sep = url.indexOf("?") === -1 ? "?" : "&";
+              var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
+              showPlayer(caseTitle, fullUrl);
+            })
+            .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+        });
+      });
+    })(c.case_id, c.title);
+
+    card.querySelector(".update-btn").addEventListener("click", function () {
+      updateCase(c.case_id);
+    });
+
+    var retryBtn = card.querySelector(".retry-btn");
+    if (retryBtn) {
+      retryBtn.addEventListener("click", function () {
+        retryCase(c.case_id, c.failed_assets);
+      });
+    }
+
+    card.querySelector(".link-btn").addEventListener("click", function () {
+      copyTrialLink(c.case_id);
+    });
+
+    card.querySelector(".export-btn").addEventListener("click", function () {
+      exportCase(c.case_id, c.title);
+    });
+
+    card.querySelector(".delete-btn").addEventListener("click", function () {
+      deleteCase(c.case_id, c.title);
+    });
+
+    caseList.appendChild(card);
+  }
+
+  // --- Collections ---
+
+  function appendCollectionGroup(collection, allCases, sequenceGroups) {
+    var items = collection.items || [];
+    var itemCount = items.length;
+
+    // Count total size across all items in the collection
+    var totalSize = 0;
+    var totalCases = 0;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type === "sequence" && sequenceGroups[items[i].title]) {
+        var seqCases = sequenceGroups[items[i].title].cases;
+        for (var sc = 0; sc < seqCases.length; sc++) {
+          totalSize += seqCases[sc].assets.total_size_bytes;
+          totalCases++;
+        }
+      } else if (items[i].type === "case" && allCases[items[i].case_id]) {
+        totalSize += allCases[items[i].case_id].assets.total_size_bytes;
+        totalCases++;
+      }
+    }
+
+    var group = document.createElement("div");
+    group.className = "collection-group";
+
+    // Header
+    var header = document.createElement("div");
+    header.className = "collection-header";
+    header.innerHTML =
+      '<span class="collection-header-toggle">&#9660;</span> ' +
+      '<strong>' + escapeHtml(collection.title) + '</strong>' +
+      '<span class="collection-meta">' +
+        itemCount + ' item' + (itemCount !== 1 ? 's' : '') +
+        ' &middot; ' + totalCases + ' case' + (totalCases !== 1 ? 's' : '') +
+        ' &middot; ' + formatBytes(totalSize) +
+      '</span>';
+
+    var itemsContainer = document.createElement("div");
+    itemsContainer.className = "collection-items";
+
+    header.addEventListener("click", function () {
+      var isOpen = !itemsContainer.classList.contains("hidden");
+      if (isOpen) {
+        itemsContainer.classList.add("hidden");
+        header.querySelector(".collection-header-toggle").innerHTML = "&#9654;";
+      } else {
+        itemsContainer.classList.remove("hidden");
+        header.querySelector(".collection-header-toggle").innerHTML = "&#9660;";
+      }
+    });
+
+    // Render each item in order
+    for (var j = 0; j < items.length; j++) {
+      var item = items[j];
+      if (item.type === "sequence" && sequenceGroups[item.title]) {
+        var sg = sequenceGroups[item.title];
+        appendSequenceGroupInto(itemsContainer, item.title, sg.list, sg.cases);
+      } else if (item.type === "case" && allCases[item.case_id]) {
+        appendCaseCardInto(itemsContainer, allCases[item.case_id]);
+      }
+    }
+
+    // Footer actions
+    var footer = document.createElement("div");
+    footer.className = "collection-actions";
+
+    // Play from Part 1 — play the first playable case across all items in order
+    var firstPlayable = findFirstPlayableInCollection(items, allCases, sequenceGroups);
+    if (firstPlayable) {
+      var playFirstBtn = document.createElement("button");
+      playFirstBtn.className = "play-btn";
+      playFirstBtn.innerHTML = "&#9654; Play from Part 1";
+      playFirstBtn.addEventListener("click", (function (c) {
+        return function () { playCase(c.case_id, c.title); };
+      })(firstPlayable));
+      footer.appendChild(playFirstBtn);
+    }
+
+    // Continue button — find latest save across all cases in the collection
+    var allCollectionCaseIds = getCollectionCaseIds(items, allCases, sequenceGroups);
+    if (allCollectionCaseIds.length > 0) {
+      var continueBtn = document.createElement("button");
+      continueBtn.className = "play-btn continue-btn";
+      continueBtn.innerHTML = "&#9654; Continue";
+      continueBtn.title = "Resume from your most recent save across all cases in this collection";
+      continueBtn.addEventListener("click", (function (caseIds, casesMap) {
+        return function () {
+          statusMsg.textContent = "Checking saves...";
+          // Build a fake sequenceList from caseIds so we can reuse findLastSequenceSave
+          var fakeList = caseIds.map(function (id) { return { id: id }; });
+          findLastSequenceSave(fakeList).then(function (lastSave) {
+            if (!lastSave) {
+              statusMsg.textContent = "No saves found in this collection.";
+              return;
+            }
+            var matchTitle = casesMap[lastSave.partId] ? casesMap[lastSave.partId].title : ("Case " + lastSave.partId);
+            statusMsg.textContent = 'Resuming from save in "' + matchTitle + '"...';
+            invoke("open_game", { caseId: lastSave.partId })
+              .then(function (url) {
+                var sep = url.indexOf("?") === -1 ? "?" : "&";
+                var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
+                showPlayer(matchTitle, fullUrl);
+              })
+              .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+          });
+        };
+      })(allCollectionCaseIds, allCases));
+      footer.appendChild(continueBtn);
+    }
+
+    // Edit button
+    var editBtn = document.createElement("button");
+    editBtn.className = "edit-collection-btn";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", (function (col) {
+      return function () { showEditCollectionModal(col); };
+    })(collection));
+    footer.appendChild(editBtn);
+
+    // Export Collection button
+    var exportColBtn = document.createElement("button");
+    exportColBtn.className = "export-btn";
+    exportColBtn.textContent = "Export Collection";
+    exportColBtn.addEventListener("click", (function (col, caseIds) {
+      return function () { exportCollection(col, caseIds); };
+    })(collection, allCollectionCaseIds));
+    footer.appendChild(exportColBtn);
+
+    // Delete button
+    var delBtn = document.createElement("button");
+    delBtn.className = "delete-btn";
+    delBtn.textContent = "Delete Collection";
+    delBtn.addEventListener("click", (function (col) {
+      return function () {
+        if (!confirm('Delete collection "' + col.title + '"?\nCases will not be deleted.')) return;
+        invoke("delete_collection", { id: col.id })
+          .then(function () { loadLibrary(); })
+          .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+      };
+    })(collection));
+    footer.appendChild(delBtn);
+
+    group.appendChild(header);
+    group.appendChild(itemsContainer);
+    group.appendChild(footer);
+    caseList.appendChild(group);
+  }
+
+  /**
+   * Render a sequence group inside a container (used within collection items).
+   * Reuses the same logic as appendSequenceGroup but appends to a given container.
+   */
+  function appendSequenceGroupInto(container, sequenceTitle, sequenceList, downloadedCases) {
+    var totalParts = sequenceList.length;
+    var downloadedCount = downloadedCases.length;
+    var totalSize = 0;
+    var downloadedIds = [];
+    for (var i = 0; i < downloadedCases.length; i++) {
+      totalSize += downloadedCases[i].assets.total_size_bytes;
+      downloadedIds.push(downloadedCases[i].case_id);
+    }
+    var missingIds = [];
+    for (var j = 0; j < sequenceList.length; j++) {
+      if (downloadedIds.indexOf(sequenceList[j].id) === -1) {
+        missingIds.push(sequenceList[j].id);
+      }
+    }
+
+    var groupEl = document.createElement("div");
+    groupEl.className = "sequence-group";
+
+    var header = document.createElement("div");
+    header.className = "sequence-header";
+    header.innerHTML =
+      '<span class="sequence-header-toggle">&#9660;</span> ' +
+      '<strong>' + escapeHtml(sequenceTitle) + '</strong>' +
+      '<span class="sequence-meta">' +
+        downloadedCount + '/' + totalParts + ' parts' +
+        ' &middot; ' + formatBytes(totalSize) +
+      '</span>';
+
+    var partsContainer = document.createElement("div");
+    partsContainer.className = "sequence-parts";
+
+    header.addEventListener("click", function () {
+      var isOpen = !partsContainer.classList.contains("hidden");
+      if (isOpen) {
+        partsContainer.classList.add("hidden");
+        header.querySelector(".sequence-header-toggle").innerHTML = "&#9654;";
+      } else {
+        partsContainer.classList.remove("hidden");
+        header.querySelector(".sequence-header-toggle").innerHTML = "&#9660;";
+      }
+    });
+
+    for (var k = 0; k < sequenceList.length; k++) {
+      var partInfo = sequenceList[k];
+      var downloaded = null;
+      for (var d = 0; d < downloadedCases.length; d++) {
+        if (downloadedCases[d].case_id === partInfo.id) {
+          downloaded = downloadedCases[d];
+          break;
+        }
+      }
+      appendSequencePart(partsContainer, partInfo, k + 1, downloaded);
+    }
+
+    // Sequence-specific footer
+    var seqFooter = document.createElement("div");
+    seqFooter.className = "sequence-actions";
+
+    if (downloadedCases.length > 0) {
+      var firstCase = null;
+      for (var f = 0; f < sequenceList.length; f++) {
+        for (var fc = 0; fc < downloadedCases.length; fc++) {
+          if (downloadedCases[fc].case_id === sequenceList[f].id) {
+            firstCase = downloadedCases[fc];
+            break;
+          }
+        }
+        if (firstCase) break;
+      }
+      if (firstCase) {
+        var playBtn = document.createElement("button");
+        playBtn.className = "play-btn";
+        playBtn.innerHTML = "&#9654; Play from Part 1";
+        playBtn.addEventListener("click", (function (c) {
+          return function () { playCase(c.case_id, c.title); };
+        })(firstCase));
+        seqFooter.appendChild(playBtn);
+      }
+    }
+
+    // Continue (play from last save) button
+    if (downloadedCases.length > 0) {
+      var continueBtn = document.createElement("button");
+      continueBtn.className = "play-btn continue-btn";
+      continueBtn.innerHTML = "&#9654; Continue";
+      continueBtn.title = "Resume from your most recent save across all parts";
+      continueBtn.addEventListener("click", (function (seqList, dlCases) {
+        return function () {
+          statusMsg.textContent = "Checking saves...";
+          findLastSequenceSave(seqList).then(function (lastSave) {
+            if (!lastSave) {
+              statusMsg.textContent = "No saves found for this sequence. Use 'Play from Part 1' to start.";
+              return;
+            }
+            // Find the matching downloaded case for the title
+            var matchTitle = "Part " + lastSave.partId;
+            for (var mc = 0; mc < dlCases.length; mc++) {
+              if (dlCases[mc].case_id === lastSave.partId) {
+                matchTitle = dlCases[mc].title;
+                break;
+              }
+            }
+            statusMsg.textContent = "Resuming from save in \"" + matchTitle + "\"...";
+            invoke("open_game", { caseId: lastSave.partId })
+              .then(function (url) {
+                // Append save_data to the URL
+                var sep = url.indexOf("?") === -1 ? "?" : "&";
+                var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
+                showPlayer(matchTitle, fullUrl);
+              })
+              .catch(function (e) {
+                statusMsg.textContent = "Error: " + e;
+              });
+          });
+        };
+      })(sequenceList, downloadedCases));
+      seqFooter.appendChild(continueBtn);
+    }
+
+    if (missingIds.length > 0) {
+      var dlBtn = document.createElement("button");
+      dlBtn.className = "update-btn";
+      dlBtn.textContent = "Download " + missingIds.length + " remaining";
+      dlBtn.addEventListener("click", (function (ids, title) {
+        return function () {
+          if (downloadInProgress) {
+            statusMsg.textContent = "A download is already in progress.";
+            return;
+          }
+          startSequenceDownload(ids, title);
+        };
+      })(missingIds, sequenceTitle));
+      seqFooter.appendChild(dlBtn);
+    }
+
+    groupEl.appendChild(header);
+    groupEl.appendChild(partsContainer);
+    groupEl.appendChild(seqFooter);
+    container.appendChild(groupEl);
+  }
+
+  /**
+   * Render a case card inside a container (used within collection items).
+   */
+  function appendCaseCardInto(container, c) {
+    var card = document.createElement("div");
+    card.className = "case-card";
+    card.dataset.caseId = c.case_id;
+
+    var sizeStr = formatBytes(c.assets.total_size_bytes);
+    var assetCount = c.assets.total_downloaded;
+    var dateStr = c.download_date ? formatDate(c.download_date) : "";
+    var failedCount = c.failed_assets ? c.failed_assets.length : 0;
+
+    card.innerHTML =
+      '<div class="case-info">' +
+        "<strong>" + escapeHtml(c.title) + "</strong>" +
+        '<p class="case-meta">' +
+          "by " + escapeHtml(c.author) +
+          " &middot; " + escapeHtml(c.language.toUpperCase()) +
+          " &middot; " + assetCount + " assets (" + sizeStr + ")" +
+          (failedCount > 0 ? ' &middot; <span class="case-failed">' + failedCount + " failed</span>" : "") +
+          (dateStr ? ' &middot; <span class="case-date">' + dateStr + "</span>" : "") +
+        "</p>" +
+      "</div>" +
+      '<div class="case-actions">' +
+        '<button class="play-btn">&#9654; Play</button>' +
+        '<button class="case-continue-btn play-btn" title="Resume from last save">&#9654; Continue</button>' +
+        '<button class="update-btn">Update</button>' +
+        (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
+        '<button class="link-btn" title="Copy AAO link">Link</button>' +
+        '<button class="export-btn">Export</button>' +
+        '<button class="delete-btn">Delete</button>' +
+      "</div>";
+
+    card.querySelector(".play-btn").addEventListener("click", function () {
+      playCase(c.case_id, c.title);
+    });
+    (function (caseId, caseTitle) {
+      card.querySelector(".case-continue-btn").addEventListener("click", function () {
+        statusMsg.textContent = "Checking saves...";
+        findLastSequenceSave([{ id: caseId }]).then(function (lastSave) {
+          if (!lastSave) {
+            statusMsg.textContent = "No saves found for this case.";
+            return;
+          }
+          statusMsg.textContent = 'Resuming "' + caseTitle + '"...';
+          invoke("open_game", { caseId: caseId })
+            .then(function (url) {
+              var sep = url.indexOf("?") === -1 ? "?" : "&";
+              var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
+              showPlayer(caseTitle, fullUrl);
+            })
+            .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+        });
+      });
+    })(c.case_id, c.title);
+    card.querySelector(".update-btn").addEventListener("click", function () {
+      updateCase(c.case_id);
+    });
+    var retryBtn = card.querySelector(".retry-btn");
+    if (retryBtn) {
+      retryBtn.addEventListener("click", function () {
+        retryCase(c.case_id, c.failed_assets);
+      });
+    }
+    card.querySelector(".link-btn").addEventListener("click", function () {
+      copyTrialLink(c.case_id);
+    });
+    card.querySelector(".export-btn").addEventListener("click", function () {
+      exportCase(c.case_id, c.title);
+    });
+    card.querySelector(".delete-btn").addEventListener("click", function () {
+      deleteCase(c.case_id, c.title);
+    });
+
+    container.appendChild(card);
+  }
+
+  function findFirstPlayableInCollection(items, allCases, sequenceGroups) {
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item.type === "sequence" && sequenceGroups[item.title]) {
+        var sg = sequenceGroups[item.title];
+        for (var f = 0; f < sg.list.length; f++) {
+          for (var fc = 0; fc < sg.cases.length; fc++) {
+            if (sg.cases[fc].case_id === sg.list[f].id) {
+              return sg.cases[fc];
+            }
+          }
+        }
+      } else if (item.type === "case" && allCases[item.case_id]) {
+        return allCases[item.case_id];
+      }
+    }
+    return null;
+  }
+
+  function getCollectionCaseIds(items, allCases, sequenceGroups) {
+    var ids = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item.type === "sequence" && sequenceGroups[item.title]) {
+        var sg = sequenceGroups[item.title];
+        for (var c = 0; c < sg.cases.length; c++) {
+          ids.push(sg.cases[c].case_id);
+        }
+      } else if (item.type === "case" && allCases[item.case_id]) {
+        ids.push(item.case_id);
+      }
+    }
+    return ids;
+  }
+
+  function exportCollection(collection, caseIds) {
+    var safeName = collection.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+    var defaultName = safeName + ".aaocase";
+    statusMsg.textContent = "Choosing export location...";
+    invoke("pick_export_file", { defaultName: defaultName })
+      .then(function (destPath) {
+        if (!destPath) {
+          statusMsg.textContent = "";
+          return;
+        }
+        progressContainer.classList.remove("hidden");
+        progressPhase.textContent = "Exporting collection...";
+        progressBarInner.style.width = "0%";
+        progressText.textContent = "";
+
+        var onEvent = new Channel();
+        onEvent.onmessage = function (msg) {
+          if (msg.event === "progress") {
+            var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+            progressBarInner.style.width = pct + "%";
+            progressText.textContent =
+              msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
+          } else if (msg.event === "finished") {
+            progressBarInner.style.width = "100%";
+            progressPhase.textContent = "Export complete!";
+            progressText.textContent = formatBytes(msg.data.total_bytes);
+          }
+        };
+
+        // Ask whether to include game saves
+        var includeSaves = confirm("Include game saves in the export?");
+        var savesPromise = includeSaves
+          ? readGameSaves(caseIds)
+          : Promise.resolve(null);
+
+        return savesPromise.then(function (saves) {
+          return invoke("export_collection", {
+            collectionId: collection.id,
+            destPath: destPath,
+            saves: saves,
+            onEvent: onEvent
+          }).then(function (size) {
+            var msg = 'Exported collection "' + collection.title + '" (' + formatBytes(size) + ")";
+            if (saves) msg += " with saves";
+            statusMsg.textContent = msg;
+          });
+        });
+      })
+      .catch(function (e) {
+        console.error("[MAIN] export collection error:", e);
+        statusMsg.textContent = "Export error: " + e;
+        progressContainer.classList.add("hidden");
+      });
+  }
+
+  // --- New Collection Modal ---
+
+  function showNewCollectionModal() {
+    // Gather all cases and sequence groups for the picker
+    invoke("list_cases").then(function (cases) {
+      invoke("list_collections").catch(function () { return []; }).then(function (collections) {
+        // Build sequence groups
+        var sequenceGroups = {};
+        var standalone = [];
+        for (var i = 0; i < cases.length; i++) {
+          var c = cases[i];
+          var seq = c.sequence;
+          if (seq && seq.title && seq.list && seq.list.length > 1) {
+            if (!sequenceGroups[seq.title]) {
+              sequenceGroups[seq.title] = { list: seq.list, cases: [] };
+            }
+            sequenceGroups[seq.title].cases.push(c);
+          } else {
+            standalone.push(c);
+          }
+        }
+
+        // Determine which items are already claimed
+        var claimedCaseIds = {};
+        var claimedSequenceTitles = {};
+        for (var col = 0; col < collections.length; col++) {
+          var items = collections[col].items || [];
+          for (var it = 0; it < items.length; it++) {
+            if (items[it].type === "case") claimedCaseIds[items[it].case_id] = true;
+            else if (items[it].type === "sequence") claimedSequenceTitles[items[it].title] = true;
+          }
+        }
+
+        showCollectionPickerModal(
+          "New Collection",
+          "",
+          sequenceGroups,
+          standalone,
+          claimedCaseIds,
+          claimedSequenceTitles,
+          function (title, selectedItems) {
+            invoke("create_collection", { title: title, items: selectedItems })
+              .then(function () { loadLibrary(); })
+              .catch(function (e) { statusMsg.textContent = "Error creating collection: " + e; });
+          }
+        );
+      });
+    });
+  }
+
+  function showCollectionPickerModal(modalTitle, existingTitle, sequenceGroups, standalone, claimedCaseIds, claimedSequenceTitles, onSave) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog modal-dialog-wide";
+
+    // Title
+    var titleField = document.createElement("div");
+    titleField.className = "modal-field";
+    var titleLabel = document.createElement("label");
+    titleLabel.textContent = "Collection Title";
+    var titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.placeholder = "My Collection";
+    titleInput.value = existingTitle;
+    titleField.appendChild(titleLabel);
+    titleField.appendChild(titleInput);
+
+    // Picker
+    var pickerField = document.createElement("div");
+    pickerField.className = "modal-field";
+    var pickerLabel = document.createElement("label");
+    pickerLabel.textContent = "Select Items";
+    var picker = document.createElement("div");
+    picker.className = "collection-picker";
+
+    // Build picker items
+    var groupKeys = Object.keys(sequenceGroups);
+    var checkboxes = []; // { checkbox, type, value }
+
+    if (groupKeys.length > 0) {
+      var seqLabel = document.createElement("div");
+      seqLabel.className = "collection-picker-group-label";
+      seqLabel.textContent = "Sequences";
+      picker.appendChild(seqLabel);
+
+      for (var g = 0; g < groupKeys.length; g++) {
+        (function (seqTitle) {
+          if (claimedSequenceTitles[seqTitle]) return;
+          var sg = sequenceGroups[seqTitle];
+          var row = document.createElement("label");
+          row.className = "collection-picker-item";
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          var label = document.createElement("span");
+          label.textContent = seqTitle;
+          var meta = document.createElement("span");
+          meta.className = "picker-item-meta";
+          meta.textContent = sg.cases.length + "/" + sg.list.length + " parts";
+          row.appendChild(cb);
+          row.appendChild(label);
+          row.appendChild(meta);
+          picker.appendChild(row);
+          checkboxes.push({ checkbox: cb, type: "sequence", value: seqTitle });
+        })(groupKeys[g]);
+      }
+    }
+
+    if (standalone.length > 0) {
+      var caseLabel = document.createElement("div");
+      caseLabel.className = "collection-picker-group-label";
+      caseLabel.textContent = "Standalone Cases";
+      picker.appendChild(caseLabel);
+
+      for (var s = 0; s < standalone.length; s++) {
+        (function (cs) {
+          if (claimedCaseIds[cs.case_id]) return;
+          var row = document.createElement("label");
+          row.className = "collection-picker-item";
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          var label = document.createElement("span");
+          label.textContent = cs.title;
+          var meta = document.createElement("span");
+          meta.className = "picker-item-meta";
+          meta.textContent = "ID " + cs.case_id;
+          row.appendChild(cb);
+          row.appendChild(label);
+          row.appendChild(meta);
+          picker.appendChild(row);
+          checkboxes.push({ checkbox: cb, type: "case", value: cs.case_id });
+        })(standalone[s]);
+      }
+    }
+
+    pickerField.appendChild(pickerLabel);
+    pickerField.appendChild(picker);
+
+    // Buttons
+    var buttons = document.createElement("div");
+    buttons.className = "modal-row-buttons";
+
+    var createBtn = document.createElement("button");
+    createBtn.className = "modal-btn modal-btn-secondary";
+    createBtn.textContent = modalTitle === "New Collection" ? "Create" : "Save";
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+
+    function close() {
+      document.body.removeChild(overlay);
+    }
+
+    createBtn.addEventListener("click", function () {
+      var title = titleInput.value.trim();
+      if (!title) {
+        titleInput.style.borderColor = "#a33";
+        titleInput.focus();
+        return;
+      }
+      var selectedItems = [];
+      for (var i = 0; i < checkboxes.length; i++) {
+        if (checkboxes[i].checkbox.checked) {
+          if (checkboxes[i].type === "sequence") {
+            selectedItems.push({ type: "sequence", title: checkboxes[i].value });
+          } else {
+            selectedItems.push({ type: "case", case_id: checkboxes[i].value });
+          }
+        }
+      }
+      if (selectedItems.length === 0) {
+        picker.style.borderColor = "#a33";
+        return;
+      }
+      close();
+      onSave(title, selectedItems);
+    });
+
+    cancelBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    buttons.appendChild(createBtn);
+    buttons.appendChild(cancelBtn);
+
+    modal.appendChild(titleField);
+    modal.appendChild(pickerField);
+    modal.appendChild(buttons);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    titleInput.focus();
+  }
+
+  // --- Edit Collection Modal ---
+
+  function showEditCollectionModal(collection) {
+    // Fetch case titles for display
+    invoke("list_cases").then(function (cases) {
+      var caseTitles = {};
+      for (var ci = 0; ci < cases.length; ci++) {
+        caseTitles[cases[ci].case_id] = cases[ci].title;
+      }
+      _showEditCollectionModalInner(collection, caseTitles);
+    });
+  }
+
+  function _showEditCollectionModalInner(collection, caseTitles) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog modal-dialog-wide";
+
+    // Title field
+    var titleField = document.createElement("div");
+    titleField.className = "modal-field";
+    var titleLabel = document.createElement("label");
+    titleLabel.textContent = "Collection Title";
+    var titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.value = collection.title;
+    titleField.appendChild(titleLabel);
+    titleField.appendChild(titleInput);
+
+    // Current items (reorderable)
+    var itemsLabel = document.createElement("label");
+    itemsLabel.textContent = "Items (drag to reorder)";
+    itemsLabel.style.display = "block";
+    itemsLabel.style.color = "#999";
+    itemsLabel.style.fontSize = "0.82rem";
+    itemsLabel.style.fontWeight = "500";
+    itemsLabel.style.marginBottom = "0.35rem";
+    itemsLabel.style.textTransform = "uppercase";
+    itemsLabel.style.letterSpacing = "0.04em";
+
+    var editItems = [];
+    for (var i = 0; i < (collection.items || []).length; i++) {
+      editItems.push({ type: collection.items[i].type, title: collection.items[i].title, case_id: collection.items[i].case_id });
+    }
+
+    var editListEl = document.createElement("div");
+    editListEl.className = "collection-edit-list";
+
+    function renderEditList() {
+      editListEl.innerHTML = "";
+      if (editItems.length === 0) {
+        var empty = document.createElement("div");
+        empty.className = "collection-edit-list-empty";
+        empty.textContent = "No items. Add some below.";
+        editListEl.appendChild(empty);
+        return;
+      }
+      for (var i = 0; i < editItems.length; i++) {
+        (function (idx) {
+          var item = editItems[idx];
+          var row = document.createElement("div");
+          row.className = "collection-edit-item";
+          row.draggable = true;
+          row.dataset.index = idx;
+
+          var handle = document.createElement("span");
+          handle.className = "drag-handle";
+          handle.textContent = "\u2630"; // ☰
+
+          var label = document.createElement("span");
+          label.className = "edit-item-label";
+          label.textContent = item.type === "sequence" ? item.title : (caseTitles[item.case_id] || ("Case " + item.case_id));
+
+          var typeTag = document.createElement("span");
+          typeTag.className = "edit-item-type";
+          typeTag.textContent = item.type;
+
+          var removeBtn = document.createElement("button");
+          removeBtn.className = "edit-item-remove";
+          removeBtn.textContent = "\u2715"; // ✕
+          removeBtn.title = "Remove from collection";
+          removeBtn.addEventListener("click", function () {
+            editItems.splice(idx, 1);
+            renderEditList();
+          });
+
+          // DnD events
+          row.addEventListener("dragstart", function (e) {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", String(idx));
+          });
+
+          row.addEventListener("dragover", function (e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            row.classList.add("drag-over");
+          });
+
+          row.addEventListener("dragleave", function () {
+            row.classList.remove("drag-over");
+          });
+
+          row.addEventListener("drop", function (e) {
+            e.preventDefault();
+            row.classList.remove("drag-over");
+            var fromIdx = parseInt(e.dataTransfer.getData("text/plain"), 10);
+            var toIdx = idx;
+            if (fromIdx === toIdx) return;
+            var moved = editItems.splice(fromIdx, 1)[0];
+            editItems.splice(toIdx, 0, moved);
+            renderEditList();
+          });
+
+          row.appendChild(handle);
+          row.appendChild(label);
+          row.appendChild(typeTag);
+          row.appendChild(removeBtn);
+          editListEl.appendChild(row);
+        })(i);
+      }
+    }
+
+    renderEditList();
+
+    // Add Items button
+    var addItemsBtn = document.createElement("button");
+    addItemsBtn.className = "modal-add-items-btn";
+    addItemsBtn.textContent = "+ Add Items";
+    addItemsBtn.addEventListener("click", function () {
+      showAddItemsSubModal(editItems, collection.id, function (newItems) {
+        for (var n = 0; n < newItems.length; n++) {
+          editItems.push(newItems[n]);
+        }
+        renderEditList();
+      });
+    });
+
+    // Buttons
+    var buttons = document.createElement("div");
+    buttons.className = "modal-row-buttons";
+
+    var saveBtn = document.createElement("button");
+    saveBtn.className = "modal-btn modal-btn-secondary";
+    saveBtn.textContent = "Save";
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+
+    function close() {
+      document.body.removeChild(overlay);
+    }
+
+    saveBtn.addEventListener("click", function () {
+      var title = titleInput.value.trim();
+      if (!title) {
+        titleInput.style.borderColor = "#a33";
+        titleInput.focus();
+        return;
+      }
+      close();
+      invoke("update_collection", { id: collection.id, title: title, items: editItems })
+        .then(function () { loadLibrary(); })
+        .catch(function (e) { statusMsg.textContent = "Error updating collection: " + e; });
+    });
+
+    cancelBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    buttons.appendChild(saveBtn);
+    buttons.appendChild(cancelBtn);
+
+    modal.appendChild(titleField);
+    modal.appendChild(itemsLabel);
+    modal.appendChild(editListEl);
+    modal.appendChild(addItemsBtn);
+    modal.appendChild(buttons);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    titleInput.focus();
+  }
+
+  /**
+   * Sub-modal for adding items to an existing collection being edited.
+   * Shows uncollected items (not in any collection, and not in the current edit list).
+   */
+  function showAddItemsSubModal(currentEditItems, currentCollectionId, onAdd) {
+    invoke("list_cases").then(function (cases) {
+      invoke("list_collections").catch(function () { return []; }).then(function (collections) {
+        var sequenceGroups = {};
+        var standalone = [];
+        for (var i = 0; i < cases.length; i++) {
+          var c = cases[i];
+          var seq = c.sequence;
+          if (seq && seq.title && seq.list && seq.list.length > 1) {
+            if (!sequenceGroups[seq.title]) {
+              sequenceGroups[seq.title] = { list: seq.list, cases: [] };
+            }
+            sequenceGroups[seq.title].cases.push(c);
+          } else {
+            standalone.push(c);
+          }
+        }
+
+        // Items claimed by OTHER collections (exclude current collection being edited)
+        var claimedCaseIds = {};
+        var claimedSequenceTitles = {};
+        for (var col = 0; col < collections.length; col++) {
+          if (collections[col].id === currentCollectionId) continue;
+          var items = collections[col].items || [];
+          for (var it = 0; it < items.length; it++) {
+            if (items[it].type === "case") claimedCaseIds[items[it].case_id] = true;
+            else if (items[it].type === "sequence") claimedSequenceTitles[items[it].title] = true;
+          }
+        }
+
+        // Items already in the edit list
+        for (var ei = 0; ei < currentEditItems.length; ei++) {
+          if (currentEditItems[ei].type === "case") claimedCaseIds[currentEditItems[ei].case_id] = true;
+          else if (currentEditItems[ei].type === "sequence") claimedSequenceTitles[currentEditItems[ei].title] = true;
+        }
+
+        var overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+
+        var modal = document.createElement("div");
+        modal.className = "modal-dialog modal-dialog-wide";
+
+        var heading = document.createElement("p");
+        heading.className = "modal-message";
+        heading.textContent = "Select items to add:";
+
+        var picker = document.createElement("div");
+        picker.className = "collection-picker";
+
+        var groupKeys = Object.keys(sequenceGroups);
+        var checkboxes = [];
+
+        if (groupKeys.length > 0) {
+          var seqLabel = document.createElement("div");
+          seqLabel.className = "collection-picker-group-label";
+          seqLabel.textContent = "Sequences";
+          picker.appendChild(seqLabel);
+
+          for (var g = 0; g < groupKeys.length; g++) {
+            (function (seqTitle) {
+              if (claimedSequenceTitles[seqTitle]) return;
+              var sg = sequenceGroups[seqTitle];
+              var row = document.createElement("label");
+              row.className = "collection-picker-item";
+              var cb = document.createElement("input");
+              cb.type = "checkbox";
+              var lbl = document.createElement("span");
+              lbl.textContent = seqTitle;
+              var meta = document.createElement("span");
+              meta.className = "picker-item-meta";
+              meta.textContent = sg.cases.length + "/" + sg.list.length + " parts";
+              row.appendChild(cb);
+              row.appendChild(lbl);
+              row.appendChild(meta);
+              picker.appendChild(row);
+              checkboxes.push({ checkbox: cb, type: "sequence", value: seqTitle });
+            })(groupKeys[g]);
+          }
+        }
+
+        if (standalone.length > 0) {
+          var caseLabel = document.createElement("div");
+          caseLabel.className = "collection-picker-group-label";
+          caseLabel.textContent = "Standalone Cases";
+          picker.appendChild(caseLabel);
+
+          for (var s = 0; s < standalone.length; s++) {
+            (function (cs) {
+              if (claimedCaseIds[cs.case_id]) return;
+              var row = document.createElement("label");
+              row.className = "collection-picker-item";
+              var cb = document.createElement("input");
+              cb.type = "checkbox";
+              var lbl = document.createElement("span");
+              lbl.textContent = cs.title;
+              var meta = document.createElement("span");
+              meta.className = "picker-item-meta";
+              meta.textContent = "ID " + cs.case_id;
+              row.appendChild(cb);
+              row.appendChild(lbl);
+              row.appendChild(meta);
+              picker.appendChild(row);
+              checkboxes.push({ checkbox: cb, type: "case", value: cs.case_id, title: cs.title });
+            })(standalone[s]);
+          }
+        }
+
+        var buttons = document.createElement("div");
+        buttons.className = "modal-row-buttons";
+
+        var addBtn = document.createElement("button");
+        addBtn.className = "modal-btn modal-btn-secondary";
+        addBtn.textContent = "Add Selected";
+
+        var cancelBtn = document.createElement("button");
+        cancelBtn.className = "modal-btn modal-btn-cancel";
+        cancelBtn.textContent = "Cancel";
+
+        function close() {
+          document.body.removeChild(overlay);
+        }
+
+        addBtn.addEventListener("click", function () {
+          var newItems = [];
+          for (var i = 0; i < checkboxes.length; i++) {
+            if (checkboxes[i].checkbox.checked) {
+              if (checkboxes[i].type === "sequence") {
+                newItems.push({ type: "sequence", title: checkboxes[i].value });
+              } else {
+                newItems.push({ type: "case", case_id: checkboxes[i].value, title: checkboxes[i].title });
+              }
+            }
+          }
+          close();
+          if (newItems.length > 0) onAdd(newItems);
+        });
+
+        cancelBtn.addEventListener("click", close);
+        overlay.addEventListener("click", function (e) {
+          if (e.target === overlay) close();
+        });
+
+        buttons.appendChild(addBtn);
+        buttons.appendChild(cancelBtn);
+
+        modal.appendChild(heading);
+        modal.appendChild(picker);
+        modal.appendChild(buttons);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+      });
+    });
+  }
+
+  // --- New Collection Button ---
+  var newCollectionBtn = document.getElementById("new-collection-btn");
+  if (newCollectionBtn) {
+    newCollectionBtn.addEventListener("click", function () {
+      showNewCollectionModal();
+    });
+  }
+
+  function playCase(caseId, title) {
+    console.log("[MAIN] playCase caseId=" + caseId + " title=" + title);
+    statusMsg.textContent = "Loading...";
+    invoke("open_game", { caseId: caseId })
+      .then(function (url) {
+        console.log("[MAIN] open_game returned url=" + url);
+        showPlayer(title, url);
+      })
+      .catch(function (e) {
+        console.error("[MAIN] open_game error:", e);
+        statusMsg.textContent = "Error: " + e;
+      });
+  }
+
+  function deleteCase(caseId, title) {
+    if (!confirm('Delete "' + title + '"?\nThis cannot be undone.')) {
+      return;
+    }
+    invoke("delete_case", { caseId: caseId })
+      .then(function () {
+        loadLibrary();
+      })
+      .catch(function (e) {
+        statusMsg.textContent = "Error deleting case: " + e;
+      });
+  }
+
+  function exportCase(caseId, title) {
+    console.log("[EXPORT] exportCase called, caseId=" + caseId + " title=" + title);
+    var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+    var defaultName = safeName + ".aaocase";
+    statusMsg.textContent = "Choosing export location...";
+    invoke("pick_export_file", { defaultName: defaultName })
+      .then(function (destPath) {
+        console.log("[EXPORT] pick_export_file returned:", destPath);
+        if (!destPath) {
+          statusMsg.textContent = "";
+          return;
+        }
+        progressContainer.classList.remove("hidden");
+        progressPhase.textContent = "Exporting...";
+        progressBarInner.style.width = "0%";
+        progressText.textContent = "";
+
+        var onEvent = new Channel();
+        onEvent.onmessage = function (msg) {
+          if (msg.event === "progress") {
+            var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+            progressBarInner.style.width = pct + "%";
+            progressText.textContent =
+              msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
+          } else if (msg.event === "finished") {
+            progressBarInner.style.width = "100%";
+            progressPhase.textContent = "Export complete!";
+            progressText.textContent = formatBytes(msg.data.total_bytes);
+          }
+        };
+
+        // Ask whether to include game saves
+        var includeSaves = confirm("Include game saves in the export?");
+        var savesPromise = includeSaves
+          ? readGameSaves([caseId])
+          : Promise.resolve(null);
+
+        return savesPromise.then(function (saves) {
+          return invoke("export_case", {
+            caseId: caseId,
+            destPath: destPath,
+            saves: saves,
+            onEvent: onEvent
+          }).then(function (size) {
+            var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
+            if (saves) msg += " with saves";
+            statusMsg.textContent = msg;
+          });
+        });
+      })
+      .catch(function (e) {
+        console.error("[MAIN] export error:", e);
+        statusMsg.textContent = "Export error: " + e;
+        progressContainer.classList.add("hidden");
+      });
+  }
+
+  // --- Download ---
+
+  caseIdInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      downloadBtn.click();
+    }
+  });
+
+  downloadBtn.addEventListener("click", function () {
+    var caseId = parseCaseId(caseIdInput.value);
+    if (!caseId) {
+      downloadResult.textContent =
+        "Please enter a valid case ID or AAO URL.";
+      downloadResult.className = "result-error";
+      return;
+    }
+
+    // Duplicate check (for single case)
+    if (knownCaseIds.indexOf(caseId) !== -1) {
+      if (!confirm("Case " + caseId + " is already in your library.\nDownload again? (This will overwrite it.)")) {
+        return;
+      }
+    }
+
+    if (downloadInProgress) {
+      statusMsg.textContent = "A download is already in progress.";
+      return;
+    }
+
+    // First fetch case info to check for sequence
+    downloadBtn.disabled = true;
+    caseIdInput.disabled = true;
+    downloadResult.textContent = "";
+    downloadResult.className = "";
+    progressContainer.classList.remove("hidden");
+    progressPhase.textContent = "Checking for sequence...";
+    progressBarInner.style.width = "0%";
+    progressText.textContent = "";
+
+    invoke("fetch_case_info", { caseId: caseId })
+      .then(function (caseInfo) {
+        var seq = caseInfo.sequence;
+        if (seq && seq.list && seq.list.length > 1) {
+          // This case is part of a sequence
+          progressContainer.classList.add("hidden");
+          var partNames = seq.list.map(function (p) { return p.title || ("Case " + p.id); });
+          var msg = 'This case is part of "' + (seq.title || "Untitled Sequence") + '" (' +
+            seq.list.length + " parts):\n\n";
+          for (var i = 0; i < partNames.length; i++) {
+            var partId = seq.list[i].id;
+            var alreadyDl = knownCaseIds.indexOf(partId) !== -1;
+            msg += (i + 1) + ". " + partNames[i] + (alreadyDl ? " (already downloaded)" : "") + "\n";
+          }
+          msg += "\nDownload all parts?";
+
+          if (confirm(msg)) {
+            var allIds = seq.list.map(function (p) { return p.id; });
+            startSequenceDownload(allIds, seq.title || "Untitled Sequence");
+          } else {
+            // Just download the single case
+            startDownload(caseId);
+          }
+        } else {
+          // No sequence, download single case
+          progressContainer.classList.add("hidden");
+          startDownload(caseId);
+        }
+      })
+      .catch(function (e) {
+        // If fetch_case_info fails, fall back to direct download
+        console.warn("[DOWNLOAD] fetch_case_info failed, falling back to direct download:", e);
+        progressContainer.classList.add("hidden");
+        startDownload(caseId);
+      });
+  });
+
+  function updateCase(caseId) {
+    if (downloadInProgress) {
+      statusMsg.textContent = "A download is already in progress.";
+      return;
+    }
+
+    showUpdateModal(
+      "What was updated for this case?",
+      "Script/dialog only",
+      "Re-download all assets",
+      function (choice) {
+        startUpdate(caseId, choice === 2);
+      }
+    );
+  }
+
+  function startUpdate(caseId, redownloadAssets, onDone) {
+    console.log("[UPDATE] startUpdate caseId=" + caseId + " redownloadAssets=" + redownloadAssets);
+    downloadInProgress = true;
+    downloadBtn.disabled = true;
+    caseIdInput.disabled = true;
+    downloadResult.textContent = "";
+    downloadResult.className = "";
+
+    // Show progress
+    progressContainer.classList.remove("hidden");
+    progressPhase.textContent = redownloadAssets
+      ? "Updating case (full)..."
+      : "Updating case (script only)...";
+    progressBarInner.style.width = "0%";
+    progressText.textContent = "";
+
+    var onEvent = new Channel();
+    onEvent.onmessage = function (msg) {
+      console.log("[UPDATE EVENT]", JSON.stringify(msg));
+      if (msg.event === "started") {
+        progressPhase.textContent = "Downloading " + msg.data.total + " assets...";
+        progressText.textContent = "0 / " + msg.data.total;
+      } else if (msg.event === "progress") {
+        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+        progressBarInner.style.width = pct + "%";
+        progressText.textContent =
+          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
+      } else if (msg.event === "finished") {
+        var sizeStr = formatBytes(msg.data.total_bytes);
+        progressBarInner.style.width = "100%";
+        progressPhase.textContent = "Update complete!";
+        progressText.textContent =
+          msg.data.downloaded + " downloaded" +
+          (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
+          " (" + sizeStr + ")";
+      } else if (msg.event === "error") {
+        progressPhase.textContent = "Error";
+        progressText.textContent = msg.data.message;
+      }
+    };
+
+    invoke("update_case", {
+      caseId: caseId,
+      redownloadAssets: redownloadAssets,
+      onEvent: onEvent
+    })
+      .then(function (manifest) {
+        console.log("[UPDATE] update_case success:", JSON.stringify({
+          case_id: manifest.case_id,
+          title: manifest.title,
+          total_downloaded: manifest.assets.total_downloaded,
+          failed_count: manifest.failed_assets ? manifest.failed_assets.length : 0
+        }));
+        downloadResult.innerHTML =
+          '<strong>' + escapeHtml(manifest.title) + '</strong> updated!';
+        downloadResult.className = "result-success";
+        loadLibrary();
+      })
+      .catch(function (e) {
+        console.error("[UPDATE] update_case error:", e);
+        downloadResult.textContent = "Update error: " + e;
+        downloadResult.className = "result-error";
+      })
+      .finally(function () {
+        downloadInProgress = false;
+        downloadBtn.disabled = false;
+        caseIdInput.disabled = false;
+        if (onDone) {
+          onDone();
+        } else {
+          setTimeout(function () {
+            progressContainer.classList.add("hidden");
+          }, 4000);
+        }
+      });
+  }
+
+  function retryCase(caseId, failedAssets) {
+    if (downloadInProgress) {
+      statusMsg.textContent = "A download is already in progress.";
+      return;
+    }
+
+    var aaoCount = 0;
+    var externalCount = 0;
+    if (failedAssets) {
+      for (var i = 0; i < failedAssets.length; i++) {
+        if (failedAssets[i].url && failedAssets[i].url.indexOf("aaonline.fr") !== -1) {
+          aaoCount++;
+        } else {
+          externalCount++;
+        }
+      }
+    }
+
+    var msg = "Retry " + (failedAssets ? failedAssets.length : "") + " failed assets?\n\n";
+    if (aaoCount > 0 && externalCount > 0) {
+      msg += aaoCount + " failed from aaonline.fr — the site was probably temporarily down. " +
+        "Retrying these should work.\n\n" +
+        externalCount + " failed from external hosting — these are likely dead links " +
+        "(the author's hosting is down or the files were removed). " +
+        "Retrying will most likely fail again.\n\n";
+    } else if (aaoCount > 0) {
+      msg += "All failed assets are from aaonline.fr — the site was probably temporarily down. " +
+        "Retrying should work.\n\n";
+    } else {
+      msg += "Failed assets are from external hosting — these are likely dead links " +
+        "(the author's hosting is down or the files were removed). " +
+        "Retrying will most likely fail again.\n\n";
+    }
+    msg += "Only previously failed assets will be retried — nothing already downloaded " +
+      "will be re-downloaded.";
+
+    if (!confirm(msg)) {
+      return;
+    }
+    console.log("[RETRY] retryCase caseId=" + caseId);
+    downloadInProgress = true;
+    downloadBtn.disabled = true;
+    downloadResult.textContent = "";
+    downloadResult.className = "";
+
+    // Show progress
+    progressContainer.classList.remove("hidden");
+    progressPhase.textContent = "Retrying failed assets...";
+    progressBarInner.style.width = "0%";
+    progressText.textContent = "";
+
+    var onEvent = new Channel();
+    onEvent.onmessage = function (msg) {
+      console.log("[RETRY EVENT]", JSON.stringify(msg));
+      if (msg.event === "started") {
+        progressPhase.textContent = "Retrying " + msg.data.total + " assets...";
+        progressText.textContent = "0 / " + msg.data.total;
+      } else if (msg.event === "progress") {
+        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+        progressBarInner.style.width = pct + "%";
+        progressText.textContent =
+          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
+      } else if (msg.event === "finished") {
+        var sizeStr = formatBytes(msg.data.total_bytes);
+        progressBarInner.style.width = "100%";
+        progressPhase.textContent = "Retry complete!";
+        progressText.textContent =
+          msg.data.downloaded + " downloaded" +
+          (msg.data.failed > 0 ? ", " + msg.data.failed + " still failed" : "") +
+          " (" + sizeStr + ")";
+      }
+    };
+
+    invoke("retry_failed_assets", { caseId: caseId, onEvent: onEvent })
+      .then(function (manifest) {
+        console.log("[RETRY] retry_failed_assets success:", JSON.stringify({
+          case_id: manifest.case_id,
+          total_downloaded: manifest.assets.total_downloaded,
+          still_failed: manifest.failed_assets ? manifest.failed_assets.length : 0
+        }));
+        var stillFailed = manifest.failed_assets ? manifest.failed_assets.length : 0;
+        if (stillFailed === 0) {
+          downloadResult.textContent = "All assets downloaded successfully!";
+          downloadResult.className = "result-success";
+        } else {
+          downloadResult.textContent = stillFailed + " asset(s) still failed (server may be down).";
+          downloadResult.className = "result-error";
+        }
+        loadLibrary();
+      })
+      .catch(function (e) {
+        console.error("[RETRY] retry_failed_assets error:", e);
+        downloadResult.textContent = "Retry error: " + e;
+        downloadResult.className = "result-error";
+      })
+      .finally(function () {
+        downloadInProgress = false;
+        downloadBtn.disabled = false;
+        setTimeout(function () {
+          progressContainer.classList.add("hidden");
+        }, 4000);
+      });
+  }
+
+  function startSequenceDownload(caseIds, sequenceTitle) {
+    console.log("[DOWNLOAD] startSequenceDownload ids=" + JSON.stringify(caseIds) + " title=" + sequenceTitle);
+    downloadInProgress = true;
+    downloadBtn.disabled = true;
+    caseIdInput.disabled = true;
+    downloadResult.textContent = "";
+    downloadResult.className = "";
+
+    progressContainer.classList.remove("hidden");
+    progressPhase.textContent = 'Downloading "' + sequenceTitle + '" (' + caseIds.length + " parts)...";
+    progressBarInner.style.width = "0%";
+    progressText.textContent = "";
+
+    var currentPartLabel = "";
+
+    var onEvent = new Channel();
+    onEvent.onmessage = function (msg) {
+      console.log("[SEQUENCE EVENT]", JSON.stringify(msg));
+      if (msg.event === "sequence_progress") {
+        currentPartLabel = "Part " + msg.data.current_part + "/" + msg.data.total_parts +
+          ": " + msg.data.part_title;
+        progressPhase.textContent = currentPartLabel;
+        progressBarInner.style.width = "0%";
+        progressText.textContent = "";
+      } else if (msg.event === "started") {
+        progressText.textContent = "0 / " + msg.data.total + " assets";
+      } else if (msg.event === "progress") {
+        var pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
+        progressBarInner.style.width = pct + "%";
+        progressText.textContent =
+          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
+      } else if (msg.event === "finished") {
+        var sizeStr = formatBytes(msg.data.total_bytes);
+        progressBarInner.style.width = "100%";
+        progressPhase.textContent = "Sequence download complete!";
+        progressText.textContent =
+          msg.data.downloaded + " downloaded" +
+          (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
+          " (" + sizeStr + ")";
+      } else if (msg.event === "error") {
+        progressPhase.textContent = "Error";
+        progressText.textContent = msg.data.message;
+      }
+    };
+
+    invoke("download_sequence", { caseIds: caseIds, onEvent: onEvent })
+      .then(function (manifests) {
+        console.log("[DOWNLOAD] download_sequence success: " + manifests.length + " parts");
+        downloadResult.innerHTML =
+          '<strong>' + escapeHtml(sequenceTitle) + '</strong> (' +
+          manifests.length + ' parts) &mdash; ready to play!';
+        downloadResult.className = "result-success";
+        caseIdInput.value = "";
+        loadLibrary();
+      })
+      .catch(function (e) {
+        console.error("[DOWNLOAD] download_sequence error:", e);
+        downloadResult.textContent = "Error: " + e;
+        downloadResult.className = "result-error";
+      })
+      .finally(function () {
+        downloadInProgress = false;
+        downloadBtn.disabled = false;
+        caseIdInput.disabled = false;
+        setTimeout(function () {
+          progressContainer.classList.add("hidden");
+        }, 4000);
+      });
+  }
+
+  function startDownload(caseId) {
+    if (downloadInProgress) {
+      statusMsg.textContent = "A download is already in progress.";
+      return;
+    }
+    console.log("[DOWNLOAD] startDownload caseId=" + caseId);
+    downloadInProgress = true;
+    downloadBtn.disabled = true;
+    caseIdInput.disabled = true;
+    downloadResult.textContent = "";
+    downloadResult.className = "";
+
+    // Show progress
+    progressContainer.classList.remove("hidden");
+    progressPhase.textContent = "Fetching case info...";
+    progressBarInner.style.width = "0%";
+    progressText.textContent = "";
+
+    var onEvent = new Channel();
+    onEvent.onmessage = function (msg) {
+      console.log("[DOWNLOAD EVENT]", JSON.stringify(msg));
+      if (msg.event === "started") {
+        progressPhase.textContent = "Downloading " + msg.data.total + " assets...";
+        progressText.textContent = "0 / " + msg.data.total;
+      } else if (msg.event === "progress") {
+        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+        progressBarInner.style.width = pct + "%";
+        progressText.textContent =
+          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
+      } else if (msg.event === "finished") {
+        var sizeStr = formatBytes(msg.data.total_bytes);
+        progressBarInner.style.width = "100%";
+        progressPhase.textContent = "Download complete!";
+        progressText.textContent =
+          msg.data.downloaded + " downloaded" +
+          (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
+          " (" + sizeStr + ")";
+      } else if (msg.event === "error") {
+        progressPhase.textContent = "Error";
+        progressText.textContent = msg.data.message;
+      }
+    };
+
+    invoke("download_case", { caseId: caseId, onEvent: onEvent })
+      .then(function (manifest) {
+        console.log("[DOWNLOAD] download_case success:", JSON.stringify({
+          case_id: manifest.case_id,
+          title: manifest.title,
+          total_downloaded: manifest.assets.total_downloaded,
+          total_size: manifest.assets.total_size_bytes,
+          failed_count: manifest.failed_assets ? manifest.failed_assets.length : 0
+        }));
+        downloadResult.innerHTML =
+          '<strong>' + escapeHtml(manifest.title) + '</strong> by ' +
+          escapeHtml(manifest.author) + ' &mdash; ready to play!';
+        downloadResult.className = "result-success";
+        caseIdInput.value = "";
+        loadLibrary();
+        // Scroll the new case into view after a brief delay
+        setTimeout(function () {
+          var card = document.querySelector('.case-card[data-case-id="' + manifest.case_id + '"]');
+          if (card) {
+            card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            card.classList.add("case-card-highlight");
+            setTimeout(function () { card.classList.remove("case-card-highlight"); }, 2000);
+          }
+        }, 200);
+      })
+      .catch(function (e) {
+        console.error("[DOWNLOAD] download_case error:", e);
+        var errMsg = String(e);
+        // Make common errors more readable
+        if (errMsg.indexOf("404") !== -1 || errMsg.indexOf("not found") !== -1) {
+          downloadResult.textContent = "Case not found. Check the ID and try again.";
+        } else if (errMsg.indexOf("timeout") !== -1 || errMsg.indexOf("connection") !== -1) {
+          downloadResult.textContent = "Connection failed. Check your internet and try again.";
+        } else {
+          downloadResult.textContent = "Error: " + errMsg;
+        }
+        downloadResult.className = "result-error";
+      })
+      .finally(function () {
+        downloadInProgress = false;
+        downloadBtn.disabled = false;
+        caseIdInput.disabled = false;
+        setTimeout(function () {
+          progressContainer.classList.add("hidden");
+        }, 4000);
+      });
+  }
+
+  // --- Helpers ---
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return "0 B";
+    var units = ["B", "KB", "MB", "GB"];
+    var i = 0;
+    var b = bytes;
+    while (b >= 1024 && i < units.length - 1) {
+      b /= 1024;
+      i++;
+    }
+    return b.toFixed(i > 0 ? 1 : 0) + " " + units[i];
+  }
+
+  function formatDate(isoStr) {
+    // "2025-01-15T12:30:00Z" → "Jan 15, 2025"
+    if (!isoStr) return "";
+    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var parts = isoStr.split("T")[0].split("-");
+    if (parts.length !== 3) return isoStr.split("T")[0];
+    var y = parts[0];
+    var m = parseInt(parts[1], 10) - 1;
+    var d = parseInt(parts[2], 10);
+    return months[m] + " " + d + ", " + y;
+  }
+
+  function escapeHtml(text) {
+    if (!text) return "";
+    var div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  /**
+   * Show a modal dialog with a message and two action buttons.
+   * Calls callback(choice) where choice is 1 or 2, or does nothing if cancelled.
+   */
+  function showUpdateModal(message, btn1Label, btn2Label, callback) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog";
+
+    var msg = document.createElement("p");
+    msg.className = "modal-message";
+    msg.textContent = message;
+
+    var buttons = document.createElement("div");
+    buttons.className = "modal-buttons";
+
+    var btn1 = document.createElement("button");
+    btn1.className = "modal-btn modal-btn-primary";
+    btn1.textContent = btn1Label;
+
+    var btn2 = document.createElement("button");
+    btn2.className = "modal-btn modal-btn-secondary";
+    btn2.textContent = btn2Label;
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+
+    function close() {
+      document.body.removeChild(overlay);
+    }
+
+    btn1.addEventListener("click", function () { close(); callback(1); });
+    btn2.addEventListener("click", function () { close(); callback(2); });
+    cancelBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    buttons.appendChild(btn1);
+    buttons.appendChild(btn2);
+    buttons.appendChild(cancelBtn);
+    modal.appendChild(msg);
+    modal.appendChild(buttons);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  }
+
+  /**
+   * Read game_saves from the game server's localStorage (different origin than launcher).
+   * Creates a hidden iframe on the server origin, reads its localStorage, then cleans up.
+   * Returns a Promise that resolves with the save info or null.
+   */
+  /**
+   * Read game_saves from the game server's localStorage (different origin than launcher).
+   * Creates a hidden iframe on the server origin, reads its localStorage, then cleans up.
+   * Returns a Promise that resolves with the save info or null.
+   */
+  /**
+   * Read game_saves from the game server's localStorage (different origin than launcher).
+   * Uses a hidden iframe + postMessage to cross the origin boundary safely.
+   * Returns a Promise that resolves with the save info or null.
+   */
+  var bridgeIdCounter = 0;
+
+  function findLastSequenceSave(sequenceList) {
+    return invoke("get_server_url").then(function (serverUrl) {
+      var bridgeId = "read_" + (++bridgeIdCounter);
+      console.log("[SAVE] Server URL:", serverUrl, "bridgeId:", bridgeId);
+
+      return new Promise(function (resolve) {
+        var iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        var resolved = false;
+
+        // Listen for postMessage from the bridge page (filter by bridgeId)
+        function onMessage(event) {
+          if (resolved) return;
+          if (!event.data || event.data.type !== "game_saves") return;
+          if (event.data.bridgeId && event.data.bridgeId !== bridgeId) return;
+
+          console.log("[SAVE]", bridgeId, "Received postMessage, data length:", event.data.data ? event.data.data.length : "null");
+          if (event.data.error) {
+            console.error("[SAVE] Bridge error:", event.data.error);
+          }
+          resolved = true;
+          window.removeEventListener("message", onMessage);
+          document.body.removeChild(iframe);
+
+          var raw = event.data.data;
+          var gameSaves = raw ? JSON.parse(raw) : null;
+          if (!gameSaves) {
+            console.log("[SAVE] No game_saves in server localStorage");
+            resolve(null);
+            return;
+          }
+
+          console.log("[SAVE] game_saves keys:", Object.keys(gameSaves));
+          var latestDate = 0;
+          var latestPartId = null;
+          var latestSaveString = null;
+
+          for (var i = 0; i < sequenceList.length; i++) {
+            var partId = sequenceList[i].id;
+            if (!(partId in gameSaves)) continue;
+            console.log("[SAVE] Part", partId, "has", Object.keys(gameSaves[partId]).length, "saves");
+            for (var saveDate in gameSaves[partId]) {
+              var ts = parseInt(saveDate, 10);
+              if (ts > latestDate) {
+                latestDate = ts;
+                latestPartId = partId;
+                latestSaveString = gameSaves[partId][saveDate];
+              }
+            }
+          }
+
+          if (!latestPartId) {
+            console.log("[SAVE] No matching saves for sequence parts");
+            resolve(null);
+            return;
+          }
+          console.log("[SAVE] Latest save: part", latestPartId, "date", new Date(latestDate));
+          resolve({
+            partId: latestPartId,
+            saveDate: latestDate,
+            saveDataBase64: btoa(unescape(encodeURIComponent(latestSaveString)))
+          });
+        }
+
+        window.addEventListener("message", onMessage);
+
+        // Timeout after 3s
+        setTimeout(function () {
+          if (!resolved) {
+            resolved = true;
+            window.removeEventListener("message", onMessage);
+            if (iframe.parentNode) document.body.removeChild(iframe);
+            console.warn("[SAVE]", bridgeId, "Bridge timed out");
+            resolve(null);
+          }
+        }, 3000);
+
+        iframe.src = serverUrl + "/localstorage_bridge.html?id=" + bridgeId;
+        document.body.appendChild(iframe);
+      });
+    });
+  }
+
+  /**
+   * Read all game_saves from the game server's localStorage.
+   * If caseIds is provided, filters to only those case IDs.
+   * Returns a Promise that resolves with the saves object or null.
+   */
+  function readGameSaves(caseIds) {
+    return invoke("get_server_url").then(function (serverUrl) {
+      var bridgeId = "saves_" + (++bridgeIdCounter);
+      return new Promise(function (resolve) {
+        var iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        var resolved = false;
+
+        function onMessage(event) {
+          if (resolved) return;
+          if (!event.data || event.data.type !== "game_saves") return;
+          if (event.data.bridgeId && event.data.bridgeId !== bridgeId) return;
+          resolved = true;
+          window.removeEventListener("message", onMessage);
+          document.body.removeChild(iframe);
+
+          var raw = event.data.data;
+          var gameSaves = raw ? JSON.parse(raw) : null;
+          if (!gameSaves) {
+            resolve(null);
+            return;
+          }
+
+          // Filter to requested case IDs if specified
+          if (caseIds && caseIds.length > 0) {
+            var filtered = {};
+            var found = false;
+            for (var i = 0; i < caseIds.length; i++) {
+              var id = String(caseIds[i]);
+              if (id in gameSaves) {
+                filtered[id] = gameSaves[id];
+                found = true;
+              }
+            }
+            resolve(found ? filtered : null);
+          } else {
+            resolve(gameSaves);
+          }
+        }
+
+        window.addEventListener("message", onMessage);
+        setTimeout(function () {
+          if (!resolved) {
+            resolved = true;
+            window.removeEventListener("message", onMessage);
+            if (iframe.parentNode) document.body.removeChild(iframe);
+            resolve(null);
+          }
+        }, 3000);
+
+        iframe.src = serverUrl + "/localstorage_bridge.html?id=" + bridgeId;
+        document.body.appendChild(iframe);
+      });
+    });
+  }
+
+  /**
+   * Write (merge) saves into the game server's localStorage.
+   * Won't overwrite existing save timestamps — only adds new ones.
+   * Returns a Promise that resolves with { success, merged } or rejects.
+   */
+  function writeGameSaves(savesJson) {
+    return invoke("get_server_url").then(function (serverUrl) {
+      var bridgeId = "write_" + (++bridgeIdCounter);
+      console.log("[SAVE]", bridgeId, "writeGameSaves starting");
+      return new Promise(function (resolve) {
+        var iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        var resolved = false;
+
+        function onMessage(event) {
+          if (!event.data) return;
+          // Filter by bridgeId to prevent cross-talk with concurrent bridge iframes
+          if (event.data.bridgeId && event.data.bridgeId !== bridgeId) return;
+
+          // Wait for the initial game_saves message (bridge sends it on load),
+          // then send our write_saves message.
+          if (event.data.type === "game_saves" && !resolved) {
+            console.log("[SAVE]", bridgeId, "Bridge loaded, sending write_saves");
+            iframe.contentWindow.postMessage({ type: "write_saves", data: savesJson, bridgeId: bridgeId }, "*");
+          }
+
+          if (event.data.type === "write_saves_result") {
+            if (event.data.bridgeId && event.data.bridgeId !== bridgeId) return;
+            resolved = true;
+            window.removeEventListener("message", onMessage);
+            if (iframe.parentNode) document.body.removeChild(iframe);
+            console.log("[SAVE]", bridgeId, "write result:", event.data);
+            resolve(event.data);
+          }
+        }
+
+        window.addEventListener("message", onMessage);
+        setTimeout(function () {
+          if (!resolved) {
+            resolved = true;
+            window.removeEventListener("message", onMessage);
+            if (iframe.parentNode) document.body.removeChild(iframe);
+            console.warn("[SAVE]", bridgeId, "Bridge timed out");
+            resolve({ success: false, error: "Bridge timed out" });
+          }
+        }, 5000);
+
+        iframe.src = serverUrl + "/localstorage_bridge.html?id=" + bridgeId;
+        document.body.appendChild(iframe);
+      });
+    });
+  }
+
+  function copyTrialLink(caseId) {
+    var url = "https://aaonline.fr/player.php?trial_id=" + caseId;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () {
+        statusMsg.textContent = "Link copied: " + url;
+      }).catch(function () {
+        // Fallback: open in browser
+        window.__TAURI__.shell.open(url);
+        statusMsg.textContent = "Opened: " + url;
+      });
+    } else {
+      window.__TAURI__.shell.open(url);
+      statusMsg.textContent = "Opened: " + url;
+    }
+  }
+
+  // --- Settings ---
+
+  var settingsToggle = document.getElementById("settings-toggle");
+  var settingsPanel = document.getElementById("settings-panel");
+  var settingsLanguage = document.getElementById("settings-language");
+  var settingsConcurrency = document.getElementById("settings-concurrency");
+  var concurrencyValue = document.getElementById("concurrency-value");
+  var dataDirPath = document.getElementById("data-dir-path");
+  var openDataDirBtn = document.getElementById("open-data-dir-btn");
+  var storageText = document.getElementById("storage-text");
+  var clearCacheBtn = document.getElementById("clear-cache-btn");
+
+  var settingsSaveTimeout = null;
+
+  settingsToggle.addEventListener("click", function () {
+    var isOpen = !settingsPanel.classList.contains("hidden");
+    if (isOpen) {
+      settingsPanel.classList.add("hidden");
+      settingsToggle.classList.remove("open");
+    } else {
+      settingsPanel.classList.remove("hidden");
+      settingsToggle.classList.add("open");
+      loadStorageInfo();
+    }
+  });
+
+  var settingsAutoSave = document.getElementById("settings-autosave");
+
+  function loadSettings() {
+    invoke("get_settings").then(function (settings) {
+      settingsLanguage.value = settings.language;
+      settingsConcurrency.value = settings.concurrent_downloads;
+      concurrencyValue.textContent = settings.concurrent_downloads;
+      if (settingsAutoSave) settingsAutoSave.checked = settings.auto_save;
+    }).catch(function (e) {
+      console.error("[SETTINGS] Failed to load settings:", e);
+    });
+  }
+
+  function saveSettings() {
+    var settings = {
+      language: settingsLanguage.value,
+      concurrent_downloads: parseInt(settingsConcurrency.value, 10),
+      auto_save: settingsAutoSave ? settingsAutoSave.checked : true
+    };
+    invoke("save_settings", { settings: settings }).catch(function (e) {
+      console.error("[SETTINGS] Failed to save settings:", e);
+    });
+  }
+
+  function debounceSave() {
+    if (settingsSaveTimeout) clearTimeout(settingsSaveTimeout);
+    settingsSaveTimeout = setTimeout(saveSettings, 300);
+  }
+
+  settingsLanguage.addEventListener("change", debounceSave);
+
+  settingsConcurrency.addEventListener("input", function () {
+    concurrencyValue.textContent = settingsConcurrency.value;
+    debounceSave();
+  });
+
+  if (settingsAutoSave) settingsAutoSave.addEventListener("change", debounceSave);
+
+  function loadStorageInfo() {
+    invoke("get_storage_info").then(function (info) {
+      dataDirPath.textContent = info.data_dir;
+      var casesSize = formatBytes(info.cases_size_bytes);
+      var defaultsSize = formatBytes(info.defaults_size_bytes);
+      var totalSize = formatBytes(info.total_size_bytes);
+      storageText.textContent =
+        info.cases_count + " case" + (info.cases_count !== 1 ? "s" : "") +
+        " (" + casesSize + ") + defaults cache (" + defaultsSize + ") = " + totalSize + " total";
+      storageText.className = "";
+    }).catch(function (e) {
+      console.error("[SETTINGS] Failed to load storage info:", e);
+      storageText.textContent = "Unable to compute storage info.";
+    });
+  }
+
+  openDataDirBtn.addEventListener("click", function () {
+    invoke("open_data_dir").catch(function (e) {
+      console.error("[SETTINGS] Failed to open data dir:", e);
+    });
+  });
+
+  clearCacheBtn.addEventListener("click", function () {
+    if (!confirm("Clear the default assets cache?\n\nThis will remove downloaded default sprites, backgrounds, sounds, etc.\nThey will be re-downloaded when you next download a case.")) {
+      return;
+    }
+    clearCacheBtn.disabled = true;
+    clearCacheBtn.textContent = "Clearing...";
+    invoke("clear_default_cache").then(function (bytesFreed) {
+      clearCacheBtn.textContent = "Clear Cache";
+      clearCacheBtn.disabled = false;
+      statusMsg.textContent = "Cache cleared (" + formatBytes(bytesFreed) + " freed).";
+      loadStorageInfo();
+    }).catch(function (e) {
+      clearCacheBtn.textContent = "Clear Cache";
+      clearCacheBtn.disabled = false;
+      console.error("[SETTINGS] Failed to clear cache:", e);
+      statusMsg.textContent = "Error clearing cache: " + e;
+    });
+  });
+
+  // --- Import ---
+
+  var importFolderBtn = document.getElementById("import-folder-btn");
+  var importFileBtn = document.getElementById("import-file-btn");
+  var importResult = document.getElementById("import-result");
+
+  function doImport(sourcePath) {
+    console.log("[IMPORT] doImport called with path:", sourcePath);
+    importFolderBtn.disabled = true;
+    importFileBtn.disabled = true;
+    importResult.textContent = "";
+    importResult.className = "";
+
+    progressContainer.classList.remove("hidden");
+    progressPhase.textContent = "Importing...";
+    progressBarInner.style.width = "0%";
+    progressText.textContent = "";
+
+    var onEvent = new Channel();
+    onEvent.onmessage = function (msg) {
+      if (msg.event === "sequence_progress") {
+        progressPhase.textContent =
+          "Case " + msg.data.current_part + " / " + msg.data.total_parts + ": " + msg.data.part_title;
+      } else if (msg.event === "progress") {
+        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+        progressBarInner.style.width = pct + "%";
+        progressText.textContent =
+          msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
+      } else if (msg.event === "finished") {
+        progressBarInner.style.width = "100%";
+        progressPhase.textContent = "Import complete!";
+        progressText.textContent =
+          msg.data.downloaded + " assets (" + formatBytes(msg.data.total_bytes) + ")";
+      }
+    };
+
+    invoke("import_case", { sourcePath: sourcePath, onEvent: onEvent })
+      .then(function (result) {
+        var manifest = result.manifest;
+        var savesInfo = "";
+
+        // If the imported file contained saves, merge them into localStorage.
+        // IMPORTANT: wait for writeGameSaves to complete BEFORE loadLibrary(),
+        // because both create bridge iframes and their postMessage listeners cross-talk.
+        console.log("[IMPORT] result.saves:", result.saves ? "present (" + JSON.stringify(result.saves).length + " bytes)" : "null");
+        console.log("[IMPORT] result.missing_defaults:", result.missing_defaults);
+
+        var savesPromise = Promise.resolve();
+        if (result.saves) {
+          var saveCount = 0;
+          for (var caseId in result.saves) {
+            for (var ts in result.saves[caseId]) {
+              saveCount++;
+            }
+          }
+          if (saveCount > 0) {
+            savesInfo = ", " + saveCount + " save" + (saveCount > 1 ? "s" : "") + " imported";
+            savesPromise = writeGameSaves(result.saves).then(function (writeResult) {
+              if (writeResult && writeResult.success) {
+                console.log("[IMPORT] Merged " + writeResult.merged + " saves into localStorage");
+              } else {
+                console.warn("[IMPORT] Failed to write saves:", writeResult && writeResult.error);
+              }
+            });
+          }
+        }
+
+        // Wait for saves to be written, THEN refresh the library (which also uses bridge iframes)
+        savesPromise.then(function () {
+          var missingInfo = "";
+          if (result.missing_defaults > 0) {
+            missingInfo = '<br><span style="color:#e8a030;">' + result.missing_defaults +
+              ' shared assets missing. Use "Update" on the case to try downloading them ' +
+              '&mdash; some links may no longer work.</span>';
+          }
+
+          // Batch import (parent folder with multiple case subfolders)
+          if (result.batch_manifests && result.batch_manifests.length > 1) {
+            var totalAssets = 0;
+            var totalBytes = 0;
+            for (var i = 0; i < result.batch_manifests.length; i++) {
+              totalAssets += result.batch_manifests[i].assets.total_downloaded;
+              totalBytes += result.batch_manifests[i].assets.total_size_bytes;
+            }
+            var html = '<strong>' + result.batch_manifests.length + ' cases imported</strong> (' +
+              totalAssets + ' assets, ' + formatBytes(totalBytes) + savesInfo + ')';
+            if (result.batch_errors && result.batch_errors.length > 0) {
+              html += '<br><span style="color:#e8a030;">' + result.batch_errors.length +
+                ' case(s) skipped: ' + escapeHtml(result.batch_errors.join("; ")) + '</span>';
+            }
+            html += missingInfo;
+            importResult.innerHTML = html;
+
+            // Offer to create a collection from the imported batch
+            if (confirm("Create a collection from these " + result.batch_manifests.length + " imported cases?")) {
+              var collectionName = prompt("Collection name:", "Imported Cases");
+              if (collectionName && collectionName.trim()) {
+                // Group manifests by sequence title
+                var batchSeqGroups = {};
+                var batchStandalone = [];
+                for (var bi = 0; bi < result.batch_manifests.length; bi++) {
+                  var bm = result.batch_manifests[bi];
+                  var bseq = bm.sequence;
+                  if (bseq && bseq.title && bseq.list && bseq.list.length > 1) {
+                    if (!batchSeqGroups[bseq.title]) batchSeqGroups[bseq.title] = true;
+                  } else {
+                    batchStandalone.push(bm.case_id);
+                  }
+                }
+                var collItems = [];
+                var batchSeqKeys = Object.keys(batchSeqGroups);
+                for (var bsi = 0; bsi < batchSeqKeys.length; bsi++) {
+                  collItems.push({ type: "sequence", title: batchSeqKeys[bsi] });
+                }
+                for (var bci = 0; bci < batchStandalone.length; bci++) {
+                  collItems.push({ type: "case", case_id: batchStandalone[bci] });
+                }
+                invoke("create_collection", { title: collectionName.trim(), items: collItems })
+                  .then(function () { loadLibrary(); })
+                  .catch(function (e) { statusMsg.textContent = "Error creating collection: " + e; });
+              }
+            }
+          } else {
+            // Single case import
+            importResult.innerHTML =
+              '<strong>' + escapeHtml(manifest.title) + '</strong> by ' +
+              escapeHtml(manifest.author) + ' &mdash; imported (' +
+              manifest.assets.total_downloaded + ' assets, ' +
+              formatBytes(manifest.assets.total_size_bytes) + savesInfo + ')' + missingInfo;
+          }
+
+          importResult.className = "result-success";
+          progressBarInner.style.width = "100%";
+          progressPhase.textContent = "Import complete!";
+          loadLibrary();
+        });
+      })
+      .catch(function (e) {
+        importResult.textContent = "Import error: " + e;
+        importResult.className = "result-error";
+        progressContainer.classList.add("hidden");
+      })
+      .finally(function () {
+        importFolderBtn.disabled = false;
+        importFileBtn.disabled = false;
+      });
+  }
+
+  importFolderBtn.addEventListener("click", function () {
+    if (downloadInProgress) {
+      importResult.textContent = "A download is already in progress.";
+      importResult.className = "result-error";
+      return;
+    }
+
+    invoke("pick_folder")
+      .then(function (selected) {
+        console.log("[IMPORT] pick_folder returned:", selected);
+        if (!selected) return;
+        doImport(selected);
+      })
+      .catch(function (e) {
+        console.error("[IMPORT] pick_folder error:", e);
+        importResult.textContent = "Could not open folder picker: " + e;
+        importResult.className = "result-error";
+      });
+  });
+
+  importFileBtn.addEventListener("click", function () {
+    if (downloadInProgress) {
+      importResult.textContent = "A download is already in progress.";
+      importResult.className = "result-error";
+      return;
+    }
+
+    invoke("pick_import_file")
+      .then(function (selected) {
+        console.log("[IMPORT] pick_import_file returned:", selected);
+        if (!selected) return;
+        doImport(selected);
+      })
+      .catch(function (e) {
+        console.error("[IMPORT] pick_import_file error:", e);
+        importResult.textContent = "Could not open file picker: " + e;
+        importResult.className = "result-error";
+      });
+  });
+
+  // --- Init ---
+  loadLibrary();
+  loadSettings();
+});

@@ -1,0 +1,383 @@
+/* Input */
+
+input[type="number"] { width:5em; }
+
+select, .select {
+	border: thin solid grey;
+	border-radius: 4px;
+
+	background: white;
+	color: black;
+	font-size: 1em;
+	
+	cursor: default;
+}
+
+select
+{
+	padding: 1px 0;
+}
+
+.select
+{
+	padding: 3px;
+}
+
+input:focus,
+textarea:focus,
+select:focus, 
+.select:focus {
+	box-shadow:0 0 3px black;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled,
+.select:disabled {
+	border-color:lightgrey;
+	color:grey;
+}
+
+input.bad_value,
+textarea.bad_value {
+	background: #fdd;
+}
+
+/* Wrapped selects */
+.select-wrapper
+{
+	display: inline-block;
+}
+
+.select-wrapper > *
+{
+	display: inline-block;
+	width: 50%;
+}
+
+/* Labels */
+
+label {
+	display: block;
+	clear: both;
+	margin: 0;
+	padding: 0.1em 0;
+}
+
+label.regular_label > * {
+	display: inline-block;
+	box-sizing: border-box;
+	width: 50%;
+	margin: 0;
+	
+	vertical-align: middle;
+}
+
+label > .form_element_container {
+	text-align: left;
+}
+
+label.checkbox_label > .form_element_container {
+	display: inline;
+}
+
+label.regular_label > .form_element_container > * {
+	box-sizing: border-box;
+	width: 100%;
+}
+
+/* Custom select element */
+
+.select {
+	display: inline-block;
+	position: relative;
+	box-sizing: border-box;
+	vertical-align: middle;
+	line-height: 1em;
+	
+	text-align: left;
+	
+	outline: 0;
+	user-select: none;
+}
+
+.select::before {
+	content: "\0000a0";
+	float: left;
+	width: 0;
+}
+
+.select::after {
+	content: "";
+	display: block;
+	clear: both;
+}
+
+.select .select-list {
+	position: relative;
+	box-sizing: border-box;
+	width: 100%;
+	height: 1em;
+	padding-right: 14px;
+	line-height: 1em;
+	overflow: hidden;
+	
+	background: inherit;
+	border-radius: inherit;
+	
+	outline: 0;
+}
+
+.select .select-list::before {
+	content: "▾";
+	
+	position: absolute;
+	right: 0;
+	width: 14px;
+	
+	background: inherit;
+	font: inherit;
+	border-radius: inherit;
+	
+	text-align: center;
+}
+
+.select * {
+	margin: 0;
+	padding: 0;
+	line-height: inherit;
+	font-size: inherit;
+}
+
+.select h6 {
+	display: none;
+	
+	
+}
+
+.select li {
+	display: none;
+	
+	list-style: none;
+}
+
+.select li.selected {
+	display: block;
+}
+
+.select .select-preview {
+	display: none;
+}
+
+.select .select-list:focus {
+	/* Obsolete now that display is managed by JS *
+	position: absolute;
+	min-width: 100%;
+	max-height: 400px;
+	/**/
+	
+	height: auto;
+	width: auto;
+	z-index: 150;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding: 2px;
+	
+	border: 1px solid #999;
+}
+
+.select .select-list:focus::before {
+	display: none;
+}
+
+.select .select-list:focus h6 {
+	display: block;
+	padding: 2px;
+	
+	line-height: 1.4em;
+	color: #888;
+	
+	cursor: pointer;
+	transition: 0.2s;
+}
+
+.select .select-list:focus h6:hover {
+	padding-left: 6px;
+	background: #003F6C;
+	color: white;
+}
+
+.select .select-list:focus h6::before {
+	content: "▼";
+	display: inline-block;
+	width: 1em;
+}
+
+.select .select-list:focus h6.closed::before {
+	content: "▶";
+}
+
+.select .select-list:focus li {
+	display: block;
+	line-height: 1.4em;
+	transition: 0.2s;
+}
+
+.select .select-list:focus .preview:empty {
+	display: none;
+}
+
+.select .select-list:focus h6.closed + ul {
+	display: none;
+}
+
+.select .select-list:focus li .select-input {
+	display: inline-block; /* Not display:none because contents have to be focusable.*/
+	width: 0;
+	height: 0;
+	overflow: hidden;
+}
+
+.select .select-list:focus li:hover,
+.select .select-list:focus li.kbd-selected {
+	background: #44bbff;
+	color: white;
+}
+
+.select .select-list:focus li:active {
+	background: #003F6C;
+}
+.select .select-list:focus li.selected {
+	font-style: italic;
+}
+
+/* Special select for pictures with preview */
+.select.picture-select .select-list:focus li {
+	float: left;
+	width: 100px;
+	padding: 5px;
+	
+	text-align: center;
+}
+
+.select.picture-select .select-list:focus li .select-name {
+	display: block;
+	width: 100px;
+	height: 28px;
+	overflow: hidden;
+	
+	line-height: 14px;
+	font-size: 12px;
+}
+
+.select.picture-select .select-list:focus li .select-preview,
+.select.picture-select .select-list:focus li .select-preview img {
+	display: inline-block;
+	width: 100px;
+	height: 75px;
+}
+
+.select.picture-select.icons .select-list:focus li .select-preview, 
+.select.picture-select.icons .select-list:focus li .select-preview img {
+	width: 70px;
+	height: 70px;
+}
+
+.select.picture-select .select-list:focus li .select-preview:empty {
+	display: none;
+}
+
+.select.picture-select .select-list:focus h6 {
+	clear: both;
+}
+
+.select.sound-select .select-list:focus li .select-preview {
+	display: inline-block;
+	width: 1.4em;
+	height: 1.4em;
+	margin: 0 2px;
+	
+	background: url(../img/sound_preview.png) no-repeat;
+	
+	cursor: pointer;
+}
+
+.select.sound-select .select-list:focus li .select-preview:empty {
+	display: none;
+}
+
+.select.sound-select .select-list:focus li .select-preview.playing {
+	background: url(../img/sound_preview_playing.gif) no-repeat;
+}
+
+/* Coordinates picker */
+.coords-picker
+{
+	display: inline-block;
+	width: 100%;
+}
+
+.coords-picker > button
+{
+	display: inline-block;
+	width: 70%;
+}
+
+.coords-picker > span
+{
+	display: inline-block;
+	width: 30%;
+}
+
+/* Fixed "popup" panel */
+.fixed-panel
+{
+	display: block;
+	z-index: 50;
+	
+	border: 1px solid black;
+	
+	background: white;
+	color: black;
+}
+
+/* DB search field */
+.db-search-field
+{
+	display: inline-block;
+	position: relative;
+}
+
+.db-search-field ul:empty
+{
+	display: none;
+}
+
+.db-search-field ul
+{
+	display: block;
+	position: absolute;
+	z-index: 150;
+	overflow-x: hidden;
+	overflow-y: auto;
+	margin: 0;
+	padding: 2px;
+	
+	border: 1px solid #999;
+	
+	background: white;
+}
+
+.db-search-field ul li
+{
+	list-style: none;
+	cursor: pointer;
+	transition: 0.2s;
+}
+
+.db-search-field ul li.kbd-selected,
+.db-search-field ul li:hover
+{
+	background: #44bbff;
+	color: white;
+}

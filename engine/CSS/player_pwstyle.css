@@ -1,0 +1,134 @@
+#screen-bottom {
+	background-image:url("pwstyle/bottom_bg_main.png");
+}
+
+[id|=screen] .bs-button {
+	background:rgb(89,15,0);
+	border:2px groove grey;
+	box-shadow:inset 0 1px #7B5036,
+	           inset -1px 0 #500F00,
+	           inset 0 -1px #500F00,
+	           inset 1px 0 #500F00;
+	border-radius:4px;
+	color:white;
+	opacity:0.75;
+}
+
+[id|=screen] a.bs-button:hover,
+[id|=screen] a.bs-button:focus { border-color:#FFD652; }
+
+[id|=screen] a.bs-button:active {
+	background:#AE7315;
+	border-color:grey;
+	box-shadow:inset 0 1px #BDB61B,
+	           inset -1px 0 #9D6213,
+	           inset 0 -1px #9D6213,
+	           inset 1px 0 #9D6213;
+}
+
+[id|=screen] .buttonbar-top {
+	height:18px;
+	background:#DFDFDF;
+	border-bottom:1px solid #959595;
+}
+
+[id|=screen] .buttonbar-bottom {
+	height:18px;
+	background:#DFDFDF;
+	border-top:1px solid #959595;
+}
+
+[id|=screen].thin-bars .buttonbar-top,
+[id|=screen].thin-bars .buttonbar-bottom { height:16px; }
+
+[id|=screen] .buttonbar-top .bs-button,
+[id|=screen] .buttonbar-bottom .bs-button {
+	background:#7B3100;
+	border-color:white;
+	box-shadow:inset 0 1px #A57B5A, inset -1px 0 #844210, inset 0 -1px #6B2900, inset 1px 0 #844210;
+	color:white;
+	
+	border-radius: 0;
+	opacity: 1;
+}
+
+[id|=screen] .buttonbar-top a.bs-button:hover,
+[id|=screen] .buttonbar-top a.bs-button:focus,
+[id|=screen] .buttonbar-bottom a.bs-button:hover,
+[id|=screen] .buttonbar-bottom a.bs-button:focus { border-color:#FFD652; }
+
+[id|=screen] .buttonbar-top a.bs-button:active,
+[id|=screen] .buttonbar-bottom a.bs-button:active {
+	background:#EFA521;
+	border-color:#B5B5B5;
+	box-shadow:inset 0 1px #FFF721, inset -1px 0 #FFBD21, inset 0 -1px #D68C21, inset 1px 0 #FFBD21;
+}
+
+[id|=screen] .buttonbar-top .bs-button.topleft {
+	border-bottom-right-radius:15px;
+}
+
+[id|=screen] .buttonbar-top .bs-button.topmiddle {
+	border-bottom-left-radius:15px;
+	border-bottom-right-radius:15px;
+}
+
+[id|=screen] .buttonbar-top .bs-button.topright {
+	border-bottom-left-radius:15px;
+}
+
+[id|=screen] .buttonbar-bottom .bs-button.bottomleft {
+	border-top-right-radius:15px;
+}
+
+[id|=screen] .buttonbar-bottom .bs-button.bottomright {
+	border-top-left-radius:15px;
+}
+
+/* Psyche locks button */
+#locks
+{
+	border: 2px solid #d8d8d8;
+	background: #b0b0b0;
+	border-radius: 20px;
+	box-shadow:inset 0 0 5px #909090;
+}
+
+#locks:hover, #locks:focus
+{
+	box-shadow:inset 0 0 5px #404040;
+}
+
+#locks:active
+{
+	background: #a0a0a0;
+}
+
+/* Options */
+#options a,
+#inputs input {
+	background:white;
+	border-color:#D6AD9C;
+	border-radius:4px;
+	box-shadow:inset 0 -1px #E7E7E7;
+	color:#7B2900;
+}
+
+#options a:hover,
+#options a:focus,
+#options-investigation a:hover,
+#options-investigation a:focus { border-color:#FFD652; }
+
+#options-investigation a {
+	background:#7B2900;
+	border-color:1px solid white;
+	border-radius:4px;
+	box-shadow:inset 0 1px #A57352, inset 0 -1px #632100;
+	color:white;
+}
+
+#options-investigation a:active {
+	background:#EF9C21;
+	border-color:white;
+	box-shadow:inset 0 1px #FFFF21, inset 0 -1px #D68421;
+}
