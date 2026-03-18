@@ -7,7 +7,7 @@ Ace Attorney Online - Player main module
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'player',
-	dependencies : ['style_loader', 'trial', 'player_save', 'display_engine_screen', 'form_elements', 'language', 'nodes', 'page_loaded', 'events', 'player_sound', 'player_images', 'player_actions', 'actions_parameters', 'var_environments', 'player_courtrecord', 'expression_engine', 'player_debug'],
+	dependencies : ['style_loader', 'trial', 'player_save', 'display_engine_screen', 'form_elements', 'language', 'nodes', 'page_loaded', 'events', 'player_sound', 'player_images', 'player_actions', 'actions_parameters', 'var_environments', 'player_courtrecord', 'expression_engine', 'player_debug', 'keyboard_controls', 'gamepad_controls'],
 	init : function()
 	{
 		Languages.setMainLanguage(user_language);

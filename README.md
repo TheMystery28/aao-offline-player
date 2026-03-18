@@ -37,7 +37,21 @@ The app also imports from [aaoffline](https://github.com/falko17/aaoffline) HTML
 
 ![Player interface](player_interface.PNG)
 
-The in-game player is a modified version of the AAO engine with a dark mode applied. Further visual changes are possible but aren't a priority right now.
+The in-game player is a modified version of the AAO engine with a dark mode and built-in keyboard/gamepad controls. Further visual changes are possible but aren't a priority right now.
+
+### Controls
+
+| Input | Action |
+|-------|--------|
+| **Enter / Space** | Proceed / skip |
+| **Shift** | Fast-forward (hold) |
+| **Arrow Left / Right** | Statement navigation |
+| **Gamepad A / Cross** | Proceed / skip |
+| **Gamepad B / Circle** | Back statement |
+| **Gamepad D-pad** | Statement navigation |
+| **Gamepad Start** | Toggle court record |
+
+Keyboard controls were inspired by the [AAO Keyboard Controls userscript](https://aaonline.fr/forum/viewtopic.php?t=13534). Gamepad support is an original addition.
 
 ### Known issues
 
