@@ -113,13 +113,18 @@ jobs:
           tauriScript: npx tauri
           args: --bundles deb,appimage
 
+      - name: Rename Linux artifacts
+        run: |
+          mv src-tauri/target/release/bundle/deb/*.deb AAO-Offline-Player_amd64.deb
+          mv src-tauri/target/release/bundle/appimage/*.AppImage AAO-Offline-Player_amd64.AppImage
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-linux
           path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
+            AAO-Offline-Player_amd64.deb
+            AAO-Offline-Player_amd64.AppImage
 
   android:
     runs-on: ubuntu-latest

@@ -85,7 +85,7 @@ function loadSaveData(save)
 	}
 	player_status = save.player_status;
 	top_screen.setVariableEnvironment(player_status.game_env);
-	playMusic(save.current_music_id);
+	try { playMusic(save.current_music_id); } catch(e) { /* sounds may not be loaded yet during auto-start */ }
 	refreshHealthBar();
 	
 	// Refresh all debuggers.
