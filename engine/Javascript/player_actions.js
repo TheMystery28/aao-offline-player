@@ -238,6 +238,8 @@ function tryGoToNextPart()
 	saveData.trial_data_diffs = {};
 	saveData.trial_data_base_dates = {};
 
+	// Cancel any pending wait timer before redirecting
+	if(typeof wait_timer !== 'undefined' && wait_timer) { window.clearTimeout(wait_timer); wait_timer = null; }
 	// Redirect to next part
 	window.location.href = '?trial_id=' + target_part + '&save_data=' + encodeURIComponent(Base64.encode(JSON.stringify(saveData)));
 	return true;
@@ -580,8 +582,11 @@ function runFrameActionAfter(frame_data, computed_parameters)
 					}
 					
 					// Save data computed : launch redirection !
+					// Cancel any pending wait timer to prevent it from firing after
+					// the redirect and overwriting the location with a different URL.
+					if(wait_timer) { window.clearTimeout(wait_timer); wait_timer = null; }
 					window.location.href = '?trial_id=' + target_part + '&save_data=' + encodeURIComponent(Base64.encode(JSON.stringify(saveData)));
-					
+
 					break;
 			}
 			

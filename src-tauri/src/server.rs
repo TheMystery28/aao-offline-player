@@ -259,7 +259,7 @@ fn sanitize_path(path: &str) -> String {
 /// Only in query strings (application/x-www-form-urlencoded) does `+` mean space.
 /// Spaces in URL paths are encoded as `%20`.
 fn url_decode(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
+    let mut bytes = Vec::with_capacity(input.len());
     let mut chars = input.bytes();
 
     while let Some(b) = chars.next() {
@@ -268,18 +268,18 @@ fn url_decode(input: &str) -> String {
                 let hi = chars.next().unwrap_or(b'0');
                 let lo = chars.next().unwrap_or(b'0');
                 if let (Some(h), Some(l)) = (hex_val(hi), hex_val(lo)) {
-                    result.push((h << 4 | l) as char);
+                    bytes.push(h << 4 | l);
                 } else {
-                    result.push('%');
-                    result.push(hi as char);
-                    result.push(lo as char);
+                    bytes.push(b'%');
+                    bytes.push(hi);
+                    bytes.push(lo);
                 }
             }
-            _ => result.push(b as char),
+            _ => bytes.push(b),
         }
     }
 
-    result
+    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 fn hex_val(b: u8) -> Option<u8> {
