@@ -16,6 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Building version: $VERSION"
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -32,6 +41,11 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        shell: bash
+        run: cargo test
 
       - name: Build Tauri (Windows)
         uses: tauri-apps/tauri-action@v0
@@ -62,6 +76,14 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Building version: $VERSION"
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
       - name: Cache apt packages
         uses: actions/cache@v4
@@ -105,6 +127,10 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
       - name: Build Tauri (Linux)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -130,6 +156,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Building version: $VERSION"
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
