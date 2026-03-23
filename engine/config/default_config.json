@@ -20,7 +20,8 @@
         "instantText": false,
         "blipVolume": 70,
         "expandEvidenceDescriptions": false,
-        "mute": false
+        "mute": false,
+        "hideHeader": false
     },
     "layout": {
         "screenScale": 1.0,

@@ -45,9 +45,13 @@ window.addEventListener("DOMContentLoaded", function () {
 
   // --- Player ---
 
-  function showPlayer(title, url) {
+  function showPlayer(title, url, author) {
     console.log("[PLAYER] showPlayer title=" + title + " url=" + url);
-    playerTitle.textContent = title;
+    if (author) {
+      playerTitle.textContent = title + " — " + author;
+    } else {
+      playerTitle.textContent = title;
+    }
     gameFrame.src = url;
     launcher.classList.add("hidden");
     playerContainer.classList.remove("hidden");
@@ -125,6 +129,17 @@ window.addEventListener("DOMContentLoaded", function () {
   }
 
   backBtn.addEventListener("click", showLauncher);
+
+  // Listen for header visibility messages from the engine iframe
+  window.addEventListener("message", function(e) {
+    if (e.data && e.data.type === 'aao-header-visibility') {
+      if (e.data.hidden) {
+        playerTitle.style.fontFamily = 'Georgia, serif';
+      } else {
+        playerTitle.style.fontFamily = '';
+      }
+    }
+  });
 
   // Android system back button: return to launcher if player is visible
   window.addEventListener("popstate", function () {

@@ -53,6 +53,7 @@ var ThemeManager = (function() {
 		applyInstantText();
 		applyExpandDescriptions();
 		applyBlipVolume();
+		applyHideHeader();
 		applyPanelWidths();
 		applyPanelArrangement();
 		applyNarrowMode();
@@ -231,6 +232,28 @@ var ThemeManager = (function() {
 		}
 	}
 
+	function applyHideHeader() {
+		var hidden = EngineConfig.get('display.hideHeader');
+		var header = document.querySelector('header.compact');
+		if (!header) return;
+		if (hidden) {
+			header.style.display = 'none';
+		} else {
+			header.style.display = '';
+		}
+		// Notify parent frame to update toolbar styling
+		try {
+			if (window.parent && window.parent !== window) {
+				window.parent.postMessage({
+					type: 'aao-header-visibility',
+					hidden: !!hidden,
+					title: document.getElementById('title') ? document.getElementById('title').textContent : '',
+					author: document.getElementById('author') ? document.getElementById('author').textContent.replace(/^--\s*/, '') : ''
+				}, '*');
+			}
+		} catch (e) { /* cross-origin restriction */ }
+	}
+
 	function applyNarrowMode() {
 		currentLayoutTier = ''; // force re-evaluation
 		updateLayoutMode();
@@ -288,9 +311,11 @@ var ThemeManager = (function() {
 				removeTabbedZone(section, courtrecord, settings);
 				if (settings) { settings.style.display = 'none'; }
 				createTabbedZone(courtrecord, settings);
+				if (courtrecord) { courtrecord.style.flexGrow = '1'; }
 			} else {
 				removeTabbedZone(section, courtrecord, settings);
 				if (settings) { settings.style.display = ''; }
+				if (courtrecord) { courtrecord.style.flexGrow = ''; }
 			}
 			section.classList.remove('layout-stack');
 			if (content) content.classList.remove('layout-stack');
@@ -298,12 +323,16 @@ var ThemeManager = (function() {
 			removeTabbedZone(section, courtrecord, settings);
 			if (settings) { settings.style.display = 'none'; }
 			createTabbedZone(courtrecord, settings);
+			// In tabs mode, courtrecord is the only growing panel in the row.
+			// Force flex-grow:1 so it fills all space regardless of evidence width slider.
+			if (courtrecord) { courtrecord.style.flexGrow = '1'; }
 			section.classList.remove('layout-stack');
 			if (content) content.classList.remove('layout-stack');
 		} else {
 			// medium+stack or narrow
 			removeTabbedZone(section, courtrecord, settings);
 			if (settings) { settings.style.display = ''; }
+			if (courtrecord) { courtrecord.style.flexGrow = ''; }
 			section.classList.add('layout-stack');
 			if (content) content.classList.add('layout-stack');
 		}
@@ -494,6 +523,8 @@ var ThemeManager = (function() {
 			applyExpandDescriptions();
 		} else if (data.path === 'display.blipVolume') {
 			applyBlipVolume();
+		} else if (data.path === 'display.hideHeader') {
+			applyHideHeader();
 		} else if (data.path === 'layout.panelArrangement') {
 			applyPanelArrangement();
 		} else if (data.path === 'layout.evidenceWidth' || data.path === 'layout.settingsWidth') {

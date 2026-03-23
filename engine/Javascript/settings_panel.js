@@ -503,6 +503,7 @@ var SettingsPanel = (function() {
 		addSlider(displayContent, 'display.textSpeed', 'text_speed', 0.1, 3.0, 0.1);
 		addSlider(displayContent, 'display.blipVolume', 'blip_volume', 0, 100, 5);
 		addCheckbox(displayContent, 'display.expandEvidenceDescriptions', 'expand_descriptions');
+		addCheckbox(displayContent, 'display.hideHeader', 'hide_header');
 
 		displayDetails.appendChild(displayContent);
 		container.appendChild(displayDetails);
