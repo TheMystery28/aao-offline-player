@@ -577,8 +577,10 @@ function TextDisplay(character_display, screen_display)
 				self.text_colors.push(frameText.style.color);
 			}
 			// If text is empty, type it anyway to get the effects, but do not include the span in the page
-			// Start typing text
-			self.typeText(frameText, frame_data.text_content, frame_data.text_speed, callback);
+			// Start typing text — apply user speed multiplier from config
+			var configSpeed = (typeof EngineConfig !== 'undefined') ? EngineConfig.get('display.textSpeed') : 1;
+			var effectiveSpeed = frame_data.text_speed * (configSpeed || 1);
+			self.typeText(frameText, frame_data.text_content, effectiveSpeed, callback);
 		}
 		else
 		{

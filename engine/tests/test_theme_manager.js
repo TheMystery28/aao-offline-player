@@ -115,6 +115,97 @@ function testThemeManager() {
 		Howler.mute = origMute;
 	})();
 
+	// --- NEW: Pixelated CSS effect (Fix 1) ---
+	(function() {
+		var screens = document.getElementById('screens');
+		if (!screens) return;
+		EngineConfig.set('display.pixelated', true);
+		ThemeManager.reapply();
+		var style = getComputedStyle(screens);
+		var ir = style.imageRendering || '';
+		TestHarness.assert(
+			ir.indexOf('pixelated') !== -1 || ir.indexOf('crisp-edges') !== -1,
+			'Pixelated CSS: #screens has image-rendering: pixelated when enabled'
+		);
+		EngineConfig.set('display.pixelated', false);
+		ThemeManager.reapply();
+	})();
+
+	// --- NEW: Screen scale CSS effect (Fix 2) ---
+	(function() {
+		var screens = document.getElementById('screens');
+		if (!screens) return;
+		EngineConfig.set('layout.screenScale', 1.5);
+		ThemeManager.reapply();
+		var style = getComputedStyle(screens);
+		// zoom property is used instead of transform — check via style.zoom
+		var zoomVal = screens.style.zoom || style.zoom || '';
+		TestHarness.assert(
+			zoomVal !== '' && zoomVal !== '1' && zoomVal !== 'normal',
+			'Screen scale CSS: #screens has zoom when screenScale is 1.5'
+		);
+		EngineConfig.set('layout.screenScale', 1.0);
+		ThemeManager.reapply();
+	})();
+
+	// --- NEW: Expand descriptions class toggle (Fix 3) ---
+	(function() {
+		var cr = document.getElementById('courtrecord');
+		if (!cr) return;
+		EngineConfig.set('display.expandEvidenceDescriptions', true);
+		ThemeManager.reapply();
+		TestHarness.assert(
+			cr.classList.contains('expand-descriptions'),
+			'Expand descriptions: #courtrecord has expand-descriptions class when enabled'
+		);
+		EngineConfig.set('display.expandEvidenceDescriptions', false);
+		ThemeManager.reapply();
+		TestHarness.assert(
+			!cr.classList.contains('expand-descriptions'),
+			'Expand descriptions: class removed when disabled'
+		);
+	})();
+
+	// --- NEW: Blip volume handler (Fix 4) ---
+	(function() {
+		if (typeof SoundHowler === 'undefined') return;
+		var setCalled = false;
+		var origSetVol = SoundHowler.setSoundVolume;
+		SoundHowler.setSoundVolume = function(id, vol) {
+			if (id.indexOf('voice_-') === 0) setCalled = true;
+			return origSetVol.apply(this, arguments);
+		};
+		EngineConfig.set('display.blipVolume', 50);
+		ThemeManager.reapply();
+		TestHarness.assert(setCalled, 'Blip volume: SoundHowler.setSoundVolume called for voice blips');
+		SoundHowler.setSoundVolume = origSetVol;
+	})();
+
+	// --- NEW: Court record position class (Fix 6) ---
+	(function() {
+		var section = document.querySelector('#content > section');
+		if (!section) return;
+		EngineConfig.set('layout.courtRecordPosition', 'left');
+		ThemeManager.reapply();
+		TestHarness.assert(
+			section.classList.contains('cr-left'),
+			'CR position: parent section has cr-left class when position is left'
+		);
+		EngineConfig.set('layout.courtRecordPosition', 'right');
+		ThemeManager.reapply();
+		TestHarness.assert(
+			!section.classList.contains('cr-left'),
+			'CR position: cr-left class removed when position is right (default)'
+		);
+	})();
+
+	// --- NEW: Text speed config accessible (Fix 5) ---
+	(function() {
+		var val = EngineConfig.get('display.textSpeed');
+		TestHarness.assertType(val, 'number', 'Text speed: EngineConfig.get(display.textSpeed) returns a number');
+		TestHarness.assertEqual(val, 1.0, 'Text speed: default value is 1.0');
+	})();
+
 	// Cleanup
 	EngineConfig.reset();
 	ThemeManager.reapply();

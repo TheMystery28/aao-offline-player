@@ -29,6 +29,9 @@ var ThemeManager = (function() {
 		applyCustomCSS();
 		applyMute();
 		applyInstantText();
+		applyExpandDescriptions();
+		applyBlipVolume();
+		applyCourtRecordPosition();
 	}
 
 	function applyScale() {
@@ -91,6 +94,41 @@ var ThemeManager = (function() {
 		}
 	}
 
+	function applyExpandDescriptions() {
+		const enabled = EngineConfig.get('display.expandEvidenceDescriptions');
+		const cr = document.getElementById('courtrecord');
+		if (cr) {
+			if (enabled) {
+				cr.classList.add('expand-descriptions');
+			} else {
+				cr.classList.remove('expand-descriptions');
+			}
+		}
+	}
+
+	function applyBlipVolume() {
+		if (typeof SoundHowler === 'undefined') return;
+		const volume = EngineConfig.get('display.blipVolume');
+		if (volume === undefined) return;
+		for (let i = 1; i <= 3; i++) {
+			try {
+				SoundHowler.setSoundVolume('voice_-' + i, volume);
+			} catch (e) {
+				// Voice may not be registered if case doesn't use it
+			}
+		}
+	}
+
+	function applyCourtRecordPosition() {
+		const position = EngineConfig.get('layout.courtRecordPosition');
+		const section = document.querySelector('#content > section');
+		if (!section) return;
+		section.classList.remove('cr-right', 'cr-left', 'cr-bottom', 'cr-hidden');
+		if (position && position !== 'right') {
+			section.classList.add('cr-' + position);
+		}
+	}
+
 	function onConfigChanged(data) {
 		if (!data.path) {
 			// Full config reload (e.g. reset or loadCaseConfig)
@@ -110,6 +148,12 @@ var ThemeManager = (function() {
 			applyMute();
 		} else if (data.path === 'display.instantText') {
 			applyInstantText();
+		} else if (data.path === 'display.expandEvidenceDescriptions') {
+			applyExpandDescriptions();
+		} else if (data.path === 'display.blipVolume') {
+			applyBlipVolume();
+		} else if (data.path === 'layout.courtRecordPosition') {
+			applyCourtRecordPosition();
 		}
 	}
 

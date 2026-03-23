@@ -143,6 +143,25 @@ Styling court records elements
 	color: #C4B382;
 }
 
+/* Always-visible descriptions when expand mode is on — details in normal flow */
+.expand-descriptions .evidence-list .evidence_display {
+	height: auto;          /* Let card height be determined by content */
+}
+
+.expand-descriptions .evidence-list .evidence_display .details {
+	display: block;
+	position: static;      /* Normal document flow — no floating */
+	max-height: none;
+	z-index: auto;         /* No stacking context needed */
+	top: auto;
+	box-shadow: none;      /* No floating shadow when inline */
+}
+
+.expand-descriptions .evidence-list .evidence_display .details .description {
+	max-height: none;
+	overflow-y: visible;
+}
+
 /* Focus ring for keyboard-navigated court record cards */
 .evidence-list .evidence_display.cr-focused {
 	outline: 2px solid #FFD652;
