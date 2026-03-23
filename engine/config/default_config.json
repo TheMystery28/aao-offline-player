@@ -26,11 +26,12 @@
     },
     "layout": {
         "screenScale": 1.0,
+        "bodyWidth": 1.0,
         "mobileScreenScale": 1.4,
         "panelArrangement": "1-2-3",
         "evidenceWidth": 1.0,
         "settingsWidth": 1.0,
-        "narrowMode": "tabs"
+        "narrowMode": "stack"
     },
     "features": {
         "debugPanel": false,

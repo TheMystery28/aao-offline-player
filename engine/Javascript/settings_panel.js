@@ -27,6 +27,7 @@ var SettingsPanel = (function() {
 	let mixedGroup = null;
 	let narrowModeWrapper = null;
 	let layoutDetailsRef = null;
+	let bodyWidthWrapper = null;
 	let evidenceWidthWrapper = null;
 	let settingsWidthWrapper = null;
 
@@ -118,9 +119,10 @@ var SettingsPanel = (function() {
 		if (section) {
 			section.style.contain = 'layout';
 			section.style.userSelect = 'none';
-			// Prevent sub-pixel rounding from wrapping the last panel to a new line
 			section.style.flexWrap = 'nowrap';
 		}
+		// Freeze body max-width so page width slider doesn't resize during drag
+		document.body.style.maxWidth = document.body.offsetWidth + 'px';
 	}
 
 	function unfreezePanels() {
@@ -145,20 +147,18 @@ var SettingsPanel = (function() {
 			section.style.userSelect = '';
 			section.style.flexWrap = '';
 		}
+		document.body.style.maxWidth = '';
 		removeGhosts();
 	}
 
 	function createGhosts() {
 		if (ghostOverlay) return;
-		var section = document.querySelector('#content > section');
-		if (!section) return;
-
 		ghostOverlay = document.createElement('div');
 		ghostOverlay.className = 'ghost-overlay';
-		var rect = section.getBoundingClientRect();
-		ghostOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:50;';
-		section.style.position = 'relative';
-		section.appendChild(ghostOverlay);
+		// Attach to document.body with position:fixed so ghosts can extend
+		// beyond the frozen body boundary when page width slider grows.
+		ghostOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:50;';
+		document.body.appendChild(ghostOverlay);
 	}
 
 	function updateGhosts() {
@@ -168,40 +168,47 @@ var SettingsPanel = (function() {
 		if (!section || !screens) return;
 
 		// Compute ghost positions MATHEMATICALLY — no DOM unfreeze.
-		// Use the LIVE --screen-content-scale value (updated during drag)
-		// to calculate what screens width WOULD be when unfrozen.
 		var sectionRect = section.getBoundingClientRect();
 		var rootStyles = getComputedStyle(document.documentElement);
 		var liveScale = parseFloat(rootStyles.getPropertyValue('--screen-content-scale')) || 1;
-		var screensBaseW = screens.offsetWidth; // pre-zoom base (256px)
+		var screensBaseW = screens.offsetWidth;
 		var screensW = screensBaseW * liveScale;
-		var sectionW = sectionRect.width;
-		var availableW = sectionW - screensW;
 
-		// Read current flex values from CSS custom properties
+		// Compute the FUTURE section width from live --body-max-width (vw units)
+		var liveBodyMaxStr = rootStyles.getPropertyValue('--body-max-width').trim();
+		var futureSectionW;
+		if (liveBodyMaxStr.indexOf('vw') !== -1) {
+			futureSectionW = Math.min(parseFloat(liveBodyMaxStr) / 100 * window.innerWidth, window.innerWidth);
+		} else {
+			futureSectionW = Math.min(parseFloat(liveBodyMaxStr) || 1090, window.innerWidth);
+		}
+		// Center offset: the future body is centered via margin:auto
+		var futureLeft = Math.max(0, (window.innerWidth - futureSectionW) / 2);
+		// Use the frozen section's top for vertical position
+		var sectionTop = sectionRect.top;
+		var sectionH = sectionRect.height;
+
+		var availableW = futureSectionW - screensW;
 		var eFlex = parseFloat(rootStyles.getPropertyValue('--evidence-flex')) || 0.7;
 		var sFlex = parseFloat(rootStyles.getPropertyValue('--settings-flex')) || 0.4;
 		var totalFlex = eFlex + sFlex;
 		var evidenceW = (totalFlex > 0) ? (availableW * eFlex / totalFlex) : (availableW / 2);
 		var settingsW = availableW - evidenceW;
-		var sectionH = sectionRect.height;
 
-		// Panel order: screens=1, evidence=2, settings=3 (default DOM order)
-		// For simplicity, assume default arrangement order
 		var colors = ['rgba(80,80,80,0.3)', 'rgba(100,170,100,0.3)', 'rgba(180,130,70,0.3)'];
 		var ghostHTML = '';
-		// Ghost for screens (stays same position)
-		ghostHTML += '<div style="position:absolute;left:0;top:0;' +
+		// Ghost for screens
+		ghostHTML += '<div style="position:absolute;left:' + futureLeft + 'px;top:' + sectionTop + 'px;' +
 			'width:' + screensW + 'px;height:' + sectionH + 'px;' +
 			'background:' + colors[0] + ';border:2px dashed rgba(255,255,255,0.4);' +
 			'border-radius:4px;box-sizing:border-box;"></div>';
 		// Ghost for evidence
-		ghostHTML += '<div style="position:absolute;left:' + screensW + 'px;top:0;' +
+		ghostHTML += '<div style="position:absolute;left:' + (futureLeft + screensW) + 'px;top:' + sectionTop + 'px;' +
 			'width:' + evidenceW + 'px;height:' + sectionH + 'px;' +
 			'background:' + colors[1] + ';border:2px dashed rgba(255,255,255,0.4);' +
 			'border-radius:4px;box-sizing:border-box;"></div>';
 		// Ghost for settings
-		ghostHTML += '<div style="position:absolute;left:' + (screensW + evidenceW) + 'px;top:0;' +
+		ghostHTML += '<div style="position:absolute;left:' + (futureLeft + screensW + evidenceW) + 'px;top:' + sectionTop + 'px;' +
 			'width:' + settingsW + 'px;height:' + sectionH + 'px;' +
 			'background:' + colors[2] + ';border:2px dashed rgba(255,255,255,0.4);' +
 			'border-radius:4px;box-sizing:border-box;"></div>';
@@ -539,6 +546,7 @@ var SettingsPanel = (function() {
 		const layoutContent = document.createElement('div');
 		addClass(layoutContent, 'settings-section-content');
 
+		addSlider(layoutContent, 'layout.bodyWidth', 'body_width', 0.5, 2.0, 0.1);
 		addSlider(layoutContent, 'layout.screenScale', 'screen_scale', 0.5, 2.0, 0.1);
 		addSlider(layoutContent, 'layout.evidenceWidth', 'evidence_width', 0.3, 2.0, 0.1);
 		addSlider(layoutContent, 'layout.settingsWidth', 'settings_width', 0.3, 2.0, 0.1);
@@ -555,6 +563,7 @@ var SettingsPanel = (function() {
 			if (!span) continue;
 			var key = span.getAttribute('data-locale-content');
 			if (key === 'narrow_mode') narrowModeWrapper = labels[i];
+			if (key === 'body_width') bodyWidthWrapper = labels[i];
 			if (key === 'evidence_width') evidenceWidthWrapper = labels[i];
 			if (key === 'settings_width') settingsWidthWrapper = labels[i];
 		}
@@ -611,6 +620,9 @@ var SettingsPanel = (function() {
 			}
 			if (narrowModeWrapper) {
 				narrowModeWrapper.style.display = isWide ? '' : 'none';
+			}
+			if (bodyWidthWrapper) {
+				bodyWidthWrapper.style.display = isWide ? '' : 'none';
 			}
 			if (evidenceWidthWrapper) {
 				evidenceWidthWrapper.style.display = isWide ? '' : 'none';
