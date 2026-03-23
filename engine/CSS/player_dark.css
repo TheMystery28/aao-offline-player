@@ -2,7 +2,7 @@
 
 /*
  * Dark theme for the offline player chrome.
- * Matches the launcher's dark palette (#1a1a2e / #16213e / #2a2a4a).
+ * Dark grey palette for comfortable reading.
  * Toggled via .night-mode class on <body> (controlled by ThemeManager).
  * Does NOT affect game screen content (#screen-top, #screen-bottom, etc.)
  *
@@ -14,55 +14,80 @@
 
 .night-mode {
 	/* Page & layout */
-	--color-bg-page: #1a1a2e;
-	--color-bg-content: #12192b;
-	--color-bg-section: #16213e;
-	--color-bg-panel: #16213e;
-	--color-bg-header: #16213e;
-	--color-bg-loading-mask: #1a1a2e;
+	--color-bg-page: #1a1a1a;
+	--color-bg-content: #1e1e1e;
+	--color-bg-section: #252525;
+	--color-bg-panel: #2a2a2a;
+	--color-bg-header: #2a2a2a;
+	--color-bg-loading-mask: #1a1a1a;
 
 	/* Screen meta */
-	--color-bg-screen-meta: #1a2540;
-	--color-border-meta: #2a2a4a;
+	--color-bg-screen-meta: #2a2a2a;
+	--color-border-meta: #3a3a3a;
 
 	/* Court record */
-	--color-bg-cr: #1a2540;
-	--color-border-cr: #2a2a4a;
-	--color-bg-cr-header: #1e2d4f;
-	--color-bg-cr-header-dark: #0d1525;
-	--color-border-cr-header: #2a2a4a;
-	--color-bg-cr-switch: #0f3460;
-	--color-bg-cr-switch-hover: #1a5276;
+	--color-bg-cr: #2a2a2a;
+	--color-border-cr: #3a3a3a;
+	--color-bg-cr-header: #333333;
+	--color-bg-cr-header-dark: #1a1a1a;
+	--color-border-cr-header: #3a3a3a;
+	/* Keep original brown accent for Profiles/Evidence switch and tab buttons */
+	/* --color-bg-cr-switch: inherited from light theme (#8C481B) */
+	/* --color-bg-cr-switch-hover: inherited from light theme (#A67351) */
 
 	/* Evidence cards */
-	--color-bg-evidence-card: #1a2540;
-	--color-bg-evidence-details: #1a2540;
-	--color-border-evidence-card: #2a2a4a;
+	--color-bg-evidence-card: #2a2a2a;
+	--color-bg-evidence-details: #2a2a2a;
+	--color-border-evidence-card: #3a3a3a;
 	--color-bg-cr-check-overlay: rgba(0, 0, 0, 0.7);
-	--color-bg-cr-check-panel: #16213e;
+	--color-bg-cr-check-panel: #2a2a2a;
 
 	/* Settings panel */
-	--color-border-panel: #2a2a4a;
-	--color-border-light: #2a2a4a;
-	--color-border-debug: #2a2a4a;
-	--color-border-section: #2a2a4a;
+	--color-border-panel: #3a3a3a;
+	--color-border-light: #3a3a3a;
+	--color-border-debug: #3a3a3a;
+	--color-border-section: #3a3a3a;
 
 	/* Typography */
-	--color-text-heading: #8ab;
-	--color-text-debug-heading: #8ab;
+	--color-text-heading: #c0c0c0;
+	--color-text-debug-heading: #c0c0c0;
 	--color-text-body: #e0e0e0;
-	--color-text-link: #6a9fc5;
-	--color-text-link-hover: #8cc8f0;
+	--color-text-link: #7ab;
+	--color-text-link-hover: #9cd;
 	--color-text-button: #e0e0e0;
-	--color-text-button-disabled: #555;
+	--color-text-button-disabled: #666;
 
-	/* Buttons */
-	--color-bg-button: #0f3460;
-	--color-bg-button-hover: #1a5276;
-	--color-bg-button-disabled: #1a2540;
+	/* Keep original brown accent for buttons */
+	/* --color-bg-button: inherited from light theme (#8C481B) */
+	/* --color-bg-button-hover: inherited from light theme (#A67351) */
+	--color-bg-button-disabled: #333333;
 
 	background-color: var(--color-bg-page);
 	color: var(--color-text-body);
+	color-scheme: dark;
+}
+
+/* ── Dark scrollbar ── */
+.night-mode *::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+.night-mode *::-webkit-scrollbar-track {
+	background: #1e1e1e;
+}
+.night-mode *::-webkit-scrollbar-thumb {
+	background: #555;
+	border-radius: 5px;
+}
+.night-mode *::-webkit-scrollbar-thumb:hover {
+	background: #777;
+}
+
+/* ── Header override ──
+   Replace the white gradient with a subtle dark one */
+.night-mode header.compact {
+	background-color: var(--color-bg-header);
+	background-image: linear-gradient(rgba(255,255,255,0.05), rgba(255,255,255,0));
 }
 
 /* ── Gradient structural overrides ──
@@ -70,28 +95,33 @@
    multi-stop gradients with intermediate colors that differ between themes. */
 
 .night-mode .courtrecord-header {
-	background-image: linear-gradient(to bottom, #2a3a5a 0%, #1e2d4f 48%, #151f35 52%, #0d1525 55%, #0d1525 64%, #141e33 67%, #1a2740 70%, #1a2740 100%);
+	background-image: linear-gradient(to bottom, #3a3a3a 0%, #333333 48%, #2a2a2a 52%, #1a1a1a 55%, #1a1a1a 64%, #222222 67%, #2a2a2a 70%, #2a2a2a 100%);
 }
 
 .night-mode .courtrecord-header h1 {
-	background-image: linear-gradient(to bottom, #2a3a5a 0%, #1e2d4f 21%, #151f35 24%, #0d1525 27%, #0d1525 36%, #141e33 39%, #1a2740 42%, #1a2740 100%);
-	text-shadow: 1px 1px #0d1525;
+	background-image: linear-gradient(to bottom, #3a3a3a 0%, #333333 21%, #2a2a2a 24%, #1a1a1a 27%, #1a1a1a 36%, #222222 39%, #2a2a2a 42%, #2a2a2a 100%);
+	text-shadow: 1px 1px #1a1a1a;
 }
 
 .night-mode .courtrecord-header h1::after {
-	background-image: linear-gradient(47deg, #141e33 0%, #1a2740 6%, #1a2740 43%, #141e33 46%, #0d1525 49%, #0d1525 58%, #151f35 61%, #1e2d4f 64%, #1e2d4f 100%);
+	background-image: linear-gradient(47deg, #222222 0%, #2a2a2a 6%, #2a2a2a 43%, #222222 46%, #1a1a1a 49%, #1a1a1a 58%, #2a2a2a 61%, #333333 64%, #333333 100%);
+}
+
+/* Tabbed zone bar */
+.night-mode .tabbed-zone-bar {
+	background-image: linear-gradient(to bottom, #3a3a3a 0%, #333333 48%, #2a2a2a 52%, #1a1a1a 55%, #1a1a1a 64%, #222222 67%, #2a2a2a 70%, #2a2a2a 100%);
 }
 
 /* Section h2 header gradient */
 .night-mode #player-parametres section h2 {
-	background-color: #1a2540;
-	background-image: linear-gradient(#1e2d4f, #16213e);
+	background-color: #2a2a2a;
+	background-image: linear-gradient(#333333, #2a2a2a);
 	box-shadow: none;
 	color: #c0c0c0;
 }
 
-/* Button hover/disabled overrides that need !important */
+/* Button hover/disabled overrides */
 .night-mode #player-parametres button:disabled {
-	background: #1a2540 !important;
-	color: #555 !important;
+	background: #333333 !important;
+	color: #666 !important;
 }

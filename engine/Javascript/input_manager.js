@@ -74,6 +74,13 @@ var InputManager = (function() {
 	}
 
 	function onKeyDown(e) {
+		// Ctrl+D: reset all settings to defaults
+		if (e.ctrlKey && (e.code === 'KeyD' || e.key === 'd')) {
+			e.preventDefault();
+			EngineConfig.reset();
+			return;
+		}
+
 		// Try event.code first (physical key), then event.key (logical key)
 		const action = keyboardLookup[e.code] || keyboardLookup[e.key];
 		if (!action) return;
