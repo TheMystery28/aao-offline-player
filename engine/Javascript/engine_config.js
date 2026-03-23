@@ -106,6 +106,23 @@ var EngineConfig = (function() {
 			delete parsed.layout.settingsPosition;
 			delete parsed.layout.fullWidth;
 		}
+		// Strip any stored keys that don't exist in current defaults.
+		// This auto-cleans stale keys from old versions.
+		pruneToDefaults(parsed, defaults);
+	}
+
+	// Recursively remove keys from obj that don't exist in reference
+	function pruneToDefaults(obj, reference) {
+		if (!obj || typeof obj !== 'object' || !reference || typeof reference !== 'object') return;
+		var keys = Object.keys(obj);
+		for (var i = 0; i < keys.length; i++) {
+			if (reference[keys[i]] === undefined) {
+				delete obj[keys[i]];
+			} else if (typeof obj[keys[i]] === 'object' && !Array.isArray(obj[keys[i]]) &&
+					   typeof reference[keys[i]] === 'object' && !Array.isArray(reference[keys[i]])) {
+				pruneToDefaults(obj[keys[i]], reference[keys[i]]);
+			}
+		}
 	}
 
 	// Load localStorage overlay
