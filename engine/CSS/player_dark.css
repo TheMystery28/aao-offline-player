@@ -120,6 +120,11 @@
 	color: #c0c0c0;
 }
 
+/* Evidence detail buttonbar */
+.night-mode .evidence_display .details .buttonbar-bottom {
+	background: #333;
+}
+
 /* Button hover/disabled overrides */
 .night-mode #player-parametres button:disabled {
 	background: #333333 !important;
