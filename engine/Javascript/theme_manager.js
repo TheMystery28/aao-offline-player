@@ -295,11 +295,13 @@ var ThemeManager = (function() {
 		if (!section || !screens) return;
 
 		var content = section.parentElement;
-		var sectionWidth = section.clientWidth;
 
 		// Calculate what the zoomed screens width WOULD be in wide mode (height-based).
-		// Use bounded content height (stable regardless of layout-stack).
-		var boundedHeight = content ? content.clientHeight : section.clientHeight;
+		// Use viewport height minus header for a stable reference that doesn't
+		// change when settings panel content is shown/hidden.
+		var header = document.querySelector('header.compact');
+		var headerH = (header && header.style.display !== 'none') ? header.offsetHeight : 0;
+		var boundedHeight = window.innerHeight - headerH;
 		var metaH = 18; // --meta-height
 		var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
 		var totalPreZoomH = metaH + (2 * gapPx) + (2 * 192);
@@ -312,12 +314,21 @@ var ThemeManager = (function() {
 		var crMinWidth = 250;
 		var settingsW = 280;
 
-		// Tier detection always checks whether all 3 panels fit side-by-side.
-		// The arrangement only affects panel ordering, not when tabs/stack kick in.
+		// Predict container widths to prevent oscillation.
+		// The tier decision changes --body-max-width (85vw for wide, 100vw for non-wide),
+		// which changes section.clientWidth, which would re-trigger tier detection.
+		// Instead, use viewport-based projections that are stable regardless of current tier.
+		var viewportWidth = document.documentElement.clientWidth;
+		var userBodyScale = EngineConfig.get('layout.bodyWidth') || 1;
+		var wideVw = Math.round(85 * userBodyScale);
+		if (wideVw > 100) wideVw = 100;
+		var expectedWideWidth = viewportWidth * (wideVw / 100);
+		var expectedMediumWidth = viewportWidth; // non-wide forces 100vw
+
 		var newTier;
-		if (scaledScreensWidth + crMinWidth + settingsW <= sectionWidth) {
+		if (scaledScreensWidth + crMinWidth + settingsW <= expectedWideWidth) {
 			newTier = 'wide';
-		} else if (scaledScreensWidth + crMinWidth <= sectionWidth) {
+		} else if (scaledScreensWidth + crMinWidth <= expectedMediumWidth) {
 			newTier = 'medium';
 		} else {
 			newTier = 'narrow';
@@ -365,6 +376,10 @@ var ThemeManager = (function() {
 			if (content) content.classList.add('layout-stack');
 		}
 
+		// Determine if tabs are active (medium/tabs or wide+tabs override)
+		var tabsActive = (newTier === 'medium' && narrowMode === 'tabs') ||
+			(newTier === 'wide' && userOverrodeNarrowMode && narrowMode === 'tabs');
+
 		// In non-layout modes (tabs/medium/narrow/stack), override to defaults and restore on return
 		var isLayoutFree = !tabsActive && newTier === 'wide';
 		if (isLayoutFree) {
@@ -400,10 +415,6 @@ var ThemeManager = (function() {
 				computeAutoFitScreenSize();
 			}
 		}
-
-		// Determine if tabs are active (medium/tabs or wide+tabs override)
-		var tabsActive = (newTier === 'medium' && narrowMode === 'tabs') ||
-			(newTier === 'wide' && userOverrodeNarrowMode && narrowMode === 'tabs');
 
 		// Notify settings panel — hide layout when tabs active or non-wide
 		// Pass whether wide mode is possible (so narrowMode selector can show)

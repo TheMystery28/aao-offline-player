@@ -131,6 +131,8 @@
 
 body
 {
+	display: flex;
+	flex-direction: column;
 	max-width: var(--body-max-width);
 	margin: 0 auto !important;
 	height: 100vh;
