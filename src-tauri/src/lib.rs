@@ -1521,19 +1521,35 @@ pub fn run() {
                 // On mobile, both dirs point to the same writable location
                 (dir.clone(), dir)
             } else {
-                // Desktop: engine_dir from resource_dir or dev fallback
-                let engine_dir = app
-                    .path()
-                    .resource_dir()
-                    .ok()
-                    .map(|d| d.join("engine"))
-                    .filter(|d| d.exists())
-                    .unwrap_or_else(|| {
-                        // Fallback for `tauri dev`: use source directory
-                        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-                        manifest_dir.parent().unwrap().join("engine")
-                    });
-                let data_dir = engine_dir.clone();
+                // Desktop: in dev mode, serve directly from source engine/ so edits
+                // are reflected immediately without manual copy to target/debug/engine/.
+                // In release, use resource_dir/engine (bundled by installer).
+                let engine_dir = if cfg!(debug_assertions) {
+                    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                    manifest_dir.parent().unwrap().join("engine")
+                } else {
+                    app.path()
+                        .resource_dir()
+                        .ok()
+                        .map(|d| d.join("engine"))
+                        .filter(|d| d.exists())
+                        .unwrap_or_else(|| {
+                            let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                            manifest_dir.parent().unwrap().join("engine")
+                        })
+                };
+                // In dev mode, data_dir stays in target/debug/engine for runtime
+                // data (cases, defaults, config). In release, same as engine_dir.
+                let data_dir = if cfg!(debug_assertions) {
+                    app.path()
+                        .resource_dir()
+                        .ok()
+                        .map(|d| d.join("engine"))
+                        .filter(|d| d.exists())
+                        .unwrap_or_else(|| engine_dir.clone())
+                } else {
+                    engine_dir.clone()
+                };
                 (engine_dir, data_dir)
             };
 
