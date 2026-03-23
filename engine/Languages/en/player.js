@@ -35,6 +35,7 @@
 "text_speed" : "Text speed",
 "blip_volume" : "Blip volume",
 "expand_descriptions" : "Expand descriptions",
+"body_width" : "Page width",
 "screen_scale" : "Screen scale",
 "evidence_width" : "Evidence width",
 "settings_width" : "Settings width",

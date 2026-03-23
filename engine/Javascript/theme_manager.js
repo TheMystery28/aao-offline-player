@@ -45,6 +45,7 @@ var ThemeManager = (function() {
 	}
 
 	function applyAll() {
+		applyBodyWidth();
 		applyScale();
 		applyNightMode();
 		applyPixelated();
@@ -63,9 +64,10 @@ var ThemeManager = (function() {
 	// Base flex values: slider 1.0 = these values (original panel proportions)
 	var EVIDENCE_BASE_FLEX = 0.7;
 	var SETTINGS_BASE_FLEX = 0.4;
-	// Saved flex values when overridden in non-wide modes
+	// Saved values when overridden in non-wide/tabs modes
 	var savedEvidenceScale = null;
 	var savedSettingsScale = null;
+	var savedScreenScale = null;
 	var flexOverridden = false;
 
 	function applyPanelWidths() {
@@ -149,6 +151,14 @@ var ThemeManager = (function() {
 		root.style.setProperty('--screen-auto-width', singleScreenWidth + 'px');
 		root.style.setProperty('--screen-auto-height', singleScreenHeight + 'px');
 		root.style.setProperty('--screen-content-scale', String(contentScale));
+	}
+
+	function applyBodyWidth() {
+		var scale = EngineConfig.get('layout.bodyWidth') || 1;
+		// Default 1.0 = 85vw. Slider adjusts the viewport percentage.
+		var vw = Math.round(85 * scale);
+		if (vw > 100) vw = 100;
+		document.documentElement.style.setProperty('--body-max-width', vw + 'vw');
 	}
 
 	function applyScale() {
@@ -355,34 +365,45 @@ var ThemeManager = (function() {
 			if (content) content.classList.add('layout-stack');
 		}
 
-		// In non-wide modes, override panel widths to default (1) and restore on return
-		if (newTier === 'wide' && !(userOverrodeNarrowMode && narrowMode === 'tabs')) {
-			// Entering wide (not tabs override): restore saved values
+		// In non-layout modes (tabs/medium/narrow/stack), override to defaults and restore on return
+		var isLayoutFree = !tabsActive && newTier === 'wide';
+		if (isLayoutFree) {
+			// Entering pure wide: restore saved values
 			if (flexOverridden) {
 				flexOverridden = false;
 				var root = document.documentElement;
-				var restoreE = (savedEvidenceScale !== null) ? savedEvidenceScale : 1;
-				var restoreS = (savedSettingsScale !== null) ? savedSettingsScale : 1;
-				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX * restoreE));
-				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX * restoreS));
+				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX * ((savedEvidenceScale !== null) ? savedEvidenceScale : 1)));
+				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX * ((savedSettingsScale !== null) ? savedSettingsScale : 1)));
+				if (savedScreenScale !== null) {
+					root.style.setProperty('--screen-scale', String(savedScreenScale));
+					computeAutoFitScreenSize();
+				}
 				savedEvidenceScale = null;
 				savedSettingsScale = null;
+				savedScreenScale = null;
 			}
 		} else {
-			// Entering tabs/medium/narrow/stack: save current and set to 1
+			// Entering tabs/medium/narrow/stack: save current and set to defaults
 			if (!flexOverridden) {
 				savedEvidenceScale = EngineConfig.get('layout.evidenceWidth') || 1;
 				savedSettingsScale = EngineConfig.get('layout.settingsWidth') || 1;
+				savedScreenScale = EngineConfig.get('layout.screenScale') || 1;
 				flexOverridden = true;
 				var root = document.documentElement;
 				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX));
 				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX));
+				root.style.setProperty('--screen-scale', '1');
+				computeAutoFitScreenSize();
 			}
 		}
 
-		// Notify settings panel to update picker visibility for current tier
+		// Determine if tabs are active (medium/tabs or wide+tabs override)
+		var tabsActive = (newTier === 'medium' && narrowMode === 'tabs') ||
+			(newTier === 'wide' && userOverrodeNarrowMode && narrowMode === 'tabs');
+
+		// Notify settings panel — hide layout when tabs active or non-wide
 		if (typeof SettingsPanel !== 'undefined' && SettingsPanel.updateLayoutTier) {
-			SettingsPanel.updateLayoutTier(currentLayoutTier);
+			SettingsPanel.updateLayoutTier(tabsActive ? 'tabs' : currentLayoutTier);
 		}
 	}
 
@@ -550,7 +571,9 @@ var ThemeManager = (function() {
 			return;
 		}
 		// Apply only relevant section
-		if (data.path.indexOf('layout.screenScale') === 0 || data.path.indexOf('layout.mobileScreenScale') === 0) {
+		if (data.path === 'layout.bodyWidth') {
+			applyBodyWidth();
+		} else if (data.path.indexOf('layout.screenScale') === 0 || data.path.indexOf('layout.mobileScreenScale') === 0) {
 			applyScale();
 		} else if (data.path === 'display.nightMode') {
 			applyNightMode();
