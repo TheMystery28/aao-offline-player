@@ -7,7 +7,7 @@ Ace Attorney Online - Player sound loader
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'player_sound',
-	dependencies : ['trial', 'frame_data', 'sound-howler', 'loading_bar', 'language'],
+	dependencies : ['engine_events', 'trial', 'frame_data', 'sound-howler', 'loading_bar', 'language'],
 	init : function()
 	{
 		if(trial_data)
@@ -135,6 +135,7 @@ var current_music_id;
 function playSound(sound_id)
 {
 	SoundHowler.playSound('sound_' + sound_id);
+	EngineEvents.emit('sound:play', { soundId: sound_id });
 }
 
 function playMusic(music_id)
@@ -147,6 +148,7 @@ function playMusic(music_id)
 		SoundHowler.setSoundVolume(howler_id, getRowById('music', music_id).volume);
 		SoundHowler.playSound(howler_id);
 		current_music_id = music_id;
+		EngineEvents.emit('music:play', { musicId: music_id });
 	}
 }
 
@@ -219,6 +221,7 @@ function stopMusic()
 {
 	SoundHowler.stopSound('music_' + current_music_id);
 	current_music_id = MUSIC_STOP;
+	EngineEvents.emit('music:stop', {});
 }
 
 // All "sound player" functions are needed for a minimalist music player.

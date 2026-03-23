@@ -7,7 +7,7 @@ Ace Attorney Online - Player main module
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'player',
-	dependencies : ['style_loader', 'trial', 'player_save', 'display_engine_screen', 'form_elements', 'language', 'nodes', 'page_loaded', 'events', 'player_sound', 'player_images', 'player_actions', 'actions_parameters', 'var_environments', 'player_courtrecord', 'expression_engine', 'player_debug', 'keyboard_controls', 'gamepad_controls'],
+	dependencies : ['engine_events', 'style_loader', 'trial', 'player_save', 'display_engine_screen', 'form_elements', 'language', 'nodes', 'page_loaded', 'events', 'player_sound', 'player_images', 'player_actions', 'actions_parameters', 'var_environments', 'player_courtrecord', 'expression_engine', 'player_debug', 'keyboard_controls', 'gamepad_controls'],
 	init : function()
 	{
 		Languages.setMainLanguage(user_language);
@@ -69,7 +69,19 @@ function proceed(condition, backwards)
 		return;
 	}
 	
-	// No condition left : read next frame
+	// No condition left : emit events and read next frame
+	EngineEvents.emit('frame:willLeave', {
+		frameIndex: player_status.current_frame_index,
+		frameId: player_status.current_frame_id,
+		speakerName: top_screen && top_screen.text_display ? top_screen.text_display.name_box.textContent : '',
+		dialogueHTML: top_screen && top_screen.text_display ? top_screen.text_display.dialogue_box.innerHTML : '',
+		dialogueText: top_screen && top_screen.text_display ? top_screen.text_display.dialogue_box.textContent : ''
+	});
+	EngineEvents.emit('proceed', {
+		direction: backwards ? 'backward' : 'forward',
+		condition: condition
+	});
+
 	if(backwards)
 	{
 		// If backwards (for CEs), find last non hidden frame before the current one
@@ -186,6 +198,8 @@ function player_init()
 			}
 		},false);
 
+		EngineEvents.emit('player:init', {});
+
 		// If save_data is in the URL (from Continue button), auto-click Start
 		// once all loading bars complete so the save loads without user interaction.
 		if('save_data' in _GET)
@@ -222,7 +236,13 @@ function readFrame(frame_index)
 	removeClass(document.getElementById('screens'), 'start');
 	
 	var frame_data = trial_data.frames[frame_index];
-	
+
+	EngineEvents.emit('frame:before', {
+		frameIndex: frame_index,
+		frameId: frame_data ? frame_data.id : 0,
+		frameData: frame_data || null
+	});
+
 	if(!frame_data)
 	{
 		// If frame doesn't exist, the case is ending.
@@ -365,6 +385,12 @@ function readFrame(frame_index)
 		
 		// Store merged status
 		player_status.last_frame_merged = frame_data.merged_to_next;
+
+		EngineEvents.emit('frame:after', {
+			frameIndex: frame_index,
+			frameId: frame_data.id,
+			frameData: frame_data
+		});
 	}
 }
 

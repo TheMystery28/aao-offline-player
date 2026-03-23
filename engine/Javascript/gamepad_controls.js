@@ -12,7 +12,7 @@ Start: toggle court record
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'gamepad_controls',
-	dependencies : ['events', 'page_loaded'],
+	dependencies : ['engine_events', 'events', 'page_loaded'],
 	init : function()
 	{
 		var proceedIds = ['proceed', 'skip', 'statement-forwards', 'statement-skip-forwards'];
@@ -42,14 +42,19 @@ Modules.load(new Object({
 				var el = document.getElementById(ids[i]);
 				if (el && isVisible(el)) {
 					el.click();
-					return;
+					return true;
 				}
 			}
+			return false;
 		}
 
 		function clickById(id) {
 			var el = document.getElementById(id);
-			if (el && isVisible(el)) el.click();
+			if (el && isVisible(el)) {
+				el.click();
+				return true;
+			}
+			return false;
 		}
 
 		function toggleCourtRecord() {
@@ -82,7 +87,9 @@ Modules.load(new Object({
 				if (buttons[BTN_A] && buttons[BTN_A].pressed) {
 					if (!wasPressed[g + '_' + BTN_A]) {
 						wasPressed[g + '_' + BTN_A] = true;
-						clickFirstVisible(proceedIds);
+						if (clickFirstVisible(proceedIds)) {
+							EngineEvents.emit('input:action', { source: 'gamepad', action: 'proceed' });
+						}
 					}
 				} else {
 					wasPressed[g + '_' + BTN_A] = false;
@@ -92,7 +99,9 @@ Modules.load(new Object({
 				if (buttons[BTN_B] && buttons[BTN_B].pressed) {
 					if (!wasPressed[g + '_' + BTN_B]) {
 						wasPressed[g + '_' + BTN_B] = true;
-						clickById(backId);
+						if (clickById(backId)) {
+							EngineEvents.emit('input:action', { source: 'gamepad', action: 'back' });
+						}
 					}
 				} else {
 					wasPressed[g + '_' + BTN_B] = false;
@@ -102,7 +111,9 @@ Modules.load(new Object({
 				if (buttons[DPAD_RIGHT] && buttons[DPAD_RIGHT].pressed) {
 					if (!wasPressed[g + '_' + DPAD_RIGHT]) {
 						wasPressed[g + '_' + DPAD_RIGHT] = true;
-						clickFirstVisible(forwardIds);
+						if (clickFirstVisible(forwardIds)) {
+							EngineEvents.emit('input:action', { source: 'gamepad', action: 'forward' });
+						}
 					}
 				} else {
 					wasPressed[g + '_' + DPAD_RIGHT] = false;
@@ -112,7 +123,9 @@ Modules.load(new Object({
 				if (buttons[DPAD_LEFT] && buttons[DPAD_LEFT].pressed) {
 					if (!wasPressed[g + '_' + DPAD_LEFT]) {
 						wasPressed[g + '_' + DPAD_LEFT] = true;
-						clickById(backId);
+						if (clickById(backId)) {
+							EngineEvents.emit('input:action', { source: 'gamepad', action: 'back' });
+						}
 					}
 				} else {
 					wasPressed[g + '_' + DPAD_LEFT] = false;
@@ -123,6 +136,7 @@ Modules.load(new Object({
 					if (!wasPressed[g + '_' + BTN_START]) {
 						wasPressed[g + '_' + BTN_START] = true;
 						toggleCourtRecord();
+						EngineEvents.emit('input:action', { source: 'gamepad', action: 'courtRecordToggle' });
 					}
 				} else {
 					wasPressed[g + '_' + BTN_START] = false;
