@@ -11,7 +11,7 @@ Right Arrow: click statement-forwards or statement-skip-forwards
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'keyboard_controls',
-	dependencies : ['events', 'page_loaded'],
+	dependencies : ['engine_events', 'events', 'page_loaded'],
 	init : function()
 	{
 		var KEY_ENTER = 13;
@@ -49,25 +49,34 @@ Modules.load(new Object({
 
 			if ((k === KEY_ENTER || k === KEY_SPACE) && !pressed[k]) {
 				pressed[k] = true;
-				clickFirstVisible(proceedIds);
+				if (clickFirstVisible(proceedIds)) {
+					EngineEvents.emit('input:action', { source: 'keyboard', action: 'proceed' });
+				}
 				e.preventDefault();
 			}
 
 			if (k === KEY_SHIFT) {
-				clickFirstVisible(proceedIds);
+				if (clickFirstVisible(proceedIds)) {
+					EngineEvents.emit('input:action', { source: 'keyboard', action: 'proceed' });
+				}
 				e.preventDefault();
 			}
 
 			if (k === KEY_RIGHT && !pressed[k]) {
 				pressed[k] = true;
-				clickFirstVisible(forwardIds);
+				if (clickFirstVisible(forwardIds)) {
+					EngineEvents.emit('input:action', { source: 'keyboard', action: 'forward' });
+				}
 				e.preventDefault();
 			}
 
 			if (k === KEY_LEFT && !pressed[k]) {
 				pressed[k] = true;
 				var el = document.getElementById(backId);
-				if (el && isVisible(el)) el.click();
+				if (el && isVisible(el)) {
+					el.click();
+					EngineEvents.emit('input:action', { source: 'keyboard', action: 'back' });
+				}
 				e.preventDefault();
 			}
 		});

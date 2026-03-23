@@ -7,7 +7,7 @@ Ace Attorney Online - Player game saving module
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'player_save',
-	dependencies : ['objects_diff', 'trial', 'base64', 'var_environments', 'player_sound', 'player_debug', 'nodes', 'events'],
+	dependencies : ['engine_events', 'objects_diff', 'trial', 'base64', 'var_environments', 'player_sound', 'player_debug', 'nodes', 'events'],
 	init : function() { }
 }));
 
@@ -150,6 +150,8 @@ function loadSaveData(save)
 	
 	// Save loaded : remove start overlay if present.
 	removeClass(document.getElementById('screens'), 'start');
+
+	EngineEvents.emit('save:loaded', { saveData: save });
 }
 
 function loadSaveString(save_string)
@@ -302,8 +304,10 @@ function refreshSavesList()
 				{
 					game_saves[trial_information.id] = {};
 				}
-				game_saves[trial_information.id][(new Date()).getTime()] = getSaveString();
+				var saveStr = getSaveString();
+				game_saves[trial_information.id][(new Date()).getTime()] = saveStr;
 				window.localStorage.setItem('game_saves', JSON.stringify(game_saves));
+				EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
 				refreshSavesList();
 			}
 		}, false);
@@ -326,8 +330,10 @@ window.addEventListener('message', function(event) {
 				if (!game_saves[trial_information.id]) {
 					game_saves[trial_information.id] = {};
 				}
-				game_saves[trial_information.id][(new Date()).getTime()] = getSaveString();
+				var saveStr = getSaveString();
+				game_saves[trial_information.id][(new Date()).getTime()] = saveStr;
 				window.localStorage.setItem('game_saves', JSON.stringify(game_saves));
+				EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
 				console.log('[SAVE] Auto-saved on quit');
 			} catch (e) {
 				console.warn('[SAVE] Auto-save error:', e.message);

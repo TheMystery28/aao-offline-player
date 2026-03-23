@@ -7,7 +7,7 @@ Ace Attorney Online - Player court records manager
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'player_courtrecord',
-	dependencies : ['trial', 'trial_data', 'nodes', 'language', 'page_loaded', 'player_debug', 'expression_engine'],
+	dependencies : ['engine_events', 'trial', 'trial_data', 'nodes', 'language', 'page_loaded', 'player_debug', 'expression_engine'],
 	init : function(){
 		if(trial_data)
 		{
@@ -182,6 +182,8 @@ function selectCrElement(type, id)
 		container.appendChild(description);
 		
 		container.setAttribute('data-selected-elt', type + '_' + id);
+
+		EngineEvents.emit('courtrecord:select', { type: type, id: id });
 	}
 }
 
@@ -203,12 +205,13 @@ function refreshCrElements()
 function setCrElementHidden(type, id, hidden)
 {
 	var elt = getRowById(type, id);
-	
+
 	if(elt)
 	{
 		elt.hidden = hidden;
 		document.getElementById('cr_' + type + '_' + id).hidden = hidden;
-		
+
+		EngineEvents.emit('courtrecord:visibility', { type: type, id: id, hidden: hidden });
 		debugRefreshCourtRecords();
 	}
 }

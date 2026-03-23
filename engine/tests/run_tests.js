@@ -142,7 +142,8 @@
 			['Display', typeof testDisplay === 'function' ? testDisplay : null],
 			['Expression Engine', typeof testExpressionEngine === 'function' ? testExpressionEngine : null],
 			['Language', typeof testLanguage === 'function' ? testLanguage : null],
-			['Objects', typeof testObjects === 'function' ? testObjects : null]
+			['Objects', typeof testObjects === 'function' ? testObjects : null],
+		['EngineEvents', typeof testEngineEvents === 'function' ? testEngineEvents : null]
 		];
 
 		for (var i = 0; i < suites.length; i++) {
