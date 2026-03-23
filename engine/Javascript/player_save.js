@@ -177,108 +177,23 @@ function loadSaveString(save_string)
 function refreshSavesList()
 {
 	var container = document.getElementById('player_saves');
-	
+	var btnContainer = document.getElementById('player_saves_buttons');
+
 	emptyNode(container);
-	
+
 	if(window.localStorage)
 	{
 		var game_saves = JSON.parse(window.localStorage.getItem('game_saves'));
-		if(game_saves && (trial_information.id in game_saves))
-		{
-			for(var save_date in game_saves[trial_information.id])
-			{
-				(function(save_date, save_string){
-					var delete_save_button = document.createElement('button');
-					registerEventHandler(delete_save_button, 'click', function() {
-						delete game_saves[trial_information.id][save_date];
-						if(Object.keys(game_saves[trial_information.id]).length == 0) {
-							delete game_saves[trial_information.id];
-						}
-						window.localStorage.setItem('game_saves', JSON.stringify(game_saves));
-						refreshSavesList();
-					}, false);
-					setNodeTextContents(delete_save_button, '×');
-					container.appendChild(delete_save_button);
-					
-					var save_link = document.createElement('a');
 
-					var url = new URL(window.location.href);
-					url.searchParams.set("save_data", Base64.encode(save_string));
-					save_link.href = url.toString();
-
-					registerEventHandler(save_link, 'click', function(event){
-						if(player_status.proceed_timer && !player_status.proceed_timer_met)
-						{
-							alert(l('save_error_pending_timer'));
-						}
-						else if(player_status.proceed_typing && !player_status.proceed_typing_met)
-						{
-							alert(l('save_error_frame_typing'));
-						}
-						else
-						{
-							loadSaveString(save_string);
-						}
-						event.preventDefault();
-					}, false);
-					setNodeTextContents(save_link, (new Date(save_date)).toLocaleString());
-					container.appendChild(save_link);
-				})(parseInt(save_date), game_saves[trial_information.id][save_date]);
-			}
-		}
-		
-		// Show saves from other parts of the same sequence
-		if(trial_information.sequence && trial_information.sequence.list && game_saves)
-		{
-			var seq_list = trial_information.sequence.list;
-			for(var si = 0; si < seq_list.length; si++)
-			{
-				var part_id = seq_list[si].id;
-				if(part_id == trial_information.id) continue; // Skip current part
-				if(!(part_id in game_saves)) continue; // No saves for this part
-
-				// Add a divider with the part title
-				var divider = document.createElement('div');
-				divider.style.cssText = 'margin-top:8px;padding-top:4px;border-top:1px solid #444;font-size:0.85em;color:#aaa;';
-				divider.textContent = seq_list[si].title || ('Part ' + part_id);
-				container.appendChild(divider);
-
-				for(var other_date in game_saves[part_id])
-				{
-					(function(other_part_id, save_date_str, save_string){
-						var save_link = document.createElement('a');
-
-						var url = new URL(window.location.href);
-						url.searchParams.set('trial_id', other_part_id);
-						url.searchParams.set('save_data', Base64.encode(save_string));
-						save_link.href = url.toString();
-
-						registerEventHandler(save_link, 'click', function(event){
-							if(player_status.proceed_timer && !player_status.proceed_timer_met)
-							{
-								alert(l('save_error_pending_timer'));
-							}
-							else if(player_status.proceed_typing && !player_status.proceed_typing_met)
-							{
-								alert(l('save_error_frame_typing'));
-							}
-							else
-							{
-								// Redirect to the other part with save data
-								window.location.href = save_link.href;
-							}
-							event.preventDefault();
-						}, false);
-						setNodeTextContents(save_link, (new Date(parseInt(save_date_str))).toLocaleString());
-						container.appendChild(save_link);
-					})(part_id, other_date, game_saves[part_id][other_date]);
-				}
-			}
-		}
+		// --- Save + Load buttons outside the scroll area (always visible) ---
+		if (btnContainer) { emptyNode(btnContainer); }
+		var btnRow = document.createElement('div');
+		btnRow.style.cssText = 'display:flex;gap:4px;margin-bottom:4px;';
 
 		var save_button = document.createElement('button');
 		addClass(save_button, 'save_new');
-		save_button.setAttribute('data-locale-content', 'save_new');
+		save_button.textContent = l('save_new') || 'New save';
+		save_button.style.cssText = 'flex:1;padding:6px 8px;';
 		registerEventHandler(save_button, 'click', function(){
 			if(player_status.current_frame_index == 0)
 			{
@@ -294,25 +209,162 @@ function refreshSavesList()
 			}
 			else
 			{
-				var game_saves = JSON.parse(window.localStorage.getItem('game_saves'));
-				if(!game_saves)
+				var gs = JSON.parse(window.localStorage.getItem('game_saves'));
+				if(!gs)
 				{
 					alert(l('save_explain'));
-					game_saves = {};
+					gs = {};
 				}
-				if(!game_saves[trial_information.id])
+				if(!gs[trial_information.id])
 				{
-					game_saves[trial_information.id] = {};
+					gs[trial_information.id] = {};
 				}
 				var saveStr = getSaveString();
-				game_saves[trial_information.id][(new Date()).getTime()] = saveStr;
-				window.localStorage.setItem('game_saves', JSON.stringify(game_saves));
+				gs[trial_information.id][(new Date()).getTime()] = saveStr;
+				window.localStorage.setItem('game_saves', JSON.stringify(gs));
 				EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
 				refreshSavesList();
 			}
 		}, false);
-		container.appendChild(save_button);
-		
+		btnRow.appendChild(save_button);
+
+		var load_button = document.createElement('button');
+		load_button.textContent = l('load_latest') || 'Load latest';
+		load_button.style.cssText = 'flex:1;padding:6px 8px;';
+		registerEventHandler(load_button, 'click', function(){
+			var gs = JSON.parse(window.localStorage.getItem('game_saves'));
+			if(!gs) return;
+			// Find the latest save across ALL sequence parts
+			var latestDate = 0;
+			var latestPartId = null;
+			var latestStr = null;
+			var partsToCheck = [trial_information.id];
+			if (trial_information.sequence && trial_information.sequence.list) {
+				for (var si = 0; si < trial_information.sequence.list.length; si++) {
+					partsToCheck.push(trial_information.sequence.list[si].id);
+				}
+			}
+			for (var pi = 0; pi < partsToCheck.length; pi++) {
+				var pid = partsToCheck[pi];
+				if (!gs[pid]) continue;
+				var dates = Object.keys(gs[pid]).map(Number);
+				for (var di = 0; di < dates.length; di++) {
+					if (dates[di] > latestDate) {
+						latestDate = dates[di];
+						latestPartId = pid;
+						latestStr = gs[pid][String(dates[di])];
+					}
+				}
+			}
+			if (!latestStr) return;
+			if(player_status.proceed_timer && !player_status.proceed_timer_met)
+			{
+				alert(l('save_error_pending_timer'));
+			}
+			else if(player_status.proceed_typing && !player_status.proceed_typing_met)
+			{
+				alert(l('save_error_frame_typing'));
+			}
+			else
+			{
+				if (latestPartId == trial_information.id) {
+					loadSaveString(latestStr);
+				} else {
+					// Redirect to the other part with save data
+					var url = new URL(window.location.href);
+					url.searchParams.set('trial_id', latestPartId);
+					url.searchParams.set('save_data', Base64.encode(latestStr));
+					window.location.href = url.toString();
+				}
+			}
+		}, false);
+		btnRow.appendChild(load_button);
+
+		(btnContainer || container).appendChild(btnRow);
+
+		// --- Unified save list: merge all parts, sort by date, show headers on part change ---
+		// Build a flat array of { date, partId, saveString, title, isCurrent }
+		var allSaves = [];
+		var partTitles = {};
+		partTitles[trial_information.id] = null; // current part = no header
+
+		// Collect current part saves
+		if (game_saves && game_saves[trial_information.id]) {
+			var curDates = Object.keys(game_saves[trial_information.id]);
+			for (var ci = 0; ci < curDates.length; ci++) {
+				allSaves.push({ date: Number(curDates[ci]), partId: trial_information.id, saveString: game_saves[trial_information.id][curDates[ci]], isCurrent: true });
+			}
+		}
+
+		// Collect sequence part saves
+		if (trial_information.sequence && trial_information.sequence.list && game_saves) {
+			var seq_list = trial_information.sequence.list;
+			for (var si = 0; si < seq_list.length; si++) {
+				var pid = seq_list[si].id;
+				partTitles[pid] = seq_list[si].title || ('Part ' + pid);
+				if (pid == trial_information.id || !game_saves[pid]) continue;
+				var pDates = Object.keys(game_saves[pid]);
+				for (var pi = 0; pi < pDates.length; pi++) {
+					allSaves.push({ date: Number(pDates[pi]), partId: pid, saveString: game_saves[pid][pDates[pi]], isCurrent: false });
+				}
+			}
+		}
+
+		// Sort all saves latest-first
+		allSaves.sort(function(a, b) { return b.date - a.date; });
+
+		// Render with part headers on every part change
+		var lastPartId = null;
+		for (var ai = 0; ai < allSaves.length; ai++) {
+			(function(entry) {
+				// Show part header when part changes (skip header for current part at the very top)
+				if (entry.partId !== lastPartId && !(lastPartId === null && entry.isCurrent)) {
+					var title = entry.isCurrent ? (trial_information.title || 'Current part') : (partTitles[entry.partId] || ('Part ' + entry.partId));
+					var divider = document.createElement('div');
+					divider.style.cssText = 'margin-top:6px;padding-top:3px;border-top:1px solid #444;font-size:0.85em;color:#aaa;';
+					divider.textContent = title;
+					container.appendChild(divider);
+				}
+				lastPartId = entry.partId;
+
+				// Delete button (only for current part saves)
+				if (entry.isCurrent) {
+					var del = document.createElement('button');
+					registerEventHandler(del, 'click', function() {
+						delete game_saves[entry.partId][String(entry.date)];
+						if (Object.keys(game_saves[entry.partId]).length === 0) delete game_saves[entry.partId];
+						window.localStorage.setItem('game_saves', JSON.stringify(game_saves));
+						refreshSavesList();
+					}, false);
+					setNodeTextContents(del, '×');
+					container.appendChild(del);
+				}
+
+				var save_link = document.createElement('a');
+				var url = new URL(window.location.href);
+				if (!entry.isCurrent) url.searchParams.set('trial_id', entry.partId);
+				url.searchParams.set('save_data', Base64.encode(entry.saveString));
+				save_link.href = url.toString();
+
+				registerEventHandler(save_link, 'click', function(event) {
+					if (player_status.proceed_timer && !player_status.proceed_timer_met) {
+						alert(l('save_error_pending_timer'));
+					} else if (player_status.proceed_typing && !player_status.proceed_typing_met) {
+						alert(l('save_error_frame_typing'));
+					} else {
+						if (entry.isCurrent) {
+							loadSaveString(entry.saveString);
+						} else {
+							window.location.href = save_link.href;
+						}
+					}
+					event.preventDefault();
+				}, false);
+				setNodeTextContents(save_link, (new Date(entry.date)).toLocaleString());
+				container.appendChild(save_link);
+			})(allSaves[ai]);
+		}
+
 		translateNode(container);
 	}
 }
