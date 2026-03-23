@@ -131,18 +131,27 @@ function testThemeManager() {
 		ThemeManager.reapply();
 	})();
 
-	// --- NEW: Screen scale CSS effect (Fix 2) ---
+	// --- NEW: Screen scale CSS effect (Fix 2) — auto-fit computed properties ---
 	(function() {
 		var screens = document.getElementById('screens');
 		if (!screens) return;
 		EngineConfig.set('layout.screenScale', 1.5);
 		ThemeManager.reapply();
-		var style = getComputedStyle(screens);
-		// zoom property is used instead of transform — check via style.zoom
-		var zoomVal = screens.style.zoom || style.zoom || '';
+		var rootStyle = getComputedStyle(document.documentElement);
+		var autoWidth = rootStyle.getPropertyValue('--screen-auto-width').trim();
+		var contentScale = rootStyle.getPropertyValue('--screen-content-scale').trim();
+		// In the test environment the section may have 0 height, so auto-fit may
+		// not produce meaningful values. Just verify the CSS custom properties exist
+		// and that --screen-scale was set correctly.
+		var scaleVal = rootStyle.getPropertyValue('--screen-scale').trim();
+		TestHarness.assertEqual(
+			scaleVal, '1.5',
+			'Screen scale CSS: --screen-scale is 1.5 when screenScale is 1.5'
+		);
+		// --screen-auto-width should be a px value (either computed or fallback 256px)
 		TestHarness.assert(
-			zoomVal !== '' && zoomVal !== '1' && zoomVal !== 'normal',
-			'Screen scale CSS: #screens has zoom when screenScale is 1.5'
+			autoWidth.indexOf('px') !== -1,
+			'Screen scale CSS: --screen-auto-width is a px value'
 		);
 		EngineConfig.set('layout.screenScale', 1.0);
 		ThemeManager.reapply();

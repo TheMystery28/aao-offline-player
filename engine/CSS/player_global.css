@@ -7,22 +7,20 @@
 	--screen-scale: 1;
 	--mobile-screen-scale: 1.4;
 	--screen-gap: 0.7em;
+	--screen-auto-width: 256px;
+	--screen-auto-height: 192px;
+	--screen-content-scale: 1;
 
 	--body-max-width: 1090px;
 	--header-height: 3.8em;
 
-	--cr-width: calc(58% - 80px/2);
-	--settings-width: calc(38% - 410px/2);
+	--settings-panel-width: 280px;
 
 	--lifebar-width: 120px;
 	--lifebar-height: 10px;
 	--meta-height: 18px;
 	--buttonbar-height: 18px;
 	--buttonbar-height-thin: 16px;
-
-	--evidence-card-width: 268px;
-	--evidence-card-height: 86px;
-	--evidence-list-height: 30em;
 
 	/* ---- Spacing ---- */
 	--content-padding: 0.7em;
@@ -127,23 +125,23 @@
 }
 
 /* Portrait mode overrides — centralized custom property changes */
-@media (orientation: portrait) {
-	:root {
-		--cr-width: calc(100% - 0.15em);
-		--settings-width: calc(100% - 12px);
-	}
-}
+/* (--cr-width and --settings-width removed; layout now uses flex) */
 
 body
 {
 	max-width: var(--body-max-width);
-	margin: auto !important;
+	margin: 0 auto !important;
+	height: 100vh;
+	overflow: hidden;
 }
 
 body > #content
 {
 	position: relative;
+	flex: 1 1 0;
+	min-height: 0;
 	background: var(--color-bg-section);
+	overflow: hidden;
 }
 
 body > #content > section
@@ -151,8 +149,11 @@ body > #content > section
 	display: flex;
 	flex-direction: row;
 	justify-content: space-evenly;
+	align-items: stretch;
 	padding: 0;
 	border: 0;
+	height: 100%;
+	overflow: hidden;
 }
 
 
@@ -161,6 +162,7 @@ body > #content > section
 	body > #content > section
 	{
 		flex-direction: column;
+		overflow-y: auto;
 	}
 }
 
@@ -177,21 +179,15 @@ body > #content > section
  
 #screens
 {
-	width:var(--screen-width);
+	width: var(--screen-auto-width);
+	flex-shrink: 0;
+	align-self: center;
 }
 
 #screens.pixelated
 {
 	image-rendering: pixelated;
 	image-rendering: -moz-crisp-edges;
-}
-
-/* Desktop screen scale — controlled by --screen-scale CSS custom property.
-   Uses zoom instead of transform so the element's layout box grows with the scale,
-   pushing adjacent flex siblings (court record, settings panel) accordingly. */
-#screens
-{
-	zoom: var(--screen-scale, 1);
 }
 
 /* Additional magnification for mobile devices in portrait orientation */
@@ -258,18 +254,26 @@ body > #content > section
 
 #screen-top {
 	z-index:2;
-	width:var(--screen-width);
-	height:var(--screen-height);
+	width:var(--screen-auto-width);
+	height:var(--screen-auto-height);
 	margin:var(--screen-gap) 0 0 0;
 	overflow:hidden;
 }
 
 #screen-bottom {
 	position:relative;
-	width:var(--screen-width);
-	height:var(--screen-height);
+	width:var(--screen-auto-width);
+	height:var(--screen-auto-height);
 	margin:var(--screen-gap) 0 0 0;
 	z-index:2;
+	overflow:hidden;
+}
+
+/* Scale internal game content to fill the auto-fit screen */
+#screen-top > *,
+#screen-bottom > * {
+	transform-origin: 0 0;
+	transform: scale(var(--screen-content-scale));
 }
 
 #screen-loading
@@ -279,13 +283,33 @@ body > #content > section
 	position: absolute;
     z-index: 3;
     box-sizing: border-box;
-    width:var(--screen-width);
-	height:var(--screen-height);
+    width:var(--screen-auto-width);
+	height:var(--screen-auto-height);
 	margin:var(--screen-gap) 0 0 0;
 	padding: 0 var(--screen-gap);
 
     font-size: 16px;
     color: white;
+}
+
+/* Portrait mode: reset screens to fixed dimensions with zoom-based scaling */
+@media (orientation: portrait) {
+	#screen-top {
+		width: var(--screen-width);
+		height: var(--screen-height);
+	}
+	#screen-bottom {
+		width: var(--screen-width);
+		height: var(--screen-height);
+	}
+	#screen-loading {
+		width: var(--screen-width);
+		height: var(--screen-height);
+	}
+	#screen-top > *,
+	#screen-bottom > * {
+		transform: none;
+	}
 }
 
 [id|=screen] :focus { outline:none; }
@@ -614,22 +638,35 @@ body > #content > section
 #courtrecord #cr_profiles
 {
 	display: none;
+	flex-direction: column;
+	flex: 1 1 0;
+	min-height: 0;
+	overflow: hidden;
 }
 
 #courtrecord.evidence #cr_evidence,
 #courtrecord.profiles #cr_profiles
 {
-	display: block;
+	display: flex;
 }
 
 #courtrecord
 {
-	/*position:absolute; */
-	/*top:10px; right:230px; bottom:10px; left:276px;*/
-	width: var(--cr-width);
+	flex: 1 1 0;
+	min-width: 0;
 	align-self: stretch;
 	background:var(--color-bg-cr);
 	border:1px solid var(--color-border-cr);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+@media (orientation: portrait) {
+	#courtrecord {
+		width: 100%;
+		flex: none;
+	}
 }
 
 /* Court record position variants (controlled by ThemeManager) */
@@ -641,8 +678,10 @@ body > #content > section.cr-bottom {
 	flex-wrap: wrap;
 }
 body > #content > section.cr-bottom #courtrecord {
+	flex: none;
 	width: 100%;
 	order: 3;
+	max-height: 40vh;
 }
 
 body > #content > section.cr-hidden #courtrecord {
@@ -652,6 +691,7 @@ body > #content > section.cr-hidden #courtrecord {
 
 .courtrecord-header {
 	position:relative;
+	flex-shrink: 0;
 	margin: 0 0 0.07em -0.07em;
 	height:33px;
 
@@ -661,7 +701,7 @@ body > #content > section.cr-hidden #courtrecord {
 	background-image: linear-gradient(to bottom, var(--color-bg-cr-header) 0%,var(--color-bg-cr-header) 48%,#959595 52%,var(--color-bg-cr-header-dark) 55%,var(--color-bg-cr-header-dark) 64%,var(--color-border-cr-header) 67%,#595959 70%,#595959 100%);
 }
 
-/* Portrait mode: #courtrecord uses --cr-width which is overridden in the portrait :root block */
+/* Portrait mode: #courtrecord uses flex: none at full width (see portrait override above) */
 
 .courtrecord-header h1 {
 	position:absolute;
@@ -724,14 +764,15 @@ a.courtrecord-switchview:active {
 }
 
 .evidence-list {
-	/*position: absolute;*/
-	top: 34px;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	overflow: auto;
-	height: var(--evidence-list-height);
+	flex: 1 1 0;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
 	padding: var(--panel-padding);
+	display: flex;
+	flex-wrap: wrap;
+	align-content: flex-start;
+	gap: var(--card-margin);
 }
 
 @media (orientation: portrait) {
@@ -740,15 +781,22 @@ a.courtrecord-switchview:active {
 		padding: 0;
 		margin: 0;
 	}
+
+	.evidence-list .evidence_display {
+		display: block;
+		flex: none;
+		width: 85%;
+		margin: 0 auto 5px;
+	}
 }
 
 
 .evidence-list .evidence_display
 {
-	display: inline-block;
-	width: var(--evidence-card-width);
-	height: var(--evidence-card-height);
-	margin: 0 var(--card-margin) var(--card-margin) 0;
+	flex: 1 1 200px;
+	min-width: 200px;
+	max-width: 100%;
+	margin: 0;
 	padding: var(--panel-padding) 0;
 	vertical-align: top;
 
@@ -775,10 +823,12 @@ a.courtrecord-switchview:active {
 .evidence-list .evidence_display:active .details
 {
 	display: block;
-	position: relative;
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 100%;
 	max-height: none;
 	z-index: 3;
-	top: 3px;
 }
 
 /* When expand mode is on, suppress the hover float behavior */
@@ -979,20 +1029,54 @@ a.courtrecord-switchview:active {
  * ------------- */
  
 #player-parametres {
-	/*position:absolute;
-	top:10px; right:10px; bottom:10px; */
-	width: var(--settings-width);
-	overflow: auto;
-	padding:var(--panel-padding);
+	width: var(--settings-panel-width);
+	flex-shrink: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: var(--panel-padding);
 	align-self: stretch;
-	border:1px solid var(--color-border-panel);
-	background:var(--color-bg-panel);
+	border: 1px solid var(--color-border-panel);
+	background: var(--color-bg-panel);
 
-	font-size:var(--font-size-body);
+	font-size: var(--font-size-body);
 }
 
-/* Portrait mode: #player-parametres uses --settings-width which is overridden in the portrait :root block */
+@media (orientation: portrait) {
+	#player-parametres {
+		width: calc(100% - 12px);
+		flex-shrink: 1;
+	}
+}
 
+#player-parametres details {
+	margin-bottom: 5px;
+	border: 1px solid var(--color-border-light);
+	border-radius: var(--radius-md);
+}
+
+#player-parametres details > summary {
+	cursor: pointer;
+	padding: 5px 8px;
+	font-weight: bold;
+	user-select: none;
+}
+
+#player-parametres details > summary:hover {
+	background: var(--color-bg-header);
+}
+
+#player-parametres details[open] > summary {
+	border-bottom: 1px solid var(--color-border-light);
+}
+
+#player-parametres details > .settings-section-content {
+	padding: 5px;
+}
+
+#player_saves {
+	max-height: 10em;
+	overflow-y: auto;
+}
 
 #player-parametres section {
 	margin-bottom: 10px;

@@ -39,11 +39,13 @@ html
     top: 0; left: 0; right: 0; bottom: 0;
 }
 
-body 
+body
 {
     position: relative;
-    height: 100%;
-    /*min-width:940px;*/
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
     margin: 0 0.8em;
 
     background-color:var(--color-bg-page);
@@ -84,7 +86,8 @@ header.compact
 	flex-direction: row;
 	justify-content: space-between;
 	align-items: stretch;
-	
+	flex-shrink: 0;
+
 	width: 100%;
 	height: var(--header-height);
 

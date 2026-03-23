@@ -152,50 +152,62 @@ var SettingsPanel = (function() {
 		emptyNode(container);
 
 		// --- Display section ---
-		const displaySection = document.createElement('div');
-		addClass(displaySection, 'settings-section');
-		const displayTitle = document.createElement('h3');
-		displayTitle.textContent = 'Display';
-		displaySection.appendChild(displayTitle);
+		const displayDetails = document.createElement('details');
+		displayDetails.open = true;
+		const displaySummary = document.createElement('summary');
+		displaySummary.textContent = 'Display';
+		displayDetails.appendChild(displaySummary);
 
-		addCheckbox(displaySection, 'display.mute', 'mute');
-		addCheckbox(displaySection, 'display.instantText', 'instant_text_typing');
-		addCheckbox(displaySection, 'display.nightMode', 'night_mode');
-		addCheckbox(displaySection, 'display.pixelated', 'pixelated');
-		addSlider(displaySection, 'display.textSpeed', 'text_speed', 0.1, 3.0, 0.1);
-		addSlider(displaySection, 'display.blipVolume', 'blip_volume', 0, 100, 5);
-		addCheckbox(displaySection, 'display.expandEvidenceDescriptions', 'expand_descriptions');
+		const displayContent = document.createElement('div');
+		addClass(displayContent, 'settings-section-content');
 
-		container.appendChild(displaySection);
+		addCheckbox(displayContent, 'display.mute', 'mute');
+		addCheckbox(displayContent, 'display.instantText', 'instant_text_typing');
+		addCheckbox(displayContent, 'display.nightMode', 'night_mode');
+		addCheckbox(displayContent, 'display.pixelated', 'pixelated');
+		addSlider(displayContent, 'display.textSpeed', 'text_speed', 0.1, 3.0, 0.1);
+		addSlider(displayContent, 'display.blipVolume', 'blip_volume', 0, 100, 5);
+		addCheckbox(displayContent, 'display.expandEvidenceDescriptions', 'expand_descriptions');
+
+		displayDetails.appendChild(displayContent);
+		container.appendChild(displayDetails);
 
 		// --- Layout section ---
-		const layoutSection = document.createElement('div');
-		addClass(layoutSection, 'settings-section');
-		const layoutTitle = document.createElement('h3');
-		layoutTitle.textContent = 'Layout';
-		layoutSection.appendChild(layoutTitle);
+		const layoutDetails = document.createElement('details');
+		layoutDetails.open = true;
+		const layoutSummary = document.createElement('summary');
+		layoutSummary.textContent = 'Layout';
+		layoutDetails.appendChild(layoutSummary);
 
-		addSlider(layoutSection, 'layout.screenScale', 'screen_scale', 0.5, 2.0, 0.1);
-		addSelect(layoutSection, 'layout.courtRecordPosition', 'cr_position', [
+		const layoutContent = document.createElement('div');
+		addClass(layoutContent, 'settings-section-content');
+
+		addSlider(layoutContent, 'layout.screenScale', 'screen_scale', 0.5, 2.0, 0.1);
+		addSelect(layoutContent, 'layout.courtRecordPosition', 'cr_position', [
 			{ value: 'right', label: 'Right' },
 			{ value: 'left', label: 'Left' },
 			{ value: 'bottom', label: 'Bottom' },
 			{ value: 'hidden', label: 'Hidden' }
 		]);
 
-		container.appendChild(layoutSection);
+		layoutDetails.appendChild(layoutContent);
+		container.appendChild(layoutDetails);
 
 		// --- Controls section ---
-		const controlsSection = document.createElement('div');
-		addClass(controlsSection, 'settings-section');
-		const controlsTitle = document.createElement('h3');
-		controlsTitle.textContent = 'Controls';
-		controlsSection.appendChild(controlsTitle);
+		const controlsDetails = document.createElement('details');
+		controlsDetails.open = true;
+		const controlsSummary = document.createElement('summary');
+		controlsSummary.textContent = 'Controls';
+		controlsDetails.appendChild(controlsSummary);
 
-		addBindingsDisplay(controlsSection);
-		addResetButton(controlsSection);
+		const controlsContent = document.createElement('div');
+		addClass(controlsContent, 'settings-section-content');
 
-		container.appendChild(controlsSection);
+		addBindingsDisplay(controlsContent);
+		addResetButton(controlsContent);
+
+		controlsDetails.appendChild(controlsContent);
+		container.appendChild(controlsDetails);
 	}
 
 	return {

@@ -219,17 +219,23 @@ function setCrElementHidden(type, id, hidden)
 function populateCrElementSummary(container, type, elt)
 {
 	emptyNode(container);
-	
+
 	// Create structure
 	var img = new Image();
 	container.appendChild(img);
+
+	// Text wrapper (for flex layout)
+	var textWrapper = document.createElement('div');
+	addClass(textWrapper, 'summary-text');
+	container.appendChild(textWrapper);
+
 	var name = document.createElement('span');
 	addClass(name, 'name');
-	container.appendChild(name);
+	textWrapper.appendChild(name);
 	var metadata = document.createElement('span');
 	addClass(metadata, 'civil_status');
-	container.appendChild(metadata);
-	
+	textWrapper.appendChild(metadata);
+
 	// Populate with element data
 	if(type == 'evidence')
 	{

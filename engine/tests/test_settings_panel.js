@@ -33,8 +33,8 @@ function testSettingsPanel() {
 			return;
 		}
 
-		// Check that sections were created
-		var sections = container.querySelectorAll('.settings-section');
+		// Check that sections were created (using <details> elements)
+		var sections = container.querySelectorAll('details');
 		TestHarness.assert(sections.length >= 3, 'Settings panel has at least 3 sections (Display, Layout, Controls)');
 
 		// Check that checkboxes were created

@@ -145,14 +145,18 @@
 		</div>
 
 		<div id="player-parametres">
-			<section>
-				<h2 data-locale-content="player_settings"></h2>
-				<div id="player_settings"></div>
-			</section>
-			<section>
-				<h2 data-locale-content="player_saves"></h2>
-				<div id="player_saves"></div>
-			</section>
+			<details open>
+				<summary data-locale-content="player_saves"></summary>
+				<div class="settings-section-content">
+					<div id="player_saves"></div>
+				</div>
+			</details>
+			<details open>
+				<summary data-locale-content="player_settings"></summary>
+				<div class="settings-section-content">
+					<div id="player_settings"></div>
+				</div>
+			</details>
 			<section id="player_debug" hidden="hidden">
 				<h2 data-locale-content="player_debug"></h2>
 				<details>
