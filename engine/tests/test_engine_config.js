@@ -1,9 +1,16 @@
 "use strict";
 /**
  * EngineConfig regression tests.
+ * IMPORTANT: Do NOT call EngineEvents.clear() — it destroys other modules'
+ * internal listeners (InputManager, etc.). Use targeted on/off instead.
  */
 function testEngineConfig() {
 	TestHarness.suite('EngineConfig');
+
+	// Clean up any stale localStorage from previous test runs
+	window.localStorage.removeItem('aao_engine_config');
+	EngineConfig.reset();
+	EngineConfig._init(); // Re-initialize from clean state
 
 	// Module is loaded
 	TestHarness.assertEqual(
@@ -56,10 +63,8 @@ function testEngineConfig() {
 
 	// --- set() persists to localStorage ---
 	(function() {
-		// Clean up any previous test data
 		window.localStorage.removeItem('aao_engine_config');
-
-		EngineConfig.reset(); // Start fresh
+		EngineConfig.reset();
 		EngineConfig.set('display.mute', true);
 		TestHarness.assertEqual(EngineConfig.get('display.mute'), true, 'set() updates the config value');
 
@@ -68,16 +73,15 @@ function testEngineConfig() {
 		var parsed = JSON.parse(stored);
 		TestHarness.assertEqual(parsed.display.mute, true, 'localStorage contains the set value');
 
-		// Clean up
 		EngineConfig.reset();
 		window.localStorage.removeItem('aao_engine_config');
 	})();
 
 	// --- set() emits config:changed ---
 	(function() {
-		EngineEvents.clear();
 		var received = null;
-		EngineEvents.on('config:changed', function(data) { received = data; });
+		var handler = function(data) { received = data; };
+		EngineEvents.on('config:changed', handler);
 
 		EngineConfig.set('display.nightMode', true);
 		TestHarness.assert(received !== null, 'set() emits config:changed event');
@@ -85,9 +89,8 @@ function testEngineConfig() {
 		TestHarness.assertEqual(received.value, true, 'config:changed carries new value');
 		TestHarness.assertEqual(received.oldValue, false, 'config:changed carries old value');
 
-		// Clean up
+		EngineEvents.off('config:changed', handler);
 		EngineConfig.reset();
-		EngineEvents.clear();
 		window.localStorage.removeItem('aao_engine_config');
 	})();
 
@@ -118,7 +121,6 @@ function testEngineConfig() {
 		TestHarness.assertDefined(all.accessibility, 'getAll() has accessibility section');
 		TestHarness.assertDefined(all.theme, 'getAll() has theme section');
 
-		// Verify it's a deep clone (mutation doesn't affect config)
 		all.display.mute = true;
 		TestHarness.assertEqual(EngineConfig.get('display.mute'), false, 'getAll() returns deep clone — mutation safe');
 	})();
@@ -145,29 +147,26 @@ function testEngineConfig() {
 		TestHarness.assertEqual(EngineConfig.get('features.debugPanel'), true, 'loadCaseConfig merges features.debugPanel');
 		TestHarness.assertEqual(EngineConfig.get('display.mute'), false, 'loadCaseConfig preserves unaffected values');
 
-		// Verify NOT persisted to localStorage
 		var stored = window.localStorage.getItem('aao_engine_config');
 		TestHarness.assert(stored === null, 'loadCaseConfig does not persist to localStorage');
 
-		// Clean up
 		EngineConfig.reset();
 	})();
 
 	// --- loadCaseConfig emits config:changed ---
 	(function() {
-		EngineEvents.clear();
 		var received = null;
-		EngineEvents.on('config:changed', function(data) { received = data; });
+		var handler = function(data) { received = data; };
+		EngineEvents.on('config:changed', handler);
 
 		EngineConfig.loadCaseConfig({ display: { pixelated: true } });
 		TestHarness.assert(received !== null, 'loadCaseConfig emits config:changed');
 
+		EngineEvents.off('config:changed', handler);
 		EngineConfig.reset();
-		EngineEvents.clear();
 	})();
 
 	// Final cleanup
 	EngineConfig.reset();
-	EngineEvents.clear();
 	window.localStorage.removeItem('aao_engine_config');
 }

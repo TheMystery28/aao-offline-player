@@ -2,10 +2,8 @@
 /*
 Ace Attorney Online - Keyboard Controls
 
-Enter/Space: click the visible proceed/skip/forward button
-Shift: same as Enter (for fast-forwarding through text)
-Left Arrow: click statement-backwards
-Right Arrow: click statement-forwards or statement-skip-forwards
+Listens to input:action events (emitted by InputManager) and maps
+action names to DOM button clicks.
 */
 
 //MODULE DESCRIPTOR
@@ -14,18 +12,9 @@ Modules.load(new Object({
 	dependencies : ['engine_events', 'events', 'page_loaded'],
 	init : function()
 	{
-		var KEY_ENTER = 13;
-		var KEY_SPACE = 32;
-		var KEY_SHIFT = 16;
-		var KEY_LEFT  = 37;
-		var KEY_RIGHT = 39;
-
-		// Buttons in priority order for Enter/Space/Shift
 		var proceedIds = ['proceed', 'skip', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
 		var forwardIds = ['statement-forwards', 'statement-skip-forwards'];
-
-		var pressed = {};
 
 		function isVisible(el) {
 			if (!el) return false;
@@ -44,45 +33,23 @@ Modules.load(new Object({
 			return false;
 		}
 
-		document.addEventListener('keydown', function(e) {
-			var k = e.keyCode;
+		// Listen to input:action events from InputManager
+		EngineEvents.on('input:action', function(data) {
+			if (data.source !== 'keyboard') return;
 
-			if ((k === KEY_ENTER || k === KEY_SPACE) && !pressed[k]) {
-				pressed[k] = true;
-				if (clickFirstVisible(proceedIds)) {
-					EngineEvents.emit('input:action', { source: 'keyboard', action: 'proceed' });
-				}
-				e.preventDefault();
+			switch (data.action) {
+				case 'proceed':
+				case 'skip':
+					clickFirstVisible(proceedIds);
+					break;
+				case 'back':
+					var el = document.getElementById(backId);
+					if (el && isVisible(el)) el.click();
+					break;
+				case 'forward':
+					clickFirstVisible(forwardIds);
+					break;
 			}
-
-			if (k === KEY_SHIFT) {
-				if (clickFirstVisible(proceedIds)) {
-					EngineEvents.emit('input:action', { source: 'keyboard', action: 'proceed' });
-				}
-				e.preventDefault();
-			}
-
-			if (k === KEY_RIGHT && !pressed[k]) {
-				pressed[k] = true;
-				if (clickFirstVisible(forwardIds)) {
-					EngineEvents.emit('input:action', { source: 'keyboard', action: 'forward' });
-				}
-				e.preventDefault();
-			}
-
-			if (k === KEY_LEFT && !pressed[k]) {
-				pressed[k] = true;
-				var el = document.getElementById(backId);
-				if (el && isVisible(el)) {
-					el.click();
-					EngineEvents.emit('input:action', { source: 'keyboard', action: 'back' });
-				}
-				e.preventDefault();
-			}
-		});
-
-		document.addEventListener('keyup', function(e) {
-			delete pressed[e.keyCode];
 		});
 	}
 }));

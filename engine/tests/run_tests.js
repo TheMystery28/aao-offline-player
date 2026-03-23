@@ -144,7 +144,8 @@
 			['Language', typeof testLanguage === 'function' ? testLanguage : null],
 			['Objects', typeof testObjects === 'function' ? testObjects : null],
 		['EngineEvents', typeof testEngineEvents === 'function' ? testEngineEvents : null],
-		['EngineConfig', typeof testEngineConfig === 'function' ? testEngineConfig : null]
+		['EngineConfig', typeof testEngineConfig === 'function' ? testEngineConfig : null],
+		['InputManager', typeof testInputManager === 'function' ? testInputManager : null]
 		];
 
 		for (var i = 0; i < suites.length; i++) {
