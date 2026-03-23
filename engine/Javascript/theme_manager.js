@@ -671,6 +671,42 @@ var ThemeManager = (function() {
 		 */
 		reapply: function() {
 			applyAll();
+		},
+
+		/**
+		 * Compute the minimum bodyWidth scale that keeps wide mode.
+		 * Returns the scale value (e.g. 0.8) or 0 if wide is impossible at any scale.
+		 */
+		getMinBodyScale: function() {
+			var header = document.querySelector('header.compact');
+			var headerH = (header && header.style.display !== 'none') ? header.offsetHeight : 0;
+			var boundedHeight = window.innerHeight - headerH;
+			var metaH = 18;
+			var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
+			var totalPreZoomH = metaH + (2 * gapPx) + (2 * 192);
+			var fitScale = boundedHeight / totalPreZoomH;
+			var screenScale = EngineConfig.get('layout.screenScale') || 1;
+			var scaledScreensWidth = 256 * fitScale * screenScale;
+			var wideThreshold = scaledScreensWidth + 250 + 280;
+			var viewportWidth = document.documentElement.clientWidth;
+			if (viewportWidth <= 0) return 0;
+			// wideThreshold <= viewportWidth * (85 * scale / 100)
+			// scale >= wideThreshold / (viewportWidth * 0.85)
+			var minScale = wideThreshold / (viewportWidth * 0.85);
+			// Round up to nearest step (0.01)
+			minScale = Math.ceil(minScale * 100) / 100;
+			return minScale > 2.0 ? 0 : minScale;
+		},
+
+		/**
+		 * Compute the maximum useful bodyWidth scale (where body reaches 100vw).
+		 * Beyond this, the body is already full viewport width and more has no effect.
+		 */
+		getMaxBodyScale: function() {
+			// body max-width = 85 * scale vw, capped at 100vw
+			// 85 * scale = 100 → scale = 100/85 ≈ 1.176
+			var maxScale = Math.ceil((100 / 85) * 100) / 100;
+			return maxScale;
 		}
 	};
 })();
