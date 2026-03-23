@@ -7,12 +7,14 @@
     "tauri": "tauri",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
-    "android:build": "tauri android build --apk"
+    "android:build": "tauri android build --apk",
+    "test:engine": "bash scripts/run-tests.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
   },
   "dependencies": {
+    "@playwright/test": "^1.58.2",
     "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-http": "^2.5.7",
     "@tauri-apps/plugin-shell": "^2.3.5"
