@@ -178,7 +178,9 @@ function generatePresentEvidence(type_lock, target_frame_by_element, failure_fra
 	// Switch to select evidence mode
 	setClass(bottom_screen, 'present');
 	var content = document.getElementById('content');
+	var _keepStack = content.classList.contains('layout-stack');
 	setClass(content, 'cr-select cr-' + type_lock);
+	if (_keepStack) content.classList.add('layout-stack');
 	
 	// Display back button if needed
 	if(back_frame > 0)

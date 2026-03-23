@@ -237,8 +237,11 @@ function player_init()
 var wait_timer = null;
 function readFrame(frame_index)
 {
-	// Reset content class
-	setClass(document.getElementById('content'), '');
+	// Reset content class (preserve layout-stack for scroll in stack mode)
+	var _content = document.getElementById('content');
+	var _keepStack = _content.classList.contains('layout-stack');
+	setClass(_content, '');
+	if (_keepStack) _content.classList.add('layout-stack');
 	// Remove start overlay
 	removeClass(document.getElementById('screens'), 'start');
 	
