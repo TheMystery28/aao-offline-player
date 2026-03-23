@@ -1551,6 +1551,10 @@ pub fn run() {
             debug_log!("Engine directory: {}", engine_dir.display());
             debug_log!("Data directory: {}", data_dir.display());
 
+            // Write port file so external scripts (e.g. test runner) can find the server
+            let port_file = data_dir.join(".server_port");
+            let _ = fs::write(&port_file, port.to_string());
+
             // Store state for commands
             app.manage(Mutex::new(AppState {
                 server_port: port,
