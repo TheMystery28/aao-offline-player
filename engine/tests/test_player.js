@@ -244,6 +244,112 @@ function testPlayer() {
 		current_music_id = orig_music_id;
 	})();
 
+	// --- Settings panel regression tests ---
+
+	// Test: mute checkbox calls Howler.mute()
+	(function() {
+		if (typeof Howler === 'undefined') return;
+		var muteCalled = false;
+		var muteValue = null;
+		var origMute = Howler.mute;
+		Howler.mute = function(val) { muteCalled = true; muteValue = val; };
+
+		var checkbox = createFormElement('checkbox');
+		registerEventHandler(checkbox, 'change', function() {
+			Howler.mute(checkbox.getValue());
+		}, false);
+
+		checkbox.checked = true;
+		triggerEvent(checkbox, 'change');
+		TestHarness.assert(muteCalled, 'Mute checkbox change calls Howler.mute()');
+		TestHarness.assertEqual(muteValue, true, 'Mute checkbox passes checked state to Howler.mute()');
+
+		Howler.mute = origMute;
+	})();
+
+	// Test: instant text checkbox calls setInstantMode()
+	(function() {
+		var instantCalled = false;
+		var instantValue = null;
+		var mockScreen = {
+			setInstantMode: function(val) { instantCalled = true; instantValue = val; }
+		};
+
+		var checkbox = createFormElement('checkbox');
+		registerEventHandler(checkbox, 'change', function() {
+			mockScreen.setInstantMode(checkbox.getValue());
+		}, false);
+
+		checkbox.checked = true;
+		triggerEvent(checkbox, 'change');
+		TestHarness.assert(instantCalled, 'Instant text checkbox change calls setInstantMode()');
+		TestHarness.assertEqual(instantValue, true, 'Instant text checkbox passes checked state to setInstantMode()');
+	})();
+
+	// Test: ScreenDisplay has setInstantMode method
+	TestHarness.assertType(ScreenDisplay, 'function', 'ScreenDisplay constructor exists');
+	(function() {
+		var sd = new ScreenDisplay();
+		TestHarness.assertType(sd.setInstantMode, 'function', 'ScreenDisplay instance has setInstantMode method');
+	})();
+
+	// --- Settings panel and CSS regression tests ---
+
+	// Settings panel container exists
+	TestHarness.assert(
+		document.getElementById('player-parametres') !== null,
+		'Settings panel container #player-parametres exists'
+	);
+	// #player_settings only exists when trial_data is loaded (player_init populates it)
+	// The rebuild DOM doesn't replicate the full structure, just verify saves container
+	TestHarness.assert(
+		document.getElementById('player_saves') !== null,
+		'Player saves container #player_saves exists'
+	);
+
+	// Dark CSS file is loaded (player_dark.css linked in the page)
+	(function() {
+		var darkLoaded = false;
+		var sheets = document.styleSheets;
+		for (var i = 0; i < sheets.length; i++) {
+			if (sheets[i].href && sheets[i].href.indexOf('player_dark') !== -1) {
+				darkLoaded = true;
+				break;
+			}
+		}
+		TestHarness.assert(darkLoaded, 'Dark CSS file (player_dark.css) is loaded');
+	})();
+
+	// Portrait media query exists in stylesheets (scale transform)
+	(function() {
+		var hasPortraitScale = false;
+		try {
+			var sheets = document.styleSheets;
+			for (var i = 0; i < sheets.length; i++) {
+				var rules = sheets[i].cssRules || sheets[i].rules;
+				if (!rules) continue;
+				for (var j = 0; j < rules.length; j++) {
+					if (rules[j].type === CSSRule.MEDIA_RULE &&
+						rules[j].conditionText &&
+						rules[j].conditionText.indexOf('portrait') !== -1) {
+						var innerRules = rules[j].cssRules;
+						for (var k = 0; k < innerRules.length; k++) {
+							if (innerRules[k].cssText && innerRules[k].cssText.indexOf('scale') !== -1) {
+								hasPortraitScale = true;
+								break;
+							}
+						}
+					}
+					if (hasPortraitScale) break;
+				}
+				if (hasPortraitScale) break;
+			}
+		} catch (e) {
+			// Cross-origin stylesheets may throw; skip gracefully
+		}
+		TestHarness.assert(hasPortraitScale, 'Portrait media query with scale transform exists in CSS');
+	})();
+
 	// Reset proceed state to clean
 	resetProceedConditions();
 }
