@@ -339,6 +339,23 @@ var SettingsPanel = (function() {
 			row.appendChild(keyCell);
 			table.appendChild(row);
 		}
+		// Add global shortcuts (not from config — hardcoded in input_manager)
+		var shortcuts = [
+			['save', 'Ctrl+S'],
+			['load latest', 'Ctrl+L'],
+			['reset settings', 'Ctrl+D'],
+			['fullscreen', 'F11']
+		];
+		for (var si = 0; si < shortcuts.length; si++) {
+			var row = document.createElement('tr');
+			var ac = document.createElement('td');
+			ac.textContent = shortcuts[si][0];
+			row.appendChild(ac);
+			var kc = document.createElement('td');
+			kc.textContent = shortcuts[si][1];
+			row.appendChild(kc);
+			table.appendChild(row);
+		}
 		container.appendChild(table);
 	}
 
@@ -600,6 +617,10 @@ var SettingsPanel = (function() {
 			}
 			if (settingsWidthWrapper) {
 				settingsWidthWrapper.style.display = isWide ? '' : 'none';
+			}
+			// Hide entire Layout section in non-wide modes
+			if (layoutDetailsRef) {
+				layoutDetailsRef.style.display = isWide ? '' : 'none';
 			}
 		}
 	};
