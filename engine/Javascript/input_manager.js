@@ -81,6 +81,61 @@ var InputManager = (function() {
 			return;
 		}
 
+		// Ctrl+S: quick save
+		if (e.ctrlKey && (e.code === 'KeyS' || e.key === 's')) {
+			e.preventDefault();
+			if (typeof getSaveString === 'undefined' || typeof player_status === 'undefined') return;
+			if (player_status.current_frame_index === 0) return;
+			if (player_status.proceed_timer && !player_status.proceed_timer_met) return;
+			if (player_status.proceed_typing && !player_status.proceed_typing_met) return;
+			var gs = JSON.parse(window.localStorage.getItem('game_saves')) || {};
+			if (!gs[trial_information.id]) gs[trial_information.id] = {};
+			var saveStr = getSaveString();
+			gs[trial_information.id][(new Date()).getTime()] = saveStr;
+			window.localStorage.setItem('game_saves', JSON.stringify(gs));
+			EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
+			if (typeof refreshSavesList === 'function') refreshSavesList();
+			return;
+		}
+
+		// Ctrl+L: load latest save (across all sequence parts)
+		if (e.ctrlKey && (e.code === 'KeyL' || e.key === 'l')) {
+			e.preventDefault();
+			if (typeof loadSaveString === 'undefined' || typeof player_status === 'undefined') return;
+			if (player_status.proceed_timer && !player_status.proceed_timer_met) return;
+			if (player_status.proceed_typing && !player_status.proceed_typing_met) return;
+			var gs = JSON.parse(window.localStorage.getItem('game_saves'));
+			if (!gs) return;
+			var latestDate = 0, latestPartId = null, latestStr = null;
+			var parts = [trial_information.id];
+			if (trial_information.sequence && trial_information.sequence.list) {
+				for (var si = 0; si < trial_information.sequence.list.length; si++) {
+					parts.push(trial_information.sequence.list[si].id);
+				}
+			}
+			for (var pi = 0; pi < parts.length; pi++) {
+				if (!gs[parts[pi]]) continue;
+				var dates = Object.keys(gs[parts[pi]]).map(Number);
+				for (var di = 0; di < dates.length; di++) {
+					if (dates[di] > latestDate) {
+						latestDate = dates[di];
+						latestPartId = parts[pi];
+						latestStr = gs[parts[pi]][String(dates[di])];
+					}
+				}
+			}
+			if (!latestStr) return;
+			if (latestPartId == trial_information.id) {
+				loadSaveString(latestStr);
+			} else {
+				var url = new URL(window.location.href);
+				url.searchParams.set('trial_id', latestPartId);
+				url.searchParams.set('save_data', Base64.encode(latestStr));
+				window.location.href = url.toString();
+			}
+			return;
+		}
+
 		// F11: toggle fullscreen
 		if (e.code === 'F11' || e.key === 'F11') {
 			e.preventDefault();
