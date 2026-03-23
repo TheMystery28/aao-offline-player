@@ -76,13 +76,15 @@ fn collect_engine_files(base: &Path, dir: &Path, files: &mut Vec<String>) {
         let relative = path.strip_prefix(base).unwrap();
         let name = relative.to_str().unwrap().replace('\\', "/");
 
-        // Skip runtime data directories and files (downloaded at runtime, not bundled)
+        // Skip runtime data directories, dev-only directories, and config files
         if name == "case"
             || name.starts_with("case/")
             || name == "defaults"
             || name.starts_with("defaults/")
             || name == "assets"
             || name.starts_with("assets/")
+            || name == "tests"
+            || name.starts_with("tests/")
             || name == "config.json"
         {
             continue;
