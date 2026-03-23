@@ -233,6 +233,8 @@ jobs:
           XMLEOF
           sed -i 's|android:usesCleartextTraffic="${usesCleartextTraffic}"|android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config"|' \
             src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          sed -i 's|android:launchMode="singleTask"|android:screenOrientation="portrait" android:launchMode="singleTask"|' \
+            src-tauri/gen/android/app/src/main/AndroidManifest.xml
 
       - name: Build Android APK
         run: npx tauri android build

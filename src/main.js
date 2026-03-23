@@ -106,6 +106,17 @@ window.addEventListener("DOMContentLoaded", function () {
   }
 
   function showLauncher() {
+    // Exit fullscreen when returning to launcher — library should never be fullscreen
+    try {
+      if (window.__TAURI__ && window.__TAURI__.window) {
+        window.__TAURI__.window.getCurrentWindow().setFullscreen(false);
+      }
+      // Sync engine config so fullscreen checkbox updates
+      if (gameFrame.contentWindow) {
+        gameFrame.contentWindow.postMessage({ type: 'aao-set-config', path: 'display.fullscreen', value: false }, '*');
+      }
+    } catch (e) {}
+
     // Auto-save before quitting (if enabled in settings).
     // The iframe is cross-origin (localhost vs tauri.localhost), so use postMessage.
     if (!settingsAutoSave || settingsAutoSave.checked) {
@@ -130,13 +141,49 @@ window.addEventListener("DOMContentLoaded", function () {
 
   backBtn.addEventListener("click", showLauncher);
 
-  // Listen for header visibility messages from the engine iframe
+  // Toolbar acts as a window title bar:
+  // - In fullscreen: dragging exits fullscreen then starts window drag
+  // - Not in fullscreen: dragging moves the window
+  var toolbarEl = document.getElementById("player-toolbar");
+  toolbarEl.addEventListener("mousedown", function(e) {
+    if (e.target === backBtn || e.buttons !== 1) return;
+    try {
+      if (!window.__TAURI__ || !window.__TAURI__.window) return;
+      var win = window.__TAURI__.window.getCurrentWindow();
+      win.isFullscreen().then(function(isFs) {
+        if (isFs) {
+          // Exit fullscreen first, then start dragging
+          win.setFullscreen(false).then(function() {
+            var frame = document.getElementById("game-frame");
+            if (frame && frame.contentWindow) {
+              frame.contentWindow.postMessage({ type: 'aao-set-config', path: 'display.fullscreen', value: false }, '*');
+            }
+            win.startDragging();
+          });
+        } else {
+          win.startDragging();
+        }
+      });
+    } catch (err) {}
+  });
+
+  // Listen for messages from the engine iframe
   window.addEventListener("message", function(e) {
-    if (e.data && e.data.type === 'aao-header-visibility') {
+    if (!e.data || !e.data.type) return;
+    if (e.data.type === 'aao-header-visibility') {
       if (e.data.hidden) {
         playerTitle.style.fontFamily = 'Georgia, serif';
       } else {
         playerTitle.style.fontFamily = '';
+      }
+    } else if (e.data.type === 'aao-fullscreen') {
+      // Toggle Tauri window fullscreen via __TAURI__ global
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window) {
+          window.__TAURI__.window.getCurrentWindow().setFullscreen(!!e.data.fullscreen);
+        }
+      } catch (err) {
+        console.warn('[MAIN] Failed to toggle fullscreen:', err);
       }
     }
   });

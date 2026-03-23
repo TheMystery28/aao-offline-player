@@ -21,7 +21,8 @@
         "blipVolume": 70,
         "expandEvidenceDescriptions": false,
         "mute": false,
-        "hideHeader": false
+        "hideHeader": false,
+        "fullscreen": false
     },
     "layout": {
         "screenScale": 1.0,
