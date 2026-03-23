@@ -40,6 +40,7 @@
 "settings_width" : "Settings width",
 "panel_arrangement" : "Panel arrangement",
 "narrow_mode" : "Narrow mode",
+"hide_header" : "Hide header",
 
 "player_saves" : "Game saves",
 "save_new" : "New save",
