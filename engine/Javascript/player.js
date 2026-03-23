@@ -120,6 +120,17 @@ function player_init()
 		setNodeTextContents(document.getElementById('title'), trial_information['title']);
 		setNodeTextContents(document.getElementById('author'), trial_information['author']);
 		document.title = trial_information.title + ' - Ace Attorney Online'; // TODO : localise the title
+
+		// Notify parent frame of the case title + author for the toolbar
+		try {
+			if (window.parent && window.parent !== window) {
+				window.parent.postMessage({
+					type: 'aao-title-update',
+					title: trial_information.title || '',
+					author: trial_information.author || ''
+				}, '*');
+			}
+		} catch (e) { /* cross-origin */ }
 		
 		// Setup game variables environment
 		player_status.game_env = new VariableEnvironment(global_env);
