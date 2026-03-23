@@ -143,7 +143,8 @@
 			['Expression Engine', typeof testExpressionEngine === 'function' ? testExpressionEngine : null],
 			['Language', typeof testLanguage === 'function' ? testLanguage : null],
 			['Objects', typeof testObjects === 'function' ? testObjects : null],
-		['EngineEvents', typeof testEngineEvents === 'function' ? testEngineEvents : null]
+		['EngineEvents', typeof testEngineEvents === 'function' ? testEngineEvents : null],
+		['EngineConfig', typeof testEngineConfig === 'function' ? testEngineConfig : null]
 		];
 
 		for (var i = 0; i < suites.length; i++) {
