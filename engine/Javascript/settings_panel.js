@@ -326,41 +326,59 @@ var SettingsPanel = (function() {
 		'crNavigateRight', 'crSelect', 'crSwitchTab'
 	];
 
-	function addBindingsDisplay(container) {
-		const kbConfig = EngineConfig.get('controls.keyboard');
-		if (!kbConfig) return;
+	// Gamepad button index → readable name (W3C standard mapping)
+	var GAMEPAD_NAMES = {
+		0: 'A', 1: 'B', 2: 'X', 3: 'Y',
+		4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT',
+		8: 'View', 9: 'Menu', 10: 'L3', 11: 'R3',
+		12: 'D-Up', 13: 'D-Down', 14: 'D-Left', 15: 'D-Right', 16: 'Xbox'
+	};
 
-		const table = document.createElement('table');
+	function addBindingsDisplay(container) {
+		var kbConfig = EngineConfig.get('controls.keyboard') || {};
+		var gpConfig = EngineConfig.get('controls.gamepad') || {};
+
+		var table = document.createElement('table');
 		addClass(table, 'bindings-display');
-		const actions = Object.keys(kbConfig);
-		for (let i = 0; i < actions.length; i++) {
+
+		// Header row
+		var header = document.createElement('tr');
+		var h1 = document.createElement('th'); h1.textContent = 'Action'; header.appendChild(h1);
+		var h2 = document.createElement('th'); h2.textContent = 'Keyboard'; header.appendChild(h2);
+		var h3 = document.createElement('th'); h3.textContent = 'Gamepad'; header.appendChild(h3);
+		table.appendChild(header);
+
+		// Config-driven bindings (keyboard + gamepad share same action names)
+		var actions = Object.keys(kbConfig);
+		for (var i = 0; i < actions.length; i++) {
 			if (HIDDEN_BINDINGS.indexOf(actions[i]) !== -1) continue;
-			const keys = kbConfig[actions[i]];
+			var keys = kbConfig[actions[i]];
 			if (!Array.isArray(keys) || keys.length === 0) continue;
-			const row = document.createElement('tr');
-			const actionCell = document.createElement('td');
-			actionCell.textContent = actions[i];
-			row.appendChild(actionCell);
-			const keyCell = document.createElement('td');
-			keyCell.textContent = keys.join(', ');
-			row.appendChild(keyCell);
+			var row = document.createElement('tr');
+			var ac = document.createElement('td'); ac.textContent = actions[i]; row.appendChild(ac);
+			var kc = document.createElement('td'); kc.textContent = keys.join(', '); row.appendChild(kc);
+			// Gamepad column
+			var gc = document.createElement('td');
+			var gpButtons = gpConfig[actions[i]];
+			if (Array.isArray(gpButtons) && gpButtons.length > 0) {
+				gc.textContent = gpButtons.map(function(b) { return GAMEPAD_NAMES[b] || ('Btn' + b); }).join(', ');
+			}
+			row.appendChild(gc);
 			table.appendChild(row);
 		}
-		// Add global shortcuts (not from config — hardcoded in input_manager)
+
+		// Global shortcuts (not in config — hardcoded in input_manager)
 		var shortcuts = [
-			['save', 'Ctrl+S'],
-			['load latest', 'Ctrl+L'],
-			['reset settings', 'Ctrl+D'],
-			['fullscreen', 'F11']
+			['save', 'Ctrl+S', 'LB'],
+			['load latest', 'Ctrl+L', 'LT'],
+			['reset settings', 'Ctrl+D', 'RB+RT'],
+			['fullscreen', 'F11', 'View']
 		];
 		for (var si = 0; si < shortcuts.length; si++) {
 			var row = document.createElement('tr');
-			var ac = document.createElement('td');
-			ac.textContent = shortcuts[si][0];
-			row.appendChild(ac);
-			var kc = document.createElement('td');
-			kc.textContent = shortcuts[si][1];
-			row.appendChild(kc);
+			var ac = document.createElement('td'); ac.textContent = shortcuts[si][0]; row.appendChild(ac);
+			var kc = document.createElement('td'); kc.textContent = shortcuts[si][1]; row.appendChild(kc);
+			var gc = document.createElement('td'); gc.textContent = shortcuts[si][2]; row.appendChild(gc);
 			table.appendChild(row);
 		}
 		container.appendChild(table);
