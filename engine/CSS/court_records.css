@@ -21,10 +21,10 @@ Styling court records elements
 	
 	padding: 0 19px;
 	
-	border-bottom: 6px solid #CECECE;
-	border-top: 6px solid #CECECE;
-	
-	background: #847342;
+	border-bottom: 6px solid var(--color-border-evidence-summary);
+	border-top: 6px solid var(--color-border-evidence-summary);
+
+	background: var(--color-bg-evidence-desc);
 }
 
 .evidence_display > .summary > img
@@ -55,11 +55,11 @@ Styling court records elements
 	border: 2px ridge lightgrey;
 	border-bottom: 0;
 	
-	background: #393939;
-	
+	background: var(--color-bg-evidence-name);
+
 	text-align: center;
-	color: #FFAD18;
-	font: 12px sans-serif;
+	color: var(--color-text-evidence-name);
+	font: var(--font-size-evidence-name) sans-serif;
 	
 	white-space: nowrap;
 	text-overflow: ellipsis;
@@ -90,8 +90,8 @@ Styling court records elements
 	border: 2px ridge lightgrey;
 	border-top: 0;
 	
-	background: #9CCE94;
-	font: 12px sans-serif;
+	background: var(--color-bg-evidence-civil);
+	font: var(--font-size-evidence-name) sans-serif;
 	color: black;
 	
 	resize: none;
@@ -113,11 +113,11 @@ Styling court records elements
 	margin: 0 auto 5px;
 	padding: 1px 2px;
 	
-	border: 1px solid #735A42;
-	
-	background: #847342;
+	border: 1px solid var(--color-border-evidence-desc);
+
+	background: var(--color-bg-evidence-desc);
 	color: white;
-	font: 10px sans-serif;
+	font: var(--font-size-evidence-desc) sans-serif;
 	
 	resize: none;
 }
@@ -164,9 +164,9 @@ Styling court records elements
 
 /* Focus ring for keyboard-navigated court record cards */
 .evidence-list .evidence_display.cr-focused {
-	outline: 2px solid #FFD652;
+	outline: var(--color-cr-focus-ring);
 	outline-offset: 2px;
-	box-shadow: 0 0 6px 2px rgba(255, 214, 82, 0.5);
+	box-shadow: var(--color-cr-focus-shadow);
 }
 
 /* Portrait mode: evidence cards fill available width responsively */
