@@ -137,6 +137,21 @@ body
 	overflow: hidden;
 }
 
+/* Mobile (touchscreen): full width + hide scrollbar (touch scroll still works) */
+@media (pointer: coarse) {
+	body {
+		max-width: 100vw !important;
+	}
+	body::-webkit-scrollbar,
+	#content::-webkit-scrollbar,
+	#content > section::-webkit-scrollbar {
+		display: none;
+	}
+	body, #content, #content > section {
+		scrollbar-width: none;
+	}
+}
+
 body > #content
 {
 	position: relative;
@@ -169,7 +184,7 @@ body > #content > section.layout-stack {
 	overflow-y: auto;
 	height: auto;
 	align-content: flex-start;
-	justify-content: center;
+	justify-content: flex-start;
 	align-items: flex-start;
 }
 
@@ -241,9 +256,7 @@ body > #content > section.layout-stack #screens {
 	#screens
 	{
 		zoom: var(--mobile-screen-scale, 1.4);
-		margin: auto;
-		margin-bottom: 9em;
-		margin-top: 6em;
+		margin: 0 auto;
 	}
 }
 
