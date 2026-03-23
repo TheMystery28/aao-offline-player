@@ -54,6 +54,7 @@ var ThemeManager = (function() {
 		applyExpandDescriptions();
 		applyBlipVolume();
 		applyHideHeader();
+		applyFullscreen();
 		applyPanelWidths();
 		applyPanelArrangement();
 		applyNarrowMode();
@@ -62,6 +63,11 @@ var ThemeManager = (function() {
 	// Base flex values: slider 1.0 = these values (original panel proportions)
 	var EVIDENCE_BASE_FLEX = 0.7;
 	var SETTINGS_BASE_FLEX = 0.4;
+	// Saved values when overridden in non-wide/tabs modes
+	var savedEvidenceScale = null;
+	var savedSettingsScale = null;
+	var savedScreenScale = null;
+	var flexOverridden = false;
 
 	function applyPanelWidths() {
 		var evidenceScale = EngineConfig.get('layout.evidenceWidth') || 1;
@@ -254,6 +260,19 @@ var ThemeManager = (function() {
 		} catch (e) { /* cross-origin restriction */ }
 	}
 
+	function applyFullscreen() {
+		var enabled = EngineConfig.get('display.fullscreen');
+		// Notify parent frame (launcher) to toggle Tauri window fullscreen
+		try {
+			if (window.parent && window.parent !== window) {
+				window.parent.postMessage({
+					type: 'aao-fullscreen',
+					fullscreen: !!enabled
+				}, '*');
+			}
+		} catch (e) { /* cross-origin restriction */ }
+	}
+
 	function applyNarrowMode() {
 		currentLayoutTier = ''; // force re-evaluation
 		updateLayoutMode();
@@ -337,9 +356,45 @@ var ThemeManager = (function() {
 			if (content) content.classList.add('layout-stack');
 		}
 
-		// Notify settings panel to update picker visibility for current tier
+		// In non-layout modes (tabs/medium/narrow/stack), override to defaults and restore on return
+		var isLayoutFree = !tabsActive && newTier === 'wide';
+		if (isLayoutFree) {
+			// Entering pure wide: restore saved values
+			if (flexOverridden) {
+				flexOverridden = false;
+				var root = document.documentElement;
+				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX * ((savedEvidenceScale !== null) ? savedEvidenceScale : 1)));
+				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX * ((savedSettingsScale !== null) ? savedSettingsScale : 1)));
+				if (savedScreenScale !== null) {
+					root.style.setProperty('--screen-scale', String(savedScreenScale));
+					computeAutoFitScreenSize();
+				}
+				savedEvidenceScale = null;
+				savedSettingsScale = null;
+				savedScreenScale = null;
+			}
+		} else {
+			// Entering tabs/medium/narrow/stack: save current and set to defaults
+			if (!flexOverridden) {
+				savedEvidenceScale = EngineConfig.get('layout.evidenceWidth') || 1;
+				savedSettingsScale = EngineConfig.get('layout.settingsWidth') || 1;
+				savedScreenScale = EngineConfig.get('layout.screenScale') || 1;
+				flexOverridden = true;
+				var root = document.documentElement;
+				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX));
+				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX));
+				root.style.setProperty('--screen-scale', '1');
+				computeAutoFitScreenSize();
+			}
+		}
+
+		// Determine if tabs are active (medium/tabs or wide+tabs override)
+		var tabsActive = (newTier === 'medium' && narrowMode === 'tabs') ||
+			(newTier === 'wide' && userOverrodeNarrowMode && narrowMode === 'tabs');
+
+		// Notify settings panel — hide layout when tabs active or non-wide
 		if (typeof SettingsPanel !== 'undefined' && SettingsPanel.updateLayoutTier) {
-			SettingsPanel.updateLayoutTier(currentLayoutTier);
+			SettingsPanel.updateLayoutTier(tabsActive ? 'tabs' : currentLayoutTier);
 		}
 	}
 
@@ -525,6 +580,8 @@ var ThemeManager = (function() {
 			applyBlipVolume();
 		} else if (data.path === 'display.hideHeader') {
 			applyHideHeader();
+		} else if (data.path === 'display.fullscreen') {
+			applyFullscreen();
 		} else if (data.path === 'layout.panelArrangement') {
 			applyPanelArrangement();
 		} else if (data.path === 'layout.evidenceWidth' || data.path === 'layout.settingsWidth') {
@@ -548,6 +605,13 @@ var ThemeManager = (function() {
 
 			applyAll();
 			EngineEvents.on('config:changed', onConfigChanged);
+
+			// Listen for config sync messages from parent frame
+			window.addEventListener('message', function(e) {
+				if (e.data && e.data.type === 'aao-set-config' && e.data.path) {
+					EngineConfig.set(e.data.path, e.data.value);
+				}
+			});
 
 			// Observe section resizes to recompute layout tier and auto-fit screen size
 			const section = document.querySelector('#content > section');
