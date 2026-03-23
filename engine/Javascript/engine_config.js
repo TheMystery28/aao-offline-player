@@ -91,12 +91,30 @@ var EngineConfig = (function() {
 		current[parts[parts.length - 1]] = value;
 	}
 
+	// Migrate old config keys to new names
+	function migrateStorage(parsed) {
+		if (parsed.layout && parsed.layout.courtRecordPosition !== undefined) {
+			var mapping = { right: '1-2-3', left: '2-1-3', bottom: '12-3' };
+			var mapped = mapping[parsed.layout.courtRecordPosition];
+			if (mapped) {
+				parsed.layout.panelArrangement = mapped;
+			}
+			delete parsed.layout.courtRecordPosition;
+		}
+		// Remove defunct keys
+		if (parsed.layout) {
+			delete parsed.layout.settingsPosition;
+			delete parsed.layout.fullWidth;
+		}
+	}
+
 	// Load localStorage overlay
 	function loadFromStorage() {
 		try {
 			const stored = window.localStorage.getItem(STORAGE_KEY);
 			if (stored) {
 				const parsed = JSON.parse(stored);
+				migrateStorage(parsed);
 				deepMerge(config, parsed);
 			}
 		} catch (e) {

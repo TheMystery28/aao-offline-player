@@ -15,6 +15,8 @@
 	--header-height: 3.8em;
 
 	--settings-panel-width: 280px;
+	--evidence-flex: 0.7;
+	--settings-flex: 0.4;
 
 	--lifebar-width: 120px;
 	--lifebar-height: 10px;
@@ -148,7 +150,7 @@ body > #content > section
 {
 	display: flex;
 	flex-direction: row;
-	justify-content: space-evenly;
+	justify-content: flex-start;
 	align-items: stretch;
 	padding: 0;
 	border: 0;
@@ -193,9 +195,9 @@ body > #content > section.layout-stack #screens {
 
 /* When examination mode is active, #screen-examination extends ~32px below
    the normal #screens flow height (16px top + 16px bottom padding on #examination).
-   Add matching bottom padding so stacked panels below don't get overlapped.
+   Add matching bottom padding so panels below don't get overlapped.
    Zoom on #screens scales this padding proportionally. */
-body > #content > section.layout-stack #screens:has(#screen-bottom.examination) {
+#screens:has(#screen-bottom.examination) {
 	padding-bottom: 32px;
 }
 
@@ -669,9 +671,10 @@ body > #content > section.layout-stack #screens:has(#screen-bottom.examination) 
 
 #courtrecord
 {
-	flex: 1 1 0;
-	min-width: 250px;
+	flex: var(--evidence-flex) 1 0;
+	min-width: 80px;
 	min-height: 0;
+	max-height: 100%;
 	align-self: stretch;
 	background:var(--color-bg-cr);
 	border:1px solid var(--color-border-cr);
@@ -687,24 +690,62 @@ body > #content > section.layout-stack #screens:has(#screen-bottom.examination) 
 	}
 }
 
-/* Court record position variants (controlled by ThemeManager) */
-body > #content > section.cr-left {
-	flex-direction: row-reverse;
+/* Panel arrangement variants (controlled by ThemeManager via layout.panelArrangement) */
+/* Row arrangements: explicit order on ALL 3 items (unset order defaults to 0) */
+/* 1-2-3 = default DOM order, no class needed */
+section.arrangement-1-3-2 #screens { order: 1; }
+section.arrangement-1-3-2 #courtrecord { order: 3; }
+section.arrangement-1-3-2 #player-parametres { order: 2; }
+
+section.arrangement-2-1-3 #screens { order: 2; }
+section.arrangement-2-1-3 #courtrecord { order: 1; }
+section.arrangement-2-1-3 #player-parametres { order: 3; }
+
+section.arrangement-2-3-1 #screens { order: 3; }
+section.arrangement-2-3-1 #courtrecord { order: 1; }
+section.arrangement-2-3-1 #player-parametres { order: 2; }
+
+section.arrangement-3-1-2 #screens { order: 2; }
+section.arrangement-3-1-2 #courtrecord { order: 3; }
+section.arrangement-3-1-2 #player-parametres { order: 1; }
+
+section.arrangement-3-2-1 #screens { order: 3; }
+section.arrangement-3-2-1 #courtrecord { order: 2; }
+section.arrangement-3-2-1 #player-parametres { order: 1; }
+
+/* Mixed arrangements: top row + bottom full-width panel */
+section.arrangement-12-3 #screens { order: 1; }
+section.arrangement-12-3 #courtrecord { order: 2; }
+section.arrangement-12-3 #player-parametres {
+	order: 3; flex: none; width: 100%; max-height: 40vh; overflow-y: auto;
 }
 
-body > #content > section.cr-bottom {
-	flex-wrap: wrap;
-}
-body > #content > section.cr-bottom #courtrecord {
-	flex: none;
-	width: 100%;
-	order: 3;
-	max-height: 40vh;
+section.arrangement-21-3 #screens { order: 2; }
+section.arrangement-21-3 #courtrecord { order: 1; }
+section.arrangement-21-3 #player-parametres {
+	order: 3; flex: none; width: 100%; max-height: 40vh; overflow-y: auto;
 }
 
-body > #content > section.cr-hidden #courtrecord {
-	display: none;
+section.arrangement-13-2 #screens { order: 1; }
+section.arrangement-13-2 #player-parametres { order: 2; }
+section.arrangement-13-2 #courtrecord {
+	order: 3; flex: none; width: 100%; max-height: 40vh; overflow-y: auto;
 }
+
+section.arrangement-31-2 #screens { order: 2; }
+section.arrangement-31-2 #player-parametres { order: 1; }
+section.arrangement-31-2 #courtrecord {
+	order: 3; flex: none; width: 100%; max-height: 40vh; overflow-y: auto;
+}
+
+/* Screen-top arrangements: screen full-row top, panels row below */
+section.arrangement-1-23 #screens { order: 1; flex-basis: 100%; }
+section.arrangement-1-23 #courtrecord { order: 2; }
+section.arrangement-1-23 #player-parametres { order: 3; }
+
+section.arrangement-1-32 #screens { order: 1; flex-basis: 100%; }
+section.arrangement-1-32 #courtrecord { order: 3; }
+section.arrangement-1-32 #player-parametres { order: 2; }
 
 
 /* Tabbed zone for medium-width layout */
@@ -1096,9 +1137,10 @@ a.courtrecord-switchview:active {
  * ------------- */
  
 #player-parametres {
-	width: var(--settings-panel-width);
-	flex-shrink: 0;
+	flex: var(--settings-flex) 1 0;
+	min-width: 80px;
 	min-height: 0;
+	max-height: 100%;
 	overflow-y: auto;
 	overflow-x: hidden;
 	padding: var(--panel-padding);
@@ -1193,4 +1235,108 @@ a.courtrecord-switchview:active {
 #debug_show_frame {
 	display: block;
 	width: 100%;
+}
+
+/* -------------
+ * LAYOUT PICKER
+ * ------------- */
+
+.layout-picker-wrapper {
+	margin: 4px 0;
+}
+
+.layout-picker-legend {
+	display: flex;
+	gap: 8px;
+	font-size: 10px;
+	margin-bottom: 4px;
+}
+.layout-picker-legend span {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+}
+.layout-picker-legend span::before {
+	content: '';
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+}
+.layout-picker-legend .legend-screen::before { background: #333; }
+.layout-picker-legend .legend-evidence::before { background: #6a4; }
+.layout-picker-legend .legend-settings::before { background: #b84; }
+
+.layout-picker {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 4px 0;
+}
+
+.layout-thumb-group {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	width: 100%;
+}
+
+.layout-thumb {
+	width: 55px;
+	height: 40px;
+	border: 2px solid var(--color-border-light);
+	border-radius: var(--radius-md);
+	cursor: pointer;
+	position: relative;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1px;
+	padding: 2px;
+	box-sizing: border-box;
+	background: var(--color-bg-panel);
+}
+.layout-thumb:hover {
+	border-color: var(--color-bg-cr-switch-hover);
+}
+.layout-thumb.selected {
+	border-color: var(--color-focus-highlight);
+	box-shadow: 0 0 6px 2px rgba(255, 214, 82, 0.5);
+}
+
+/* Block colors */
+.layout-thumb .block-s { background: #333; }
+.layout-thumb .block-e { background: #6a4; }
+.layout-thumb .block-p { background: #b84; }
+
+/* Row layout: 3 vertical strips side by side */
+.layout-thumb.row-layout .block {
+	flex: 1;
+	height: 100%;
+	min-width: 0;
+}
+
+/* Mixed layout: 2 blocks top row, 1 full-width bottom */
+.layout-thumb.mixed-layout .block-top {
+	flex: 1;
+	height: 60%;
+	min-width: 0;
+}
+.layout-thumb.mixed-layout .block-bottom {
+	width: 100%;
+	height: calc(40% - 1px);
+}
+
+/* Screen-top layout: 1 block top centered, 2 blocks bottom row */
+.layout-thumb.top-layout .block-top {
+	width: 60%;
+	height: 55%;
+	margin: 0 auto;
+}
+.layout-thumb.top-layout .block-bottom-row {
+	display: flex;
+	gap: 1px;
+	width: 100%;
+	height: calc(45% - 1px);
+}
+.layout-thumb.top-layout .block-bottom-row .block {
+	flex: 1;
 }

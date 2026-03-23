@@ -27,6 +27,23 @@ var ThemeManager = (function() {
 	let userOverrodeNarrowMode = false;
 	let activeTab = 'evidence';
 
+	// Valid arrangement values and their types
+	var ARRANGEMENT_CLASSES = [
+		'1-2-3', '1-3-2', '2-1-3', '2-3-1', '3-1-2', '3-2-1',
+		'12-3', '21-3', '13-2', '31-2',
+		'1-23', '1-32'
+	];
+
+	function getArrangementType(value) {
+		// Row: X-Y-Z (3 single digits separated by dashes)
+		if (value && value.length === 5 && value.charAt(1) === '-' && value.charAt(3) === '-') return 'row';
+		// Screen-top: X-YZ (digit-dash-two digits)
+		if (value && value.length === 4 && value.charAt(1) === '-') return 'top';
+		// Mixed: XY-Z (two digits-dash-digit)
+		if (value && value.length === 4 && value.charAt(2) === '-') return 'mixed';
+		return 'row'; // fallback
+	}
+
 	function applyAll() {
 		applyScale();
 		applyNightMode();
@@ -36,8 +53,31 @@ var ThemeManager = (function() {
 		applyInstantText();
 		applyExpandDescriptions();
 		applyBlipVolume();
-		applyCourtRecordPosition();
+		applyPanelWidths();
+		applyPanelArrangement();
 		applyNarrowMode();
+	}
+
+	// Base flex values: slider 1.0 = these values (original panel proportions)
+	var EVIDENCE_BASE_FLEX = 0.7;
+	var SETTINGS_BASE_FLEX = 0.4;
+
+	function applyPanelWidths() {
+		var evidenceScale = EngineConfig.get('layout.evidenceWidth') || 1;
+		var settingsScale = EngineConfig.get('layout.settingsWidth') || 1;
+		var rawE = EVIDENCE_BASE_FLEX * evidenceScale;
+		var rawS = SETTINGS_BASE_FLEX * settingsScale;
+		// Normalize so sum >= 1.0. When flex-grow values sum below 1,
+		// CSS only distributes that fraction of free space, leaving a gap.
+		var sum = rawE + rawS;
+		if (sum < 1) {
+			var scale = 1 / sum;
+			rawE *= scale;
+			rawS *= scale;
+		}
+		var root = document.documentElement;
+		root.style.setProperty('--evidence-flex', String(rawE));
+		root.style.setProperty('--settings-flex', String(rawS));
 	}
 
 	function computeAutoFitScreenSize() {
@@ -68,6 +108,11 @@ var ThemeManager = (function() {
 			// Zoom applies to everything inside #screens (meta + gaps + both screens),
 			// so divide sectionHeight by the total pre-zoom height to get the scale.
 			let totalPreZoomH = metaHeight + (2 * gapPx) + (2 * 192);
+			// Account for examination mode's extra bottom bar (32px padding on #screens)
+			var screenBottom = document.getElementById('screen-bottom');
+			if (screenBottom && screenBottom.classList.contains('examination')) {
+				totalPreZoomH += 32;
+			}
 			let fitScale = sectionHeight / totalPreZoomH;
 			singleScreenWidth = 256 * fitScale;
 			singleScreenHeight = 192 * fitScale;
@@ -192,33 +237,34 @@ var ThemeManager = (function() {
 	}
 
 	function updateLayoutMode() {
-		const section = document.querySelector('#content > section');
-		const screens = document.getElementById('screens');
-		const courtrecord = document.getElementById('courtrecord');
-		const settings = document.getElementById('player-parametres');
+		var section = document.querySelector('#content > section');
+		var screens = document.getElementById('screens');
+		var courtrecord = document.getElementById('courtrecord');
+		var settings = document.getElementById('player-parametres');
 		if (!section || !screens) return;
 
-		const content = section.parentElement;
-		const sectionWidth = section.clientWidth;
+		var content = section.parentElement;
+		var sectionWidth = section.clientWidth;
 
 		// Calculate what the zoomed screens width WOULD be in wide mode (height-based).
 		// Use bounded content height (stable regardless of layout-stack).
 		var boundedHeight = content ? content.clientHeight : section.clientHeight;
 		var metaH = 18; // --meta-height
 		var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
-		var usableH = boundedHeight - metaH - (2 * gapPx);
-		var wideScreenHeight = Math.max(usableH / 2, 50);
-		var wideScreenWidth = wideScreenHeight * (256 / 192);
+		var totalPreZoomH = metaH + (2 * gapPx) + (2 * 192);
+		var fitScale = boundedHeight / totalPreZoomH;
+		var wideScreenWidth = 256 * fitScale;
 		var userScale = EngineConfig.get('layout.screenScale') || 1;
 		var scaledScreensWidth = wideScreenWidth * userScale;
 
 		// Flex item minimum widths (from CSS)
-		var crMinWidth = 250;   // #courtrecord min-width
-		var settingsWidth = 280; // #player-parametres width
+		var crMinWidth = 250;
+		var settingsW = 280;
 
-		// Determine tier: would all 3 fit? Would 2 fit?
+		// Tier detection always checks whether all 3 panels fit side-by-side.
+		// The arrangement only affects panel ordering, not when tabs/stack kick in.
 		var newTier;
-		if (scaledScreensWidth + crMinWidth + settingsWidth <= sectionWidth) {
+		if (scaledScreensWidth + crMinWidth + settingsW <= sectionWidth) {
 			newTier = 'wide';
 		} else if (scaledScreensWidth + crMinWidth <= sectionWidth) {
 			newTier = 'medium';
@@ -237,22 +283,40 @@ var ThemeManager = (function() {
 		}
 
 		if (newTier === 'wide') {
-			removeTabbedZone(section, courtrecord, settings);
-			if (settings) { settings.style.display = ''; }
+			// Check for tab override: user explicitly chose tabs in wide mode
+			if (userOverrodeNarrowMode && narrowMode === 'tabs') {
+				removeTabbedZone(section, courtrecord, settings);
+				if (settings) { settings.style.display = 'none'; }
+				createTabbedZone(courtrecord, settings);
+				if (courtrecord) { courtrecord.style.flexGrow = '1'; }
+			} else {
+				removeTabbedZone(section, courtrecord, settings);
+				if (settings) { settings.style.display = ''; }
+				if (courtrecord) { courtrecord.style.flexGrow = ''; }
+			}
 			section.classList.remove('layout-stack');
 			if (content) content.classList.remove('layout-stack');
 		} else if (newTier === 'medium' && narrowMode === 'tabs') {
 			removeTabbedZone(section, courtrecord, settings);
 			if (settings) { settings.style.display = 'none'; }
 			createTabbedZone(courtrecord, settings);
+			// In tabs mode, courtrecord is the only growing panel in the row.
+			// Force flex-grow:1 so it fills all space regardless of evidence width slider.
+			if (courtrecord) { courtrecord.style.flexGrow = '1'; }
 			section.classList.remove('layout-stack');
 			if (content) content.classList.remove('layout-stack');
 		} else {
 			// medium+stack or narrow
 			removeTabbedZone(section, courtrecord, settings);
 			if (settings) { settings.style.display = ''; }
+			if (courtrecord) { courtrecord.style.flexGrow = ''; }
 			section.classList.add('layout-stack');
 			if (content) content.classList.add('layout-stack');
+		}
+
+		// Notify settings panel to update picker visibility for current tier
+		if (typeof SettingsPanel !== 'undefined' && SettingsPanel.updateLayoutTier) {
+			SettingsPanel.updateLayoutTier(currentLayoutTier);
 		}
 	}
 
@@ -358,14 +422,59 @@ var ThemeManager = (function() {
 		}
 	}
 
-	function applyCourtRecordPosition() {
-		const position = EngineConfig.get('layout.courtRecordPosition');
-		const section = document.querySelector('#content > section');
+	function applyPanelArrangement() {
+		var arrangement = EngineConfig.get('layout.panelArrangement') || '1-2-3';
+		var section = document.querySelector('#content > section');
+		var content = section ? section.parentElement : null;
+		var courtrecord = document.getElementById('courtrecord');
+		var settings = document.getElementById('player-parametres');
 		if (!section) return;
-		section.classList.remove('cr-right', 'cr-left', 'cr-bottom', 'cr-hidden');
-		if (position && position !== 'right') {
-			section.classList.add('cr-' + position);
+
+		// Clean inline styles that may linger from previous arrangement/tabs
+		if (courtrecord) {
+			courtrecord.style.overflow = '';
+			courtrecord.style.width = '';
+			courtrecord.style.height = '';
+			courtrecord.style.order = '';
+			courtrecord.style.flex = '';
 		}
+		if (settings) {
+			settings.style.overflow = '';
+			settings.style.width = '';
+			settings.style.height = '';
+			settings.style.border = '';
+			settings.style.display = '';
+			settings.style.order = '';
+			settings.style.flex = '';
+		}
+
+		// Remove all arrangement classes
+		for (var i = 0; i < ARRANGEMENT_CLASSES.length; i++) {
+			section.classList.remove('arrangement-' + ARRANGEMENT_CLASSES[i]);
+		}
+
+		// Apply the new arrangement class (default 1-2-3 uses no class)
+		if (arrangement !== '1-2-3') {
+			section.classList.add('arrangement-' + arrangement);
+		}
+
+		// Set scroll behavior based on arrangement type.
+		// Non-row arrangements wrap panels, so section needs height:auto
+		// to grow beyond the viewport, and content needs overflow:auto to scroll.
+		var type = getArrangementType(arrangement);
+		if (type === 'row') {
+			section.style.height = '';
+			section.style.overflow = '';
+			if (content) content.style.overflow = '';
+		} else {
+			section.style.height = 'auto';
+			section.style.overflow = 'visible';
+			if (content) content.style.overflow = 'auto';
+		}
+
+		// Re-evaluate layout tier since panel composition in the row changed
+		currentLayoutTier = ''; // force re-evaluation
+		updateLayoutMode();
 	}
 
 	function onConfigChanged(data) {
@@ -391,8 +500,10 @@ var ThemeManager = (function() {
 			applyExpandDescriptions();
 		} else if (data.path === 'display.blipVolume') {
 			applyBlipVolume();
-		} else if (data.path === 'layout.courtRecordPosition') {
-			applyCourtRecordPosition();
+		} else if (data.path === 'layout.panelArrangement') {
+			applyPanelArrangement();
+		} else if (data.path === 'layout.evidenceWidth' || data.path === 'layout.settingsWidth') {
+			applyPanelWidths();
 		} else if (data.path === 'layout.narrowMode') {
 			userOverrodeNarrowMode = true;
 			applyNarrowMode();
@@ -420,6 +531,15 @@ var ThemeManager = (function() {
 					updateLayoutMode();
 					computeAutoFitScreenSize();
 				}).observe(section);
+			}
+
+			// Watch #screen-bottom for class changes (examination mode toggle)
+			// to recalculate screen zoom when the extra bar appears/disappears
+			var screenBottom = document.getElementById('screen-bottom');
+			if (screenBottom) {
+				new MutationObserver(function() {
+					computeAutoFitScreenSize();
+				}).observe(screenBottom, { attributes: true, attributeFilter: ['class'] });
 			}
 
 			// Run initial layout mode evaluation after DOM has rendered

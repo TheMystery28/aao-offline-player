@@ -4,34 +4,18 @@
             "proceed": ["Enter", "Space"],
             "skip": ["Shift"],
             "back": ["ArrowLeft"],
-            "forward": ["ArrowRight"],
-            "courtRecordToggle": ["Tab"],
-            "courtRecordEvidence": ["Digit1"],
-            "courtRecordProfiles": ["Digit2"],
-            "crNavigateUp": [],
-            "crNavigateDown": [],
-            "crNavigateLeft": [],
-            "crNavigateRight": [],
-            "crSelect": [],
-            "crCheck": ["KeyC"],
-            "crSwitchTab": []
+            "forward": ["ArrowRight"]
         },
         "gamepad": {
             "proceed": [0],
             "back": [1],
             "forward": [15],
-            "backStatement": [14],
-            "courtRecordToggle": [9],
-            "crNavigateUp": [12],
-            "crNavigateDown": [13],
-            "crSelect": [0],
-            "crCheck": [2],
-            "crSwitchTab": [3]
+            "backStatement": [14]
         }
     },
     "display": {
         "pixelated": false,
-        "nightMode": false,
+        "nightMode": true,
         "textSpeed": 1.0,
         "instantText": false,
         "blipVolume": 70,
@@ -41,10 +25,10 @@
     "layout": {
         "screenScale": 1.0,
         "mobileScreenScale": 1.4,
-        "courtRecordPosition": "right",
-        "settingsPosition": "auto",
-        "fullWidth": false,
-        "narrowMode": "stack"
+        "panelArrangement": "1-2-3",
+        "evidenceWidth": 1.0,
+        "settingsWidth": 1.0,
+        "narrowMode": "tabs"
     },
     "features": {
         "debugPanel": false,
