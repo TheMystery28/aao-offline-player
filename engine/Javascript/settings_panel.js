@@ -26,6 +26,9 @@ var SettingsPanel = (function() {
 	let rowGroup = null;
 	let mixedGroup = null;
 	let narrowModeWrapper = null;
+	let layoutDetailsRef = null;
+	let evidenceWidthWrapper = null;
+	let settingsWidthWrapper = null;
 
 	// Layout arrangement definitions: value → [type, blocks]
 	// type: 'row' | 'mixed' | 'top'
@@ -504,6 +507,7 @@ var SettingsPanel = (function() {
 		addSlider(displayContent, 'display.blipVolume', 'blip_volume', 0, 100, 5);
 		addCheckbox(displayContent, 'display.expandEvidenceDescriptions', 'expand_descriptions');
 		addCheckbox(displayContent, 'display.hideHeader', 'hide_header');
+		addCheckbox(displayContent, 'display.fullscreen', 'fullscreen');
 
 		displayDetails.appendChild(displayContent);
 		container.appendChild(displayDetails);
@@ -526,11 +530,16 @@ var SettingsPanel = (function() {
 			{ value: 'tabs', label: 'Tabs' },
 			{ value: 'stack', label: 'Stack' }
 		]);
-		// Store reference to narrowMode wrapper for dynamic visibility
+		layoutDetailsRef = layoutDetails;
+		// Store references to width sliders and narrowMode for dynamic visibility
 		var labels = layoutContent.querySelectorAll('.regular_label');
 		for (var i = 0; i < labels.length; i++) {
-			var span = labels[i].querySelector('[data-locale-content="narrow_mode"]');
-			if (span) { narrowModeWrapper = labels[i]; break; }
+			var span = labels[i].querySelector('[data-locale-content]');
+			if (!span) continue;
+			var key = span.getAttribute('data-locale-content');
+			if (key === 'narrow_mode') narrowModeWrapper = labels[i];
+			if (key === 'evidence_width') evidenceWidthWrapper = labels[i];
+			if (key === 'settings_width') settingsWidthWrapper = labels[i];
 		}
 
 		layoutDetails.appendChild(layoutContent);
@@ -571,25 +580,31 @@ var SettingsPanel = (function() {
 		 * @param {string} tier - 'wide', 'medium', or 'narrow'
 		 */
 		updateLayoutTier: function(tier) {
-			// Show/hide layout groups based on tier
+			var isWide = (tier === 'wide');
+			// In non-wide modes, hide all layout options (picker, width sliders,
+			// narrowMode). Panel widths are overridden to defaults by ThemeManager.
+			if (pickerContainer) {
+				pickerContainer.style.display = isWide ? '' : 'none';
+			}
 			if (rowGroup) {
-				rowGroup.style.display = (tier === 'wide') ? '' : 'none';
+				rowGroup.style.display = isWide ? '' : 'none';
 			}
 			if (mixedGroup) {
-				mixedGroup.style.display = (tier === 'narrow') ? 'none' : '';
+				mixedGroup.style.display = (tier === 'narrow') ? 'none' : (isWide ? '' : 'none');
 			}
-			// Hide entire picker in narrow (forced stack)
-			if (pickerContainer) {
-				pickerContainer.style.display = (tier === 'narrow') ? 'none' : '';
-			}
-			// narrowMode only visible in wide
 			if (narrowModeWrapper) {
-				narrowModeWrapper.style.display = (tier === 'wide') ? '' : 'none';
+				narrowModeWrapper.style.display = isWide ? '' : 'none';
 			}
-			// Don't auto-reset arrangement — it persists as a preference.
-			// The layout system applies tabs/stack regardless of arrangement
-			// at medium/narrow tiers. When the user returns to wide, their
-			// preferred arrangement is restored.
+			if (evidenceWidthWrapper) {
+				evidenceWidthWrapper.style.display = isWide ? '' : 'none';
+			}
+			if (settingsWidthWrapper) {
+				settingsWidthWrapper.style.display = isWide ? '' : 'none';
+			}
+			// Hide entire Layout section in non-wide modes
+			if (layoutDetailsRef) {
+				layoutDetailsRef.style.display = isWide ? '' : 'none';
+			}
 		}
 	};
 })();
