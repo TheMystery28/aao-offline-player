@@ -15,8 +15,6 @@
 	--header-height: 3.8em;
 
 	--settings-panel-width: 280px;
-	--evidence-flex: 0.7;
-	--settings-flex: 0.4;
 
 	--lifebar-width: 120px;
 	--lifebar-height: 10px;
@@ -150,7 +148,7 @@ body > #content > section
 {
 	display: flex;
 	flex-direction: row;
-	justify-content: flex-start;
+	justify-content: space-evenly;
 	align-items: stretch;
 	padding: 0;
 	border: 0;
@@ -671,8 +669,8 @@ body > #content > section.layout-stack #screens {
 
 #courtrecord
 {
-	flex: var(--evidence-flex) 1 0;
-	min-width: 80px;
+	flex: 1 1 0;
+	min-width: 250px;
 	min-height: 0;
 	max-height: 100%;
 	align-self: stretch;
@@ -1137,8 +1135,8 @@ a.courtrecord-switchview:active {
  * ------------- */
  
 #player-parametres {
-	flex: var(--settings-flex) 1 0;
-	min-width: 80px;
+	width: var(--settings-panel-width);
+	flex-shrink: 0;
 	min-height: 0;
 	max-height: 100%;
 	overflow-y: auto;
