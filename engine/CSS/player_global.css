@@ -46,11 +46,25 @@ body > #content > section
 	width:256px;
 }
 
-/*Additional magnification for mobile devices in portrait orientation*/
+#screens.pixelated
+{
+	image-rendering: pixelated;
+	image-rendering: -moz-crisp-edges;
+}
+
+/* Desktop screen scale — controlled by --screen-scale CSS custom property.
+   Uses zoom instead of transform so the element's layout box grows with the scale,
+   pushing adjacent flex siblings (court record, settings panel) accordingly. */
+#screens
+{
+	zoom: var(--screen-scale, 1);
+}
+
+/* Additional magnification for mobile devices in portrait orientation */
 @media (orientation: portrait) {
 	#screens
 	{
-		transform: scale(var(--mobile-screen-scale, 1.4));
+		zoom: var(--mobile-screen-scale, 1.4);
 		margin: auto;
 		margin-bottom: 9em;
 		margin-top: 6em;
@@ -484,6 +498,22 @@ body > #content > section
 	border:1px solid lightgrey;
 }
 
+/* Court record position variants (controlled by ThemeManager) */
+body > #content > section.cr-left {
+	flex-direction: row-reverse;
+}
+
+body > #content > section.cr-bottom {
+	flex-wrap: wrap;
+}
+body > #content > section.cr-bottom #courtrecord {
+	width: 100%;
+	order: 3;
+}
+
+body > #content > section.cr-hidden #courtrecord {
+	display: none;
+}
 
 
 .courtrecord-header {
@@ -621,6 +651,16 @@ a.courtrecord-switchview:active {
 	max-height: none;
 	z-index: 3;
 	top: 3px;
+}
+
+/* When expand mode is on, suppress the hover float behavior */
+.expand-descriptions .evidence-list .evidence_display:hover .details,
+.expand-descriptions .evidence-list .evidence_display:active .details
+{
+	position: static;
+	z-index: auto;
+	top: auto;
+	box-shadow: none;
 }
 
 .evidence-list .evidence_display .details .description
