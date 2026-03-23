@@ -44,8 +44,8 @@
 	--font-size-heading-md: large;
 	--font-size-body: small;
 	--font-size-dialogue: 12px;
-	--font-size-evidence-name: 12px;
-	--font-size-evidence-desc: 10px;
+	--font-size-evidence-name: 11px;
+	--font-size-evidence-desc: 13px;
 
 	/* ---- Transitions ---- */
 	--transition-fast: 0.2s;

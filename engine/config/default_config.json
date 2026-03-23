@@ -8,9 +8,12 @@
         },
         "gamepad": {
             "proceed": [0],
-            "back": [1],
+            "skip": [5],
+            "back": [1, 14],
             "forward": [15],
-            "backStatement": [14]
+            "save": [4],
+            "loadLatest": [6],
+            "fullscreen": [8]
         }
     },
     "display": {

@@ -16,7 +16,7 @@ Styling court records elements
 	display: flex;
 	flex-direction: row;
 	align-items: stretch;
-	min-height: 70px;
+	min-height: 80px;
 	margin: 2px auto;
 	padding: 0;
 
@@ -29,10 +29,10 @@ Styling court records elements
 .evidence_display > .summary > img
 {
 	display: block;
-	width: 70px;
-	height: 70px;
+	width: 80px;
+	height: 80px;
 	flex-shrink: 0;
-	object-fit: cover;
+	object-fit: contain;
 }
 
 /* Text wrapper for flex layout of name + civil_status */
@@ -59,11 +59,10 @@ Styling court records elements
 
 	text-align: center;
 	color: var(--color-text-evidence-name);
-	font: var(--font-size-evidence-name) sans-serif;
+	font: bold var(--font-size-evidence-name) sans-serif;
 
 	white-space: nowrap;
 	text-overflow: ellipsis;
-	/* Important should not be needed, but both Chrome and Firefox override it to normal = 15px otherwise... and their debuggers are no help in finding out why. */
 	line-height: 17px !important;
 }
 
@@ -82,13 +81,13 @@ Styling court records elements
 {
 	flex: 1 1 0;
 	min-height: 0;
-	padding: 1px 0 0 5px;
+	padding: 2px 0 2px 5px;
 
 	border: 2px ridge lightgrey;
 	border-top: 0;
 
 	background: var(--color-bg-evidence-civil);
-	font: var(--font-size-evidence-name) sans-serif;
+	font: 14px sans-serif;
 	color: black;
 
 	resize: none;
