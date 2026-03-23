@@ -916,8 +916,8 @@ a.courtrecord-switchview:active {
 
 .evidence-list .evidence_display
 {
-	flex: 1 1 200px;
-	min-width: 200px;
+	flex: 1 1 250px;
+	min-width: 250px;
 	max-width: 100%;
 	margin: 0;
 	padding: var(--panel-padding) 0;
