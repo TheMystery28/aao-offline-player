@@ -73,6 +73,61 @@ var InputManager = (function() {
 		}
 	}
 
+	// Reusable action handlers (called from keyboard and gamepad)
+	function handleSave() {
+		if (typeof getSaveString === 'undefined' || typeof player_status === 'undefined') return;
+		if (player_status.current_frame_index === 0) return;
+		if (player_status.proceed_timer && !player_status.proceed_timer_met) return;
+		if (player_status.proceed_typing && !player_status.proceed_typing_met) return;
+		var gs = JSON.parse(window.localStorage.getItem('game_saves')) || {};
+		if (!gs[trial_information.id]) gs[trial_information.id] = {};
+		var saveStr = getSaveString();
+		gs[trial_information.id][(new Date()).getTime()] = saveStr;
+		window.localStorage.setItem('game_saves', JSON.stringify(gs));
+		EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
+		if (typeof refreshSavesList === 'function') refreshSavesList();
+	}
+
+	function handleLoadLatest() {
+		if (typeof loadSaveString === 'undefined' || typeof player_status === 'undefined') return;
+		if (player_status.proceed_timer && !player_status.proceed_timer_met) return;
+		if (player_status.proceed_typing && !player_status.proceed_typing_met) return;
+		var gs = JSON.parse(window.localStorage.getItem('game_saves'));
+		if (!gs) return;
+		var latestDate = 0, latestPartId = null, latestStr = null;
+		var parts = [trial_information.id];
+		if (trial_information.sequence && trial_information.sequence.list) {
+			for (var si = 0; si < trial_information.sequence.list.length; si++) {
+				parts.push(trial_information.sequence.list[si].id);
+			}
+		}
+		for (var pi = 0; pi < parts.length; pi++) {
+			if (!gs[parts[pi]]) continue;
+			var dates = Object.keys(gs[parts[pi]]).map(Number);
+			for (var di = 0; di < dates.length; di++) {
+				if (dates[di] > latestDate) {
+					latestDate = dates[di];
+					latestPartId = parts[pi];
+					latestStr = gs[parts[pi]][String(dates[di])];
+				}
+			}
+		}
+		if (!latestStr) return;
+		if (latestPartId == trial_information.id) {
+			loadSaveString(latestStr);
+		} else {
+			var url = new URL(window.location.href);
+			url.searchParams.set('trial_id', latestPartId);
+			url.searchParams.set('save_data', Base64.encode(latestStr));
+			window.location.href = url.toString();
+		}
+	}
+
+	function handleFullscreenToggle() {
+		var current = !!EngineConfig.get('display.fullscreen');
+		EngineConfig.set('display.fullscreen', !current);
+	}
+
 	function onKeyDown(e) {
 		// Ctrl+D: reset all settings to defaults
 		if (e.ctrlKey && (e.code === 'KeyD' || e.key === 'd')) {
@@ -80,68 +135,17 @@ var InputManager = (function() {
 			EngineConfig.reset();
 			return;
 		}
-
 		// Ctrl+S: quick save
 		if (e.ctrlKey && (e.code === 'KeyS' || e.key === 's')) {
-			e.preventDefault();
-			if (typeof getSaveString === 'undefined' || typeof player_status === 'undefined') return;
-			if (player_status.current_frame_index === 0) return;
-			if (player_status.proceed_timer && !player_status.proceed_timer_met) return;
-			if (player_status.proceed_typing && !player_status.proceed_typing_met) return;
-			var gs = JSON.parse(window.localStorage.getItem('game_saves')) || {};
-			if (!gs[trial_information.id]) gs[trial_information.id] = {};
-			var saveStr = getSaveString();
-			gs[trial_information.id][(new Date()).getTime()] = saveStr;
-			window.localStorage.setItem('game_saves', JSON.stringify(gs));
-			EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
-			if (typeof refreshSavesList === 'function') refreshSavesList();
-			return;
+			e.preventDefault(); handleSave(); return;
 		}
-
-		// Ctrl+L: load latest save (across all sequence parts)
+		// Ctrl+L: load latest save
 		if (e.ctrlKey && (e.code === 'KeyL' || e.key === 'l')) {
-			e.preventDefault();
-			if (typeof loadSaveString === 'undefined' || typeof player_status === 'undefined') return;
-			if (player_status.proceed_timer && !player_status.proceed_timer_met) return;
-			if (player_status.proceed_typing && !player_status.proceed_typing_met) return;
-			var gs = JSON.parse(window.localStorage.getItem('game_saves'));
-			if (!gs) return;
-			var latestDate = 0, latestPartId = null, latestStr = null;
-			var parts = [trial_information.id];
-			if (trial_information.sequence && trial_information.sequence.list) {
-				for (var si = 0; si < trial_information.sequence.list.length; si++) {
-					parts.push(trial_information.sequence.list[si].id);
-				}
-			}
-			for (var pi = 0; pi < parts.length; pi++) {
-				if (!gs[parts[pi]]) continue;
-				var dates = Object.keys(gs[parts[pi]]).map(Number);
-				for (var di = 0; di < dates.length; di++) {
-					if (dates[di] > latestDate) {
-						latestDate = dates[di];
-						latestPartId = parts[pi];
-						latestStr = gs[parts[pi]][String(dates[di])];
-					}
-				}
-			}
-			if (!latestStr) return;
-			if (latestPartId == trial_information.id) {
-				loadSaveString(latestStr);
-			} else {
-				var url = new URL(window.location.href);
-				url.searchParams.set('trial_id', latestPartId);
-				url.searchParams.set('save_data', Base64.encode(latestStr));
-				window.location.href = url.toString();
-			}
-			return;
+			e.preventDefault(); handleLoadLatest(); return;
 		}
-
 		// F11: toggle fullscreen
 		if (e.code === 'F11' || e.key === 'F11') {
-			e.preventDefault();
-			var current = !!EngineConfig.get('display.fullscreen');
-			EngineConfig.set('display.fullscreen', !current);
-			return;
+			e.preventDefault(); handleFullscreenToggle(); return;
 		}
 
 		// Try event.code first (physical key), then event.key (logical key)
@@ -177,6 +181,19 @@ var InputManager = (function() {
 			if (!gp) continue;
 
 			const buttons = gp.buttons;
+
+			// Combo: RB + RT = reset settings
+			var comboKey = g + '_resetCombo';
+			if (buttons[5] && buttons[5].pressed &&
+				buttons[7] && buttons[7].pressed) {
+				if (!gamepadWasPressed[comboKey]) {
+					gamepadWasPressed[comboKey] = true;
+					EngineConfig.reset();
+				}
+			} else {
+				gamepadWasPressed[comboKey] = false;
+			}
+
 			for (let b = 0; b < buttons.length; b++) {
 				const key = g + '_' + b;
 				const action = gamepadLookup[String(b)];
@@ -184,7 +201,11 @@ var InputManager = (function() {
 				if (buttons[b] && buttons[b].pressed) {
 					if (action && !gamepadWasPressed[key]) {
 						gamepadWasPressed[key] = true;
-						EngineEvents.emit('input:action', { source: 'gamepad', action: action });
+						// Handle special actions directly
+						if (action === 'save') { handleSave(); }
+						else if (action === 'loadLatest') { handleLoadLatest(); }
+						else if (action === 'fullscreen') { handleFullscreenToggle(); }
+						else { EngineEvents.emit('input:action', { source: 'gamepad', action: action }); }
 					}
 				} else {
 					if (gamepadWasPressed[key]) {
