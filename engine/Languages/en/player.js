@@ -45,6 +45,7 @@
 
 "player_saves" : "Game saves",
 "save_new" : "New save",
+"load_latest" : "Load latest",
 "save_explain" : "Game saves are stored in your web browser. If you go to a different computer or if your browser's cache is cleared, you will lose your saves.\n\nTo avoid that, or to share saved games with other people, you can right click the save link, copy the link address, and store it in a safer place.",
 "save_error_game_not_started": "You cannot save the game before starting it.",
 "save_error_pending_timer": "You cannot save during a timed frame. Please wait.",
