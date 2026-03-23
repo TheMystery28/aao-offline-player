@@ -59,7 +59,22 @@ window.addEventListener("DOMContentLoaded", function () {
     // Push history state so Android back button returns to launcher instead of blank screen
     history.pushState({ player: true }, "", "");
 
-    // Debug: capture resource load errors from the iframe
+    // Update toolbar title when iframe navigates to a new case (e.g., loading save from another sequence part)
+    gameFrame.addEventListener("load", function() {
+      try {
+        var iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
+        var iframeTitle = iframeDoc.title;
+        // Strip the " - Ace Attorney Online" suffix if present
+        if (iframeTitle && iframeTitle.indexOf(' - Ace Attorney Online') !== -1) {
+          iframeTitle = iframeTitle.replace(' - Ace Attorney Online', '');
+        }
+        if (iframeTitle && iframeTitle !== 'Ace Attorney Online - Trial Player') {
+          playerTitle.textContent = iframeTitle;
+        }
+      } catch (e) { /* cross-origin */ }
+    });
+
+    // Debug: capture resource load errors from the iframe (one-time)
     gameFrame.addEventListener("load", function onFrameLoad() {
       gameFrame.removeEventListener("load", onFrameLoad);
       try {
@@ -176,6 +191,11 @@ window.addEventListener("DOMContentLoaded", function () {
       } else {
         playerTitle.style.fontFamily = '';
       }
+    } else if (e.data.type === 'aao-title-update') {
+      // Engine loaded a new case — update toolbar title
+      var text = e.data.title || '';
+      if (e.data.author) text += ' — ' + e.data.author;
+      if (text) playerTitle.textContent = text;
     } else if (e.data.type === 'aao-fullscreen') {
       // Toggle Tauri window fullscreen via __TAURI__ global
       try {
