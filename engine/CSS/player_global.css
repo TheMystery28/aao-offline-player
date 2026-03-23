@@ -154,11 +154,53 @@ body > #content > section
 	border: 0;
 	height: 100%;
 	overflow: hidden;
+	flex-wrap: wrap;
 }
 
 
+/* Stacked layout mode — applied by JS when panels wrap (stack/narrow tier) */
+body > #content.layout-stack {
+	overflow: auto;
+}
+
+body > #content > section.layout-stack {
+	overflow-y: auto;
+	height: auto;
+	align-content: flex-start;
+	justify-content: center;
+	align-items: flex-start;
+}
+
+body > #content > section.layout-stack #courtrecord {
+	flex: none;
+	width: 100%;
+	height: 40vh;
+	max-height: 50vh;
+	overflow-y: auto;
+}
+
+body > #content > section.layout-stack #player-parametres {
+	flex: none;
+	width: 100%;
+	max-height: 50vh;
+	overflow-y: auto;
+}
+
+body > #content > section.layout-stack #screens {
+	align-self: flex-start;
+	width: auto;
+}
+
+/* When examination mode is active, #screen-examination extends ~32px below
+   the normal #screens flow height (16px top + 16px bottom padding on #examination).
+   Add matching bottom padding so stacked panels below don't get overlapped.
+   Zoom on #screens scales this padding proportionally. */
+body > #content > section.layout-stack #screens:has(#screen-bottom.examination) {
+	padding-bottom: 32px;
+}
+
 /* The screen container should shift when in portrait mode to allow full screen */
-@media (orientation: portrait) {
+@media (orientation: portrait) and (hover: none) {
 	body > #content > section
 	{
 		flex-direction: column;
@@ -179,9 +221,11 @@ body > #content > section
  
 #screens
 {
-	width: var(--screen-auto-width);
+	position: relative;
+	width: var(--screen-width);
 	flex-shrink: 0;
-	align-self: center;
+	align-self: flex-start;
+	zoom: var(--screen-content-scale, 1);
 }
 
 #screens.pixelated
@@ -191,7 +235,7 @@ body > #content > section
 }
 
 /* Additional magnification for mobile devices in portrait orientation */
-@media (orientation: portrait) {
+@media (orientation: portrait) and (hover: none) {
 	#screens
 	{
 		zoom: var(--mobile-screen-scale, 1.4);
@@ -254,26 +298,19 @@ body > #content > section
 
 #screen-top {
 	z-index:2;
-	width:var(--screen-auto-width);
-	height:var(--screen-auto-height);
+	width:var(--screen-width);
+	height:var(--screen-height);
 	margin:var(--screen-gap) 0 0 0;
 	overflow:hidden;
 }
 
 #screen-bottom {
 	position:relative;
-	width:var(--screen-auto-width);
-	height:var(--screen-auto-height);
+	width:var(--screen-width);
+	height:var(--screen-height);
 	margin:var(--screen-gap) 0 0 0;
 	z-index:2;
 	overflow:hidden;
-}
-
-/* Scale internal game content to fill the auto-fit screen */
-#screen-top > *,
-#screen-bottom > * {
-	transform-origin: 0 0;
-	transform: scale(var(--screen-content-scale));
 }
 
 #screen-loading
@@ -283,33 +320,13 @@ body > #content > section
 	position: absolute;
     z-index: 3;
     box-sizing: border-box;
-    width:var(--screen-auto-width);
-	height:var(--screen-auto-height);
+    width:var(--screen-width);
+	height:var(--screen-height);
 	margin:var(--screen-gap) 0 0 0;
 	padding: 0 var(--screen-gap);
 
     font-size: 16px;
     color: white;
-}
-
-/* Portrait mode: reset screens to fixed dimensions with zoom-based scaling */
-@media (orientation: portrait) {
-	#screen-top {
-		width: var(--screen-width);
-		height: var(--screen-height);
-	}
-	#screen-bottom {
-		width: var(--screen-width);
-		height: var(--screen-height);
-	}
-	#screen-loading {
-		width: var(--screen-width);
-		height: var(--screen-height);
-	}
-	#screen-top > *,
-	#screen-bottom > * {
-		transform: none;
-	}
 }
 
 [id|=screen] :focus { outline:none; }
@@ -653,7 +670,8 @@ body > #content > section
 #courtrecord
 {
 	flex: 1 1 0;
-	min-width: 0;
+	min-width: 250px;
+	min-height: 0;
 	align-self: stretch;
 	background:var(--color-bg-cr);
 	border:1px solid var(--color-border-cr);
@@ -662,7 +680,7 @@ body > #content > section
 	overflow: hidden;
 }
 
-@media (orientation: portrait) {
+@media (orientation: portrait) and (hover: none) {
 	#courtrecord {
 		width: 100%;
 		flex: none;
@@ -689,6 +707,51 @@ body > #content > section.cr-hidden #courtrecord {
 }
 
 
+/* Tabbed zone for medium-width layout */
+.tabbed-zone-bar {
+	display: none;
+	flex-shrink: 0;
+	height: 33px;
+	border-bottom: 1px solid var(--color-border-cr-header);
+	background-color: var(--color-bg-cr-header);
+	background-image: linear-gradient(to bottom, var(--color-bg-cr-header) 0%, var(--color-bg-cr-header) 48%, #959595 52%, var(--color-bg-cr-header-dark) 55%, var(--color-bg-cr-header-dark) 64%, var(--color-border-cr-header) 67%, #595959 70%, #595959 100%);
+}
+
+.tabbed-zone-bar .tab-button {
+	flex: 1;
+	padding: 6px 0 0 0;
+	height: 26px;
+	background-color: var(--color-bg-cr-switch);
+	background-image: linear-gradient(rgba(255,255,255,0.25), rgba(255,255,255,0));
+	border-bottom: 2px solid grey;
+	text-align: center;
+	color: var(--color-text-button);
+	cursor: pointer;
+	transition: var(--transition-fast);
+	user-select: none;
+	text-decoration: none;
+}
+
+.tabbed-zone-bar .tab-button:hover,
+.tabbed-zone-bar .tab-button:focus {
+	background-color: var(--color-bg-cr-switch-hover);
+	box-shadow: 0 0 3px grey;
+}
+
+.tabbed-zone-bar .tab-button.active {
+	background-color: var(--color-bg-cr-header-dark);
+	border-bottom-color: transparent;
+	box-shadow: inset 0 0 3px black;
+}
+
+.tabbed-zone-content {
+	flex: 1 1 0;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: var(--panel-padding);
+}
+
 .courtrecord-header {
 	position:relative;
 	flex-shrink: 0;
@@ -710,10 +773,14 @@ body > #content > section.cr-hidden #courtrecord {
 	margin:0;
 	height:33px;
 	padding:10px 8px 0 4px;
-	min-width:5em; 
-	
+	min-width:5em;
+	max-width: calc(100% - 6em);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+
 	border: 0;
-	
+
 	background-color: var(--color-bg-cr-header);
 	background-image: linear-gradient(to bottom, var(--color-bg-cr-header) 0%,var(--color-bg-cr-header) 21%,#959595 24%,var(--color-bg-cr-header-dark) 27%,var(--color-bg-cr-header-dark) 36%,var(--color-border-cr-header) 39%,#595959 42%,#595959 100%);
 	box-shadow: none;
@@ -775,7 +842,7 @@ a.courtrecord-switchview:active {
 	gap: var(--card-margin);
 }
 
-@media (orientation: portrait) {
+@media (orientation: portrait) and (hover: none) {
 	.evidence-list
 	{
 		padding: 0;
@@ -1000,7 +1067,7 @@ a.courtrecord-switchview:active {
 }
 
 /* The left bar is moved up on mobile, for better evidence view */
-@media (orientation: portrait) {
+@media (orientation: portrait) and (hover: none) {
 	#screen-cr-item-check
 	{
 		flex-direction: column-reverse;
@@ -1031,6 +1098,7 @@ a.courtrecord-switchview:active {
 #player-parametres {
 	width: var(--settings-panel-width);
 	flex-shrink: 0;
+	min-height: 0;
 	overflow-y: auto;
 	overflow-x: hidden;
 	padding: var(--panel-padding);
@@ -1041,7 +1109,7 @@ a.courtrecord-switchview:active {
 	font-size: var(--font-size-body);
 }
 
-@media (orientation: portrait) {
+@media (orientation: portrait) and (hover: none) {
 	#player-parametres {
 		width: calc(100% - 12px);
 		flex-shrink: 1;

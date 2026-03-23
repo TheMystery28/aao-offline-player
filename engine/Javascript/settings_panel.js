@@ -189,6 +189,10 @@ var SettingsPanel = (function() {
 			{ value: 'bottom', label: 'Bottom' },
 			{ value: 'hidden', label: 'Hidden' }
 		]);
+		addSelect(layoutContent, 'layout.narrowMode', 'narrow_mode', [
+			{ value: 'tabs', label: 'Tabs' },
+			{ value: 'stack', label: 'Stack' }
+		]);
 
 		layoutDetails.appendChild(layoutContent);
 		container.appendChild(layoutDetails);
