@@ -378,6 +378,8 @@ var ThemeManager = (function() {
 					root.style.setProperty('--screen-scale', String(savedScreenScale));
 					computeAutoFitScreenSize();
 				}
+				// Restore user's body width setting
+				applyBodyWidth();
 				savedEvidenceScale = null;
 				savedSettingsScale = null;
 				savedScreenScale = null;
@@ -393,6 +395,8 @@ var ThemeManager = (function() {
 				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX));
 				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX));
 				root.style.setProperty('--screen-scale', '1');
+				// Force full width in non-wide modes (especially mobile)
+				root.style.setProperty('--body-max-width', '100vw');
 				computeAutoFitScreenSize();
 			}
 		}
