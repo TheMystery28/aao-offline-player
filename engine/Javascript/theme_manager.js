@@ -53,8 +53,31 @@ var ThemeManager = (function() {
 		applyInstantText();
 		applyExpandDescriptions();
 		applyBlipVolume();
+		applyPanelWidths();
 		applyPanelArrangement();
 		applyNarrowMode();
+	}
+
+	// Base flex values: slider 1.0 = these values (original panel proportions)
+	var EVIDENCE_BASE_FLEX = 0.7;
+	var SETTINGS_BASE_FLEX = 0.4;
+
+	function applyPanelWidths() {
+		var evidenceScale = EngineConfig.get('layout.evidenceWidth') || 1;
+		var settingsScale = EngineConfig.get('layout.settingsWidth') || 1;
+		var rawE = EVIDENCE_BASE_FLEX * evidenceScale;
+		var rawS = SETTINGS_BASE_FLEX * settingsScale;
+		// Normalize so sum >= 1.0. When flex-grow values sum below 1,
+		// CSS only distributes that fraction of free space, leaving a gap.
+		var sum = rawE + rawS;
+		if (sum < 1) {
+			var scale = 1 / sum;
+			rawE *= scale;
+			rawS *= scale;
+		}
+		var root = document.documentElement;
+		root.style.setProperty('--evidence-flex', String(rawE));
+		root.style.setProperty('--settings-flex', String(rawS));
 	}
 
 	function computeAutoFitScreenSize() {
@@ -473,6 +496,8 @@ var ThemeManager = (function() {
 			applyBlipVolume();
 		} else if (data.path === 'layout.panelArrangement') {
 			applyPanelArrangement();
+		} else if (data.path === 'layout.evidenceWidth' || data.path === 'layout.settingsWidth') {
+			applyPanelWidths();
 		} else if (data.path === 'layout.narrowMode') {
 			userOverrodeNarrowMode = true;
 			applyNarrowMode();
