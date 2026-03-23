@@ -236,7 +236,8 @@ var SettingsPanel = (function() {
 		slider.min = String(min);
 		slider.max = String(max);
 		slider.step = String(step);
-		slider.value = String(EngineConfig.get(configPath));
+		var configVal = EngineConfig.get(configPath);
+		slider.value = String(configVal !== undefined ? configVal : min);
 		wrapper.appendChild(slider);
 
 		const valueDisplay = document.createElement('span');
