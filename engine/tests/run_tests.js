@@ -106,6 +106,9 @@
 		var playerParams = document.createElement('div');
 		playerParams.id = 'player-parametres';
 		section.appendChild(playerParams);
+		var playerSettings = document.createElement('div');
+		playerSettings.id = 'player_settings';
+		playerParams.appendChild(playerSettings);
 		var playerSaves = document.createElement('div');
 		playerSaves.id = 'player_saves';
 		playerParams.appendChild(playerSaves);
@@ -145,7 +148,9 @@
 			['Objects', typeof testObjects === 'function' ? testObjects : null],
 		['EngineEvents', typeof testEngineEvents === 'function' ? testEngineEvents : null],
 		['EngineConfig', typeof testEngineConfig === 'function' ? testEngineConfig : null],
-		['InputManager', typeof testInputManager === 'function' ? testInputManager : null]
+		['InputManager', typeof testInputManager === 'function' ? testInputManager : null],
+		['ThemeManager', typeof testThemeManager === 'function' ? testThemeManager : null],
+		['SettingsPanel', typeof testSettingsPanel === 'function' ? testSettingsPanel : null]
 		];
 
 		for (var i = 0; i < suites.length; i++) {

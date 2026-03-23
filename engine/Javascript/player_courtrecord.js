@@ -264,31 +264,5 @@ function populateCrElementDetails(container, type, id)
 	container.appendChild(description);
 }
 
-// Scale evidence/profile cards proportionally to fill available width.
-// Cards are 268px wide at base. Calculate zoom = containerWidth / 268.
-(function() {
-	var CARD_BASE_WIDTH = 273; // 268px card + 5px margin
-	function updateCardZoom() {
-		var lists = document.querySelectorAll('.evidence-list');
-		for (var i = 0; i < lists.length; i++) {
-			var w = lists[i].clientWidth;
-			if (w > 0 && w !== CARD_BASE_WIDTH) {
-				lists[i].style.setProperty('--card-zoom', (w / CARD_BASE_WIDTH).toFixed(3));
-			}
-		}
-	}
-	// Run on load and on resize/orientation change
-	updateCardZoom();
-	window.addEventListener('resize', updateCardZoom);
-	// Recalculate when switching between evidence/profiles tabs,
-	// because the hidden tab has clientWidth=0 during initial calculation.
-	var switches = document.querySelectorAll('.courtrecord-switchview');
-	for (var i = 0; i < switches.length; i++) {
-		switches[i].addEventListener('click', function() {
-			setTimeout(updateCardZoom, 50); // wait for display:block to apply
-		});
-	}
-})();
-
 //END OF MODULE
 Modules.complete('player_courtrecord');

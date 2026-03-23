@@ -143,13 +143,18 @@ Styling court records elements
 	color: #C4B382;
 }
 
-/* Portrait mode: evidence cards scale proportionally to fill available width.
-   The --card-zoom custom property is set by JS based on actual container width.
-   Zoom affects layout (unlike transform), so spacing works naturally. */
+/* Focus ring for keyboard-navigated court record cards */
+.evidence-list .evidence_display.cr-focused {
+	outline: 2px solid #FFD652;
+	outline-offset: 2px;
+	box-shadow: 0 0 6px 2px rgba(255, 214, 82, 0.5);
+}
+
+/* Portrait mode: evidence cards fill available width responsively */
 @media (orientation: portrait) {
 	.evidence-list .evidence_display {
-		zoom: var(--card-zoom, 1);
 		display: block;
+		width: auto;
 		margin: 0 0 5px 0;
 	}
 }
