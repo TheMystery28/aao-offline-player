@@ -406,8 +406,10 @@ var ThemeManager = (function() {
 			(newTier === 'wide' && userOverrodeNarrowMode && narrowMode === 'tabs');
 
 		// Notify settings panel — hide layout when tabs active or non-wide
+		// Pass whether wide mode is possible (so narrowMode selector can show)
+		var wideIsPossible = (newTier === 'wide');
 		if (typeof SettingsPanel !== 'undefined' && SettingsPanel.updateLayoutTier) {
-			SettingsPanel.updateLayoutTier(tabsActive ? 'tabs' : currentLayoutTier);
+			SettingsPanel.updateLayoutTier(tabsActive ? 'tabs' : currentLayoutTier, wideIsPossible);
 		}
 	}
 

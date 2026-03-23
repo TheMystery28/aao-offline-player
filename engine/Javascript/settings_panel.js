@@ -622,12 +622,15 @@ var SettingsPanel = (function() {
 		/**
 		 * Update the layout picker and narrowMode visibility based on current tier.
 		 * Called by ThemeManager after tier detection.
-		 * @param {string} tier - 'wide', 'medium', or 'narrow'
+		 * @param {string} tier - 'wide', 'tabs', 'medium', or 'narrow'
+		 * @param {boolean} wideIsPossible - true if the window is wide enough for wide mode
 		 */
-		updateLayoutTier: function(tier) {
+		updateLayoutTier: function(tier, wideIsPossible) {
 			var isWide = (tier === 'wide');
-			// In non-wide modes, hide all layout options (picker, width sliders,
-			// narrowMode). Panel widths are overridden to defaults by ThemeManager.
+			// Show narrowMode selector when in wide+tabs (user can switch back)
+			// but NOT when forced into tabs by narrow window
+			var showNarrowMode = isWide || (tier === 'tabs' && wideIsPossible);
+			// In non-wide modes, hide layout options except narrowMode when applicable
 			if (pickerContainer) {
 				pickerContainer.style.display = isWide ? '' : 'none';
 			}
@@ -635,10 +638,10 @@ var SettingsPanel = (function() {
 				rowGroup.style.display = isWide ? '' : 'none';
 			}
 			if (mixedGroup) {
-				mixedGroup.style.display = (tier === 'narrow') ? 'none' : (isWide ? '' : 'none');
+				mixedGroup.style.display = isWide ? '' : 'none';
 			}
 			if (narrowModeWrapper) {
-				narrowModeWrapper.style.display = isWide ? '' : 'none';
+				narrowModeWrapper.style.display = showNarrowMode ? '' : 'none';
 			}
 			if (bodyWidthWrapper) {
 				bodyWidthWrapper.style.display = isWide ? '' : 'none';
@@ -649,9 +652,9 @@ var SettingsPanel = (function() {
 			if (settingsWidthWrapper) {
 				settingsWidthWrapper.style.display = isWide ? '' : 'none';
 			}
-			// Hide entire Layout section in non-wide modes
+			// Hide entire Layout section unless wide or narrowMode is shown
 			if (layoutDetailsRef) {
-				layoutDetailsRef.style.display = isWide ? '' : 'none';
+				layoutDetailsRef.style.display = (isWide || showNarrowMode) ? '' : 'none';
 			}
 		}
 	};
