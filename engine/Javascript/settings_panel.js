@@ -28,6 +28,8 @@ var SettingsPanel = (function() {
 	let narrowModeWrapper = null;
 	let layoutDetailsRef = null;
 	let bodyWidthWrapper = null;
+	let bodyWidthSlider = null;
+	let bodyWidthDisplay = null;
 	let evidenceWidthWrapper = null;
 	let settingsWidthWrapper = null;
 
@@ -512,6 +514,31 @@ var SettingsPanel = (function() {
 		return value && value.length === 5 && value.charAt(1) === '-' && value.charAt(3) === '-';
 	}
 
+	function updateBodyWidthMin() {
+		if (!bodyWidthSlider || typeof ThemeManager === 'undefined' || !ThemeManager.getMinBodyScale) return;
+		var minScale = ThemeManager.getMinBodyScale();
+		if (minScale > 0) {
+			bodyWidthSlider.min = String(minScale);
+			if (parseFloat(bodyWidthSlider.value) < minScale) {
+				bodyWidthSlider.value = String(minScale);
+				if (bodyWidthDisplay) bodyWidthDisplay.textContent = String(minScale);
+				EngineConfig.set('layout.bodyWidth', minScale);
+			}
+		} else {
+			bodyWidthSlider.min = '0.5';
+		}
+		// Cap max to where body reaches 100vw (beyond that has no effect)
+		if (ThemeManager.getMaxBodyScale) {
+			var maxScale = ThemeManager.getMaxBodyScale();
+			bodyWidthSlider.max = String(maxScale);
+			if (parseFloat(bodyWidthSlider.value) > maxScale) {
+				bodyWidthSlider.value = String(maxScale);
+				if (bodyWidthDisplay) bodyWidthDisplay.textContent = String(maxScale);
+				EngineConfig.set('layout.bodyWidth', maxScale);
+			}
+		}
+	}
+
 	function syncAll() {
 		for (let i = 0; i < controls.length; i++) {
 			controls[i].sync();
@@ -565,7 +592,11 @@ var SettingsPanel = (function() {
 		const layoutContent = document.createElement('div');
 		addClass(layoutContent, 'settings-section-content');
 
-		addSlider(layoutContent, 'layout.bodyWidth', 'body_width', 0.5, 2.0, 0.1);
+		addSlider(layoutContent, 'layout.bodyWidth', 'body_width', 0.5, 2.0, 0.01);
+		// Capture body width slider for dynamic min clamping
+		var bwLabel = layoutContent.lastElementChild;
+		bodyWidthSlider = bwLabel ? bwLabel.querySelector('input[type="range"]') : null;
+		bodyWidthDisplay = bwLabel ? bwLabel.querySelector('.slider-value') : null;
 		addSlider(layoutContent, 'layout.screenScale', 'screen_scale', 0.5, 2.0, 0.1);
 		addSlider(layoutContent, 'layout.evidenceWidth', 'evidence_width', 0.3, 2.0, 0.1);
 		addSlider(layoutContent, 'layout.settingsWidth', 'settings_width', 0.3, 2.0, 0.1);
@@ -617,6 +648,11 @@ var SettingsPanel = (function() {
 			EngineEvents.on('config:changed', function() {
 				syncAll();
 			});
+
+			// Update body width slider min on resize (wide threshold depends on viewport)
+			window.addEventListener('resize', function() {
+				updateBodyWidthMin();
+			});
 		},
 
 		/**
@@ -656,6 +692,8 @@ var SettingsPanel = (function() {
 			if (layoutDetailsRef) {
 				layoutDetailsRef.style.display = (isWide || showNarrowMode) ? '' : 'none';
 			}
+			// Clamp body width slider min to the threshold that keeps wide mode
+			updateBodyWidthMin();
 		}
 	};
 })();
