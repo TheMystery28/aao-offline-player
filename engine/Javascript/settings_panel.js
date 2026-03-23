@@ -601,10 +601,6 @@ var SettingsPanel = (function() {
 			if (settingsWidthWrapper) {
 				settingsWidthWrapper.style.display = isWide ? '' : 'none';
 			}
-			// Hide entire Layout section in non-wide modes
-			if (layoutDetailsRef) {
-				layoutDetailsRef.style.display = isWide ? '' : 'none';
-			}
 		}
 	};
 })();

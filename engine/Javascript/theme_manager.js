@@ -63,10 +63,9 @@ var ThemeManager = (function() {
 	// Base flex values: slider 1.0 = these values (original panel proportions)
 	var EVIDENCE_BASE_FLEX = 0.7;
 	var SETTINGS_BASE_FLEX = 0.4;
-	// Saved values when overridden in non-wide/tabs modes
+	// Saved flex values when overridden in non-wide modes
 	var savedEvidenceScale = null;
 	var savedSettingsScale = null;
-	var savedScreenScale = null;
 	var flexOverridden = false;
 
 	function applyPanelWidths() {
@@ -356,45 +355,34 @@ var ThemeManager = (function() {
 			if (content) content.classList.add('layout-stack');
 		}
 
-		// In non-layout modes (tabs/medium/narrow/stack), override to defaults and restore on return
-		var isLayoutFree = !tabsActive && newTier === 'wide';
-		if (isLayoutFree) {
-			// Entering pure wide: restore saved values
+		// In non-wide modes, override panel widths to default (1) and restore on return
+		if (newTier === 'wide' && !(userOverrodeNarrowMode && narrowMode === 'tabs')) {
+			// Entering wide (not tabs override): restore saved values
 			if (flexOverridden) {
 				flexOverridden = false;
 				var root = document.documentElement;
-				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX * ((savedEvidenceScale !== null) ? savedEvidenceScale : 1)));
-				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX * ((savedSettingsScale !== null) ? savedSettingsScale : 1)));
-				if (savedScreenScale !== null) {
-					root.style.setProperty('--screen-scale', String(savedScreenScale));
-					computeAutoFitScreenSize();
-				}
+				var restoreE = (savedEvidenceScale !== null) ? savedEvidenceScale : 1;
+				var restoreS = (savedSettingsScale !== null) ? savedSettingsScale : 1;
+				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX * restoreE));
+				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX * restoreS));
 				savedEvidenceScale = null;
 				savedSettingsScale = null;
-				savedScreenScale = null;
 			}
 		} else {
-			// Entering tabs/medium/narrow/stack: save current and set to defaults
+			// Entering tabs/medium/narrow/stack: save current and set to 1
 			if (!flexOverridden) {
 				savedEvidenceScale = EngineConfig.get('layout.evidenceWidth') || 1;
 				savedSettingsScale = EngineConfig.get('layout.settingsWidth') || 1;
-				savedScreenScale = EngineConfig.get('layout.screenScale') || 1;
 				flexOverridden = true;
 				var root = document.documentElement;
 				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX));
 				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX));
-				root.style.setProperty('--screen-scale', '1');
-				computeAutoFitScreenSize();
 			}
 		}
 
-		// Determine if tabs are active (medium/tabs or wide+tabs override)
-		var tabsActive = (newTier === 'medium' && narrowMode === 'tabs') ||
-			(newTier === 'wide' && userOverrodeNarrowMode && narrowMode === 'tabs');
-
-		// Notify settings panel — hide layout when tabs active or non-wide
+		// Notify settings panel to update picker visibility for current tier
 		if (typeof SettingsPanel !== 'undefined' && SettingsPanel.updateLayoutTier) {
-			SettingsPanel.updateLayoutTier(tabsActive ? 'tabs' : currentLayoutTier);
+			SettingsPanel.updateLayoutTier(currentLayoutTier);
 		}
 	}
 

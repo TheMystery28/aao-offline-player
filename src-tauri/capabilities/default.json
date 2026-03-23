@@ -15,6 +15,9 @@
     "http:default",
     "http:allow-fetch",
     "shell:default",
-    "dialog:default"
+    "dialog:default",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-start-dragging"
   ]
 }
