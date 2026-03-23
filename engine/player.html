@@ -137,21 +137,19 @@
 		</div>
 
 		<div id="player-parametres">
-			<section>
-				<h2 data-locale-content="player_settings"></h2>
-
-				<div id="player_settings">
-
+			<details open>
+				<summary data-locale-content="player_saves"></summary>
+				<div class="settings-section-content">
+					<div id="player_saves"></div>
 				</div>
-			</section>
+			</details>
 
-			<section>
-				<h2 data-locale-content="player_saves"></h2>
-
-				<div id="player_saves">
-
+			<details open>
+				<summary data-locale-content="player_settings"></summary>
+				<div class="settings-section-content">
+					<div id="player_settings"></div>
 				</div>
-			</section>
+			</details>
 
 			<section id="player_debug" hidden="hidden">
 				<h2 data-locale-content="player_debug"></h2>
@@ -172,31 +170,26 @@
 
 					<section>
 						<h4 data-locale-content="profiles"></h4>
-						<div id="debug_cr_profiles">
-						</div>
+						<div id="debug_cr_profiles"></div>
 					</section>
 
 					<section>
 						<h4 data-locale-content="evidence"></h4>
-						<div id="debug_cr_evidence">
-						</div>
+						<div id="debug_cr_evidence"></div>
 					</section>
 				</details>
 
 				<details>
 					<summary class="h3" data-locale-content="debug_scenes"></summary>
-					<div id="debug_scenes">
-					</div>
+					<div id="debug_scenes"></div>
 				</details>
 
 				<details>
 					<summary class="h3" data-locale-content="debug_frames"></summary>
-					<div id="debug_frames">
-					</div>
+					<div id="debug_frames"></div>
 					<button id="debug_show_frame" data-locale-content="show_frame"></button>
 				</details>
 			</section>
-
 		</div>
 	</section>
 </div>

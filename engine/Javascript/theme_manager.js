@@ -34,6 +34,37 @@ var ThemeManager = (function() {
 		applyCourtRecordPosition();
 	}
 
+	function computeAutoFitScreenSize() {
+		const section = document.querySelector('#content > section');
+		if (!section) return;
+
+		// In portrait orientation, skip height-based auto-fit (zoom handles it)
+		if (window.matchMedia && window.matchMedia('(orientation: portrait)').matches) return;
+
+		const sectionHeight = section.clientHeight;
+		if (sectionHeight <= 0) return;
+
+		const metaHeight = 18; // --meta-height
+		const gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7; // 0.7em in px
+
+		let usableHeight = sectionHeight - metaHeight - (2 * gapPx);
+		let singleScreenHeight = usableHeight / 2;
+		let singleScreenWidth = singleScreenHeight * (256 / 192); // maintain 4:3
+
+		// Apply --screen-scale as a multiplier
+		const scale = EngineConfig.get('layout.screenScale') || 1;
+		singleScreenHeight *= scale;
+		singleScreenWidth *= scale;
+
+		// Compute content scale factor (how much to scale 256x192 internal content)
+		const contentScale = singleScreenWidth / 256;
+
+		const root = document.documentElement;
+		root.style.setProperty('--screen-auto-width', singleScreenWidth + 'px');
+		root.style.setProperty('--screen-auto-height', singleScreenHeight + 'px');
+		root.style.setProperty('--screen-content-scale', String(contentScale));
+	}
+
 	function applyScale() {
 		const screenScale = EngineConfig.get('layout.screenScale');
 		const mobileScale = EngineConfig.get('layout.mobileScreenScale');
@@ -43,6 +74,7 @@ var ThemeManager = (function() {
 		if (mobileScale !== undefined) {
 			document.documentElement.style.setProperty('--mobile-screen-scale', String(mobileScale));
 		}
+		computeAutoFitScreenSize();
 	}
 
 	function applyNightMode() {
@@ -161,6 +193,14 @@ var ThemeManager = (function() {
 		_init: function() {
 			applyAll();
 			EngineEvents.on('config:changed', onConfigChanged);
+
+			// Observe section resizes to recompute auto-fit screen size
+			const section = document.querySelector('#content > section');
+			if (section && typeof ResizeObserver !== 'undefined') {
+				new ResizeObserver(function() {
+					computeAutoFitScreenSize();
+				}).observe(section);
+			}
 		},
 
 		/**

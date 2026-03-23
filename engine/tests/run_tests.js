@@ -106,12 +106,32 @@
 		var playerParams = document.createElement('div');
 		playerParams.id = 'player-parametres';
 		section.appendChild(playerParams);
-		var playerSettings = document.createElement('div');
-		playerSettings.id = 'player_settings';
-		playerParams.appendChild(playerSettings);
+
+		var savesDetails = document.createElement('details');
+		savesDetails.open = true;
+		var savesSummary = document.createElement('summary');
+		savesSummary.setAttribute('data-locale-content', 'player_saves');
+		savesDetails.appendChild(savesSummary);
+		var savesSectionContent = document.createElement('div');
+		savesSectionContent.className = 'settings-section-content';
+		savesDetails.appendChild(savesSectionContent);
 		var playerSaves = document.createElement('div');
 		playerSaves.id = 'player_saves';
-		playerParams.appendChild(playerSaves);
+		savesSectionContent.appendChild(playerSaves);
+		playerParams.appendChild(savesDetails);
+
+		var settingsDetails = document.createElement('details');
+		settingsDetails.open = true;
+		var settingsSummary = document.createElement('summary');
+		settingsSummary.setAttribute('data-locale-content', 'player_settings');
+		settingsDetails.appendChild(settingsSummary);
+		var settingsSectionContent = document.createElement('div');
+		settingsSectionContent.className = 'settings-section-content';
+		settingsDetails.appendChild(settingsSectionContent);
+		var playerSettings = document.createElement('div');
+		playerSettings.id = 'player_settings';
+		settingsSectionContent.appendChild(playerSettings);
+		playerParams.appendChild(settingsDetails);
 
 		// Re-register court record switch handlers
 		crSwitchProfiles.addEventListener('click', function() {
