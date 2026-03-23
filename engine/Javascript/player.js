@@ -19,6 +19,13 @@ Modules.load(new Object({
 		Languages.requestFiles(['common', 'player'], function(){
 			translateNode(document.body);
 			player_init();
+
+			// Re-apply all theme settings now that all modules (including
+			// Howler, SoundHowler, top_screen) are fully loaded.
+			// The initial applyAll() in theme_manager._init() runs before
+			// sound/display modules are ready, so mute/volume/instantText
+			// silently fail. This second pass catches them.
+			ThemeManager.reapply();
 		});
 
         // Lets expression engine return current frame
