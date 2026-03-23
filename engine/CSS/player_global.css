@@ -1,15 +1,149 @@
 @charset "UTF-8";
 
+:root {
+	/* ---- Layout Dimensions ---- */
+	--screen-width: 256px;
+	--screen-height: 192px;
+	--screen-scale: 1;
+	--mobile-screen-scale: 1.4;
+	--screen-gap: 0.7em;
+
+	--body-max-width: 1090px;
+	--header-height: 3.8em;
+
+	--cr-width: calc(58% - 80px/2);
+	--settings-width: calc(38% - 410px/2);
+
+	--lifebar-width: 120px;
+	--lifebar-height: 10px;
+	--meta-height: 18px;
+	--buttonbar-height: 18px;
+	--buttonbar-height-thin: 16px;
+
+	--evidence-card-width: 268px;
+	--evidence-card-height: 86px;
+	--evidence-list-height: 30em;
+
+	/* ---- Spacing ---- */
+	--content-padding: 0.7em;
+	--panel-padding: 5px;
+	--card-margin: 5px;
+
+	/* ---- Border Radii ---- */
+	--radius-sm: 2px;
+	--radius-md: 4px;
+	--radius-lg: 0.7em;
+	--radius-button-bar: 15px;
+
+	/* ---- Typography ---- */
+	--font-family-heading: Georgia, serif;
+	--font-family-body: sans-serif;
+	--font-family-dialogue: aaDialogueText, sans-serif;
+	--font-size-heading-xl: xx-large;
+	--font-size-heading-lg: x-large;
+	--font-size-heading-md: large;
+	--font-size-body: small;
+	--font-size-dialogue: 12px;
+	--font-size-evidence-name: 12px;
+	--font-size-evidence-desc: 10px;
+
+	/* ---- Transitions ---- */
+	--transition-fast: 0.2s;
+	--transition-lifebar: 0.2s;
+
+	/* ---- Colors: Light Theme ---- */
+	--color-bg-page: #999;
+	--color-bg-content: #625949;
+	--color-bg-section: #F0F0F0;
+	--color-bg-panel: white;
+	--color-bg-header: #F0F0F0;
+
+	--color-bg-button: #8C481B;
+	--color-bg-button-hover: #A67351;
+	--color-bg-button-active-shadow: inset 0 0 3px black;
+	--color-bg-button-disabled: white;
+
+	--color-bg-screen-meta: white;
+	--color-bg-screen: black;
+
+	--color-bg-cr: white;
+	--color-bg-cr-header: #dedede;
+	--color-bg-cr-header-dark: #2d2d2d;
+	--color-bg-cr-switch: #8C481B;
+	--color-bg-cr-switch-hover: #A67351;
+	--color-bg-evidence-card: white;
+	--color-bg-evidence-details: white;
+	--color-bg-evidence-desc: #847342;
+	--color-bg-evidence-name: #393939;
+	--color-bg-evidence-civil: #9CCE94;
+
+	--color-bg-cr-check-overlay: rgba(0, 0, 0, 0.5);
+	--color-bg-cr-check-panel: white;
+	--color-bg-cr-check-contents: black;
+
+	--color-bg-loading-mask: #666;
+
+	/* Game screen button colors (pwstyle) */
+	--color-bg-game-button: rgb(89,15,0);
+	--color-bg-game-button-active: #AE7315;
+	--color-bg-game-bar: #DFDFDF;
+	--color-bg-game-bar-button: #7B3100;
+	--color-bg-game-bar-button-active: #EFA521;
+
+	--color-bg-game-options: white;
+	--color-bg-game-options-inv: #7B2900;
+	--color-bg-game-options-inv-active: #EF9C21;
+
+	--color-text-heading: #782201;
+	--color-text-body: inherit;
+	--color-text-link: #0077CC;
+	--color-text-link-hover: #44BBFF;
+	--color-text-link-active: #003F6C;
+	--color-text-button: white;
+	--color-text-button-disabled: grey;
+	--color-text-evidence-name: #FFAD18;
+	--color-text-debug-heading: #782201;
+
+	--color-border-section: #B99181;
+	--color-border-light: lightgrey;
+	--color-border-panel: lightgrey;
+	--color-border-meta: lightgrey;
+	--color-border-cr: lightgrey;
+	--color-border-cr-header: #484848;
+	--color-border-evidence-card: lightgrey;
+	--color-border-evidence-desc: #735A42;
+	--color-border-evidence-summary: #CECECE;
+	--color-border-debug: #CCC;
+
+	--color-shadow-screen: 0 0 3px black;
+	--color-shadow-evidence-details: 0 3px 6px -1px black;
+
+	--color-focus-highlight: #FFD652;
+	--color-select-highlight: #7B3100;
+	--color-select-hover: #FFD652;
+	--color-select-active: #EFA521;
+	--color-cr-focus-ring: 2px solid #FFD652;
+	--color-cr-focus-shadow: 0 0 6px 2px rgba(255, 214, 82, 0.5);
+}
+
+/* Portrait mode overrides — centralized custom property changes */
+@media (orientation: portrait) {
+	:root {
+		--cr-width: calc(100% - 0.15em);
+		--settings-width: calc(100% - 12px);
+	}
+}
+
 body
 {
-	max-width: 1090px;
+	max-width: var(--body-max-width);
 	margin: auto !important;
 }
 
 body > #content
 {
 	position: relative;
-	background: #f0f0f0;
+	background: var(--color-bg-section);
 }
 
 body > #content > section
@@ -43,7 +177,7 @@ body > #content > section
  
 #screens
 {
-	width:256px;
+	width:var(--screen-width);
 }
 
 #screens.pixelated
@@ -77,24 +211,24 @@ body > #content > section
 #screen-bottom { position:relative; }
 
 #screen-meta {
-	height:18px;
-	background:white;
-	border:1px solid lightgrey;
+	height:var(--meta-height);
+	background:var(--color-bg-screen-meta);
+	border:1px solid var(--color-border-meta);
 }
 
 #lifebar {
 	position:absolute;
 	top:2px; right:2px; bottom:2px;
-	width:120px; height:10px;
+	width:var(--lifebar-width); height:var(--lifebar-height);
 	background:black;
 	border:2px ridge lightgrey;
-	border-radius:2px;
+	border-radius:var(--radius-sm);
 }
 
-#lifebar div { 
+#lifebar div {
 	float:left;
-	height:10px; 
-	transition: 0.2s;
+	height:var(--lifebar-height);
+	transition: var(--transition-lifebar);
 }
 #lifebar-green 
 { 
@@ -118,38 +252,38 @@ body > #content > section
 }
 
 [id|=screen] {
-	background: black;
-	box-shadow: 0 0 3px black;
+	background: var(--color-bg-screen);
+	box-shadow: var(--color-shadow-screen);
 }
 
 #screen-top {
 	z-index:2;
-	width:256px;
-	height:192px;
-	margin:0.7em 0 0 0;
+	width:var(--screen-width);
+	height:var(--screen-height);
+	margin:var(--screen-gap) 0 0 0;
 	overflow:hidden;
 }
 
 #screen-bottom {
 	position:relative;
-	width:256px;
-	height:192px;
-	margin:0.7em 0 0 0;
+	width:var(--screen-width);
+	height:var(--screen-height);
+	margin:var(--screen-gap) 0 0 0;
 	z-index:2;
 }
 
 #screen-loading
 {
 	visibility: hidden;
-	
+
 	position: absolute;
     z-index: 3;
     box-sizing: border-box;
-    width:256px;
-	height:192px;
-	margin:0.7em 0 0 0;
-	padding: 0 0.7em;
-	
+    width:var(--screen-width);
+	height:var(--screen-height);
+	margin:var(--screen-gap) 0 0 0;
+	padding: 0 var(--screen-gap);
+
     font-size: 16px;
     color: white;
 }
@@ -492,10 +626,10 @@ body > #content > section
 {
 	/*position:absolute; */
 	/*top:10px; right:230px; bottom:10px; left:276px;*/
-	width: calc(58% - 80px/2);
+	width: var(--cr-width);
 	align-self: stretch;
-	background:white;
-	border:1px solid lightgrey;
+	background:var(--color-bg-cr);
+	border:1px solid var(--color-border-cr);
 }
 
 /* Court record position variants (controlled by ThemeManager) */
@@ -520,20 +654,14 @@ body > #content > section.cr-hidden #courtrecord {
 	position:relative;
 	margin: 0 0 0.07em -0.07em;
 	height:33px;
-	
-	border-bottom: 1px solid #484848;
-	
-	background-color: #dedede;
-	background-image: linear-gradient(to bottom, #dedede 0%,#dedede 48%,#959595 52%,#2d2d2d 55%,#2d2d2d 64%,#484848 67%,#595959 70%,#595959 100%);
+
+	border-bottom: 1px solid var(--color-border-cr-header);
+
+	background-color: var(--color-bg-cr-header);
+	background-image: linear-gradient(to bottom, var(--color-bg-cr-header) 0%,var(--color-bg-cr-header) 48%,#959595 52%,var(--color-bg-cr-header-dark) 55%,var(--color-bg-cr-header-dark) 64%,var(--color-border-cr-header) 67%,#595959 70%,#595959 100%);
 }
 
-/* When in portrait mode, we can take all the width we want */
-@media (orientation: portrait) {
-	#courtrecord
-	{
-		width: calc(100% - 0.15em);
-	}
-}
+/* Portrait mode: #courtrecord uses --cr-width which is overridden in the portrait :root block */
 
 .courtrecord-header h1 {
 	position:absolute;
@@ -546,14 +674,14 @@ body > #content > section.cr-hidden #courtrecord {
 	
 	border: 0;
 	
-	background-color: #dedede;
-	background-image: linear-gradient(to bottom, #dedede 0%,#dedede 21%,#959595 24%,#2d2d2d 27%,#2d2d2d 36%,#484848 39%,#595959 42%,#595959 100%);
+	background-color: var(--color-bg-cr-header);
+	background-image: linear-gradient(to bottom, var(--color-bg-cr-header) 0%,var(--color-bg-cr-header) 21%,#959595 24%,var(--color-bg-cr-header-dark) 27%,var(--color-bg-cr-header-dark) 36%,var(--color-border-cr-header) 39%,#595959 42%,#595959 100%);
 	box-shadow: none;
 	border-radius: 0;
-	
+
 	font:18px sans-serif;
 	text-align:left;
-	text-shadow:1px 1px #484848;
+	text-shadow:1px 1px var(--color-border-cr-header);
 	color:white;
 }
 
@@ -562,9 +690,9 @@ body > #content > section.cr-hidden #courtrecord {
 	position:absolute;
 	top:0; right:0;
 	width:8px; height:33px;
-	
-	background-color: #dedede;
-	background-image: linear-gradient(47deg, #484848 0%,#595959 6%,#595959 43%,#484848 46%,#2D2D2D 49%,#2D2D2D 58%,#959595 61%,#DEDEDE 64%,#DEDEDE 100%);
+
+	background-color: var(--color-bg-cr-header);
+	background-image: linear-gradient(47deg, var(--color-border-cr-header) 0%,#595959 6%,#595959 43%,var(--color-border-cr-header) 46%,var(--color-bg-cr-header-dark) 49%,var(--color-bg-cr-header-dark) 58%,#959595 61%,var(--color-bg-cr-header) 64%,var(--color-bg-cr-header) 100%);
 	
 	content:"";
 }
@@ -575,19 +703,19 @@ a.courtrecord-switchview {
 	top:0; right:0;
 	padding:6px 0 0 0;
 	min-width:5em; height:26px;
-	background-color:#8C481B;
+	background-color:var(--color-bg-cr-switch);
 	background-image:linear-gradient(rgba(255,255,255,0.25), rgba(255,255,255,0));
 	border-bottom:2px solid grey;
 	border-left:2px solid grey;
 	border-radius:0 0 0 20px;
 	text-align:center;
-	color:white;
-	transition:0.2s;
+	color:var(--color-text-button);
+	transition:var(--transition-fast);
 }
 
 a.courtrecord-switchview:hover,
 a.courtrecord-switchview:focus {
-	background-color:#A67351;
+	background-color:var(--color-bg-cr-switch-hover);
 	box-shadow:0 0 3px grey;
 }
 
@@ -602,8 +730,8 @@ a.courtrecord-switchview:active {
 	left: 0;
 	right: 0;
 	overflow: auto;
-	height: 30em;
-	padding: 5px;
+	height: var(--evidence-list-height);
+	padding: var(--panel-padding);
 }
 
 @media (orientation: portrait) {
@@ -618,29 +746,29 @@ a.courtrecord-switchview:active {
 .evidence-list .evidence_display
 {
 	display: inline-block;
-	width: 268px;
-	height: 86px;
-	margin: 0 5px 5px 0;
-	padding: 5px 0;
+	width: var(--evidence-card-width);
+	height: var(--evidence-card-height);
+	margin: 0 var(--card-margin) var(--card-margin) 0;
+	padding: var(--panel-padding) 0;
 	vertical-align: top;
-	
-	border: 1px solid lightgrey;
-	border-radius: 4px;
-	
-	background-color: white;
+
+	border: 1px solid var(--color-border-evidence-card);
+	border-radius: var(--radius-md);
+
+	background-color: var(--color-bg-evidence-card);
 }
 
 .evidence-list .evidence_display .details
 {
 	display: none;
-	
-	padding: 5px;
+
+	padding: var(--panel-padding);
 	padding-bottom: 20px;
-	border-bottom: 1px solid lightgrey;
-	border-radius: 0 0 4px 4px;
-	
-	background-color: white;
-	box-shadow: 0 3px 6px -1px black;
+	border-bottom: 1px solid var(--color-border-evidence-card);
+	border-radius: 0 0 var(--radius-md) var(--radius-md);
+
+	background-color: var(--color-bg-evidence-details);
+	box-shadow: var(--color-shadow-evidence-details);
 }
 
 .evidence-list .evidence_display:hover .details,
@@ -665,26 +793,26 @@ a.courtrecord-switchview:active {
 
 .evidence-list .evidence_display .details .description
 {
-	margin: 0 auto 5px;
+	margin: 0 auto var(--card-margin);
 	padding: 1px 2px;
 
-	border: 1px solid #735A42;
-	
-	background: #847342;
+	border: 1px solid var(--color-border-evidence-desc);
+
+	background: var(--color-bg-evidence-desc);
 	color: white;
-	font: 10px sans-serif;
+	font: var(--font-size-evidence-desc) sans-serif;
 }
 
 .evidence-list .evidence_display .details .buttonbar-bottom,
 .evidence-list .evidence_display .details .bs-button.bottomleft
 {
-	border-bottom-left-radius: 4px;
+	border-bottom-left-radius: var(--radius-md);
 }
 
 .evidence-list .evidence_display .details .buttonbar-bottom,
 .evidence-list .evidence_display .details .bs-button.bottomright
 {
-	border-bottom-right-radius: 4px;
+	border-bottom-right-radius: var(--radius-md);
 }
 
 #content.cr-select.cr-all .evidence-list .evidence_display .summary,
@@ -692,21 +820,21 @@ a.courtrecord-switchview:active {
 #content.cr-select.cr-evidence #cr_evidence .evidence-list .evidence_display .summary
 {
 	cursor: pointer;
-	box-shadow: 0 0 7px 3px #7B3100;
+	box-shadow: 0 0 7px 3px var(--color-select-highlight);
 }
 
 #content.cr-select.cr-all .evidence-list .evidence_display .summary:hover,
 #content.cr-select.cr-profiles #cr_profiles .evidence-list .evidence_display .summary:hover,
 #content.cr-select.cr-evidence #cr_evidence .evidence-list .evidence_display .summary:hover
 {
-	box-shadow: 0 0 7px 3px #FFD652;
+	box-shadow: 0 0 7px 3px var(--color-select-hover);
 }
 
 #content.cr-select.cr-all .evidence-list .evidence_display .summary:active,
 #content.cr-select.cr-profiles #cr_profiles .evidence-list .evidence_display .summary:active,
 #content.cr-select.cr-evidence #cr_evidence .evidence-list .evidence_display .summary:active
 {
-	box-shadow: 0 0 7px 3px #EFA521;
+	box-shadow: 0 0 7px 3px var(--color-select-active);
 }
 
 /* CR element check panel */
@@ -720,7 +848,7 @@ a.courtrecord-switchview:active {
 	bottom: 0;
 	left: 0;
 	z-index: 3;
-	background: rgba(0, 0, 0, 0.5);
+	background: var(--color-bg-cr-check-overlay);
 }
 
 #screen-cr-item-check
@@ -734,9 +862,9 @@ a.courtrecord-switchview:active {
 	padding: 1em 0;
 
 	
-	background: white;
+	background: var(--color-bg-cr-check-panel);
 	border: 1px solid grey;
-	border-radius: 0 0 4px 4px;
+	border-radius: 0 0 var(--radius-md) var(--radius-md);
 	box-shadow: 0 0 3px 3px rgba(0,0,0,0.5);
 }
 
@@ -750,8 +878,8 @@ a.courtrecord-switchview:active {
 	align-self: stretch;
 	overflow: auto;
 	padding: 0 2px;
-	
-	background: black;
+
+	background: var(--color-bg-cr-check-contents);
 	
 	font: 13px sans-serif;
 	color: white;
@@ -853,22 +981,17 @@ a.courtrecord-switchview:active {
 #player-parametres {
 	/*position:absolute;
 	top:10px; right:10px; bottom:10px; */
-	width: calc(38% - 410px/2);
+	width: var(--settings-width);
 	overflow: auto;
-	padding:5px;
+	padding:var(--panel-padding);
 	align-self: stretch;
-	border:1px solid lightgrey;
-	background:white;
-	
-	font-size:small;
+	border:1px solid var(--color-border-panel);
+	background:var(--color-bg-panel);
+
+	font-size:var(--font-size-body);
 }
 
-/* In portrait mode, we have all the horizontal space we want */
-@media (orientation: portrait) {
-	#player-parametres {
-		width: calc(100% - 12px);
-	}
-}
+/* Portrait mode: #player-parametres uses --settings-width which is overridden in the portrait :root block */
 
 
 #player-parametres section {
@@ -899,15 +1022,15 @@ a.courtrecord-switchview:active {
 #player_debug > details {
 	margin: 5px 0;
 	padding: 3px 5px;
-	border: 1px solid #CCC;
-	border-radius: 4px;
+	border: 1px solid var(--color-border-debug);
+	border-radius: var(--radius-md);
 }
 
 #player_debug .h3 {
-	border-bottom:thin dashed lightgrey;
-	
-	font: large Georgia;
-	color: #782201;
+	border-bottom:thin dashed var(--color-border-light);
+
+	font: var(--font-size-heading-md) Georgia;
+	color: var(--color-text-debug-heading);
 }
 
 #player_debug h4 {

@@ -4,7 +4,7 @@ input[type="number"] { width:5em; }
 
 select, .select {
 	border: thin solid grey;
-	border-radius: 4px;
+	border-radius: var(--radius-md);
 
 	background: white;
 	color: black;

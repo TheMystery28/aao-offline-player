@@ -5,193 +5,93 @@
  * Matches the launcher's dark palette (#1a1a2e / #16213e / #2a2a4a).
  * Toggled via .night-mode class on <body> (controlled by ThemeManager).
  * Does NOT affect game screen content (#screen-top, #screen-bottom, etc.)
+ *
+ * Uses CSS custom property overrides — most rules only change color variables.
+ * Only gradient structural overrides need full selector rules.
  */
 
-/* ── Page background ── */
+/* ── Color custom property overrides ── */
 
 .night-mode {
-	background-color: #1a1a2e;
+	/* Page & layout */
+	--color-bg-page: #1a1a2e;
+	--color-bg-content: #12192b;
+	--color-bg-section: #16213e;
+	--color-bg-panel: #16213e;
+	--color-bg-header: #16213e;
+	--color-bg-loading-mask: #1a1a2e;
+
+	/* Screen meta */
+	--color-bg-screen-meta: #1a2540;
+	--color-border-meta: #2a2a4a;
+
+	/* Court record */
+	--color-bg-cr: #1a2540;
+	--color-border-cr: #2a2a4a;
+	--color-bg-cr-header: #1e2d4f;
+	--color-bg-cr-header-dark: #0d1525;
+	--color-border-cr-header: #2a2a4a;
+	--color-bg-cr-switch: #0f3460;
+	--color-bg-cr-switch-hover: #1a5276;
+
+	/* Evidence cards */
+	--color-bg-evidence-card: #1a2540;
+	--color-bg-evidence-details: #1a2540;
+	--color-border-evidence-card: #2a2a4a;
+	--color-bg-cr-check-overlay: rgba(0, 0, 0, 0.7);
+	--color-bg-cr-check-panel: #16213e;
+
+	/* Settings panel */
+	--color-border-panel: #2a2a4a;
+	--color-border-light: #2a2a4a;
+	--color-border-debug: #2a2a4a;
+	--color-border-section: #2a2a4a;
+
+	/* Typography */
+	--color-text-heading: #8ab;
+	--color-text-debug-heading: #8ab;
+	--color-text-body: #e0e0e0;
+	--color-text-link: #6a9fc5;
+	--color-text-link-hover: #8cc8f0;
+	--color-text-button: #e0e0e0;
+	--color-text-button-disabled: #555;
+
+	/* Buttons */
+	--color-bg-button: #0f3460;
+	--color-bg-button-hover: #1a5276;
+	--color-bg-button-disabled: #1a2540;
+
+	background-color: var(--color-bg-page);
+	color: var(--color-text-body);
 }
 
-.night-mode #loading-mask {
-	background: #1a1a2e;
-	color: #e0e0e0;
-}
-
-/* ── Header ── */
-
-.night-mode header.compact {
-	background-color: #16213e;
-	background-image: linear-gradient(#1e2d4f, #16213e);
-	border-radius: 0 0 0.7em 0.7em;
-}
-
-.night-mode header.compact h1,
-.night-mode header.compact h2 {
-	color: #e0e0e0;
-}
-
-.night-mode header.compact h2 {
-	color: #888;
-}
-
-/* ── Content wrapper ── */
-
-.night-mode #content {
-	background: #12192b;
-	border-radius: 0.7em;
-}
-
-.night-mode > #content {
-	background: #12192b;
-}
-
-.night-mode #content > section {
-	background: #16213e;
-	border-color: #2a2a4a;
-}
-
-/* ── Court record panel ── */
-
-.night-mode #courtrecord {
-	background: #1a2540;
-	border-color: #2a2a4a;
-}
+/* ── Gradient structural overrides ──
+   These can't be expressed as single custom properties because they contain
+   multi-stop gradients with intermediate colors that differ between themes. */
 
 .night-mode .courtrecord-header {
-	background-color: #1e2d4f;
 	background-image: linear-gradient(to bottom, #2a3a5a 0%, #1e2d4f 48%, #151f35 52%, #0d1525 55%, #0d1525 64%, #141e33 67%, #1a2740 70%, #1a2740 100%);
-	border-bottom-color: #2a2a4a;
 }
 
 .night-mode .courtrecord-header h1 {
-	background-color: #1e2d4f;
 	background-image: linear-gradient(to bottom, #2a3a5a 0%, #1e2d4f 21%, #151f35 24%, #0d1525 27%, #0d1525 36%, #141e33 39%, #1a2740 42%, #1a2740 100%);
 	text-shadow: 1px 1px #0d1525;
 }
 
 .night-mode .courtrecord-header h1::after {
-	background-color: #1e2d4f;
 	background-image: linear-gradient(47deg, #141e33 0%, #1a2740 6%, #1a2740 43%, #141e33 46%, #0d1525 49%, #0d1525 58%, #151f35 61%, #1e2d4f 64%, #1e2d4f 100%);
 }
 
-/* Evidence list area */
-.night-mode .evidence-list {
-	background: transparent;
-}
-
-.night-mode .evidence-list .evidence_display {
-	border-color: #2a2a4a;
-	background-color: #1a2540;
-}
-
-.night-mode .evidence-list .evidence_display:hover .details,
-.night-mode .evidence-list .evidence_display:active .details {
-	background-color: #1a2540;
-	border-bottom-color: #2a2a4a;
-}
-
-/* CR element check overlay */
-.night-mode #cr_item_check {
-	background: rgba(0, 0, 0, 0.7);
-}
-
-.night-mode #screen-cr-item-check {
-	background: #16213e;
-	border-color: #2a2a4a;
-	box-shadow: 0 0 3px 3px rgba(0, 0, 0, 0.7);
-}
-
-.night-mode #cr-item-check-pagination {
-	border-right-color: #2a2a4a;
-}
-
-/* ── Settings / Saves / Debug panel ── */
-
-.night-mode #player-parametres {
-	background: #16213e;
-	border-color: #2a2a4a;
-	color: #e0e0e0;
-}
-
+/* Section h2 header gradient */
 .night-mode #player-parametres section h2 {
 	background-color: #1a2540;
 	background-image: linear-gradient(#1e2d4f, #16213e);
-	border-color: #2a2a4a;
 	box-shadow: none;
 	color: #c0c0c0;
 }
 
-.night-mode #player_debug > details {
-	border-color: #2a2a4a;
-}
-
-.night-mode #player_debug .h3 {
-	border-bottom-color: #2a2a4a;
-	color: #8ab;
-}
-
-.night-mode #player_debug h4 {
-	color: #8ab;
-}
-
-/* ── Typography (outside game screens) ── */
-
-.night-mode > #content h1,
-.night-mode > #content h2,
-.night-mode > #content h3,
-.night-mode > #content h4,
-.night-mode #player-parametres h1,
-.night-mode #player-parametres h2,
-.night-mode #player-parametres h3,
-.night-mode #player-parametres h4 {
-	color: #8ab;
-}
-
-/* Links outside screens */
-.night-mode #courtrecord a,
-.night-mode #player-parametres a {
-	color: #6a9fc5;
-}
-
-.night-mode #courtrecord a:hover,
-.night-mode #courtrecord a:focus,
-.night-mode #player-parametres a:hover,
-.night-mode #player-parametres a:focus {
-	color: #8cc8f0;
-}
-
-/* ── Buttons (outside screens) ── */
-
-.night-mode #player-parametres button,
-.night-mode #player-parametres a.button,
-.night-mode #player-parametres input[type=button],
-.night-mode #player-parametres input[type=submit] {
-	background-color: #0f3460;
-	background-image: linear-gradient(rgba(255,255,255,0.1), rgba(255,255,255,0));
-	border-color: #1a5276;
-	color: #e0e0e0;
-}
-
-.night-mode #player-parametres button:hover,
-.night-mode #player-parametres button:focus {
-	background-color: #1a5276;
-	box-shadow: 0 0 3px #1a5276;
-}
-
+/* Button hover/disabled overrides that need !important */
 .night-mode #player-parametres button:disabled {
 	background: #1a2540 !important;
-	border-color: #2a2a4a;
 	color: #555 !important;
-}
-
-/* Save links */
-.night-mode #player_saves a {
-	color: #6a9fc5;
-}
-
-/* ── Health bar area ── */
-.night-mode #screen-meta {
-	background: #1a2540;
-	border-color: #2a2a4a;
 }
