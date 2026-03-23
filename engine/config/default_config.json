@@ -1,0 +1,64 @@
+{
+    "controls": {
+        "keyboard": {
+            "proceed": ["Enter", "Space"],
+            "skip": ["Shift"],
+            "back": ["ArrowLeft"],
+            "forward": ["ArrowRight"],
+            "courtRecordToggle": ["Tab"],
+            "courtRecordEvidence": ["Digit1"],
+            "courtRecordProfiles": ["Digit2"],
+            "crNavigateUp": [],
+            "crNavigateDown": [],
+            "crNavigateLeft": [],
+            "crNavigateRight": [],
+            "crSelect": [],
+            "crCheck": ["KeyC"],
+            "crSwitchTab": []
+        },
+        "gamepad": {
+            "proceed": [0],
+            "back": [1],
+            "forward": [15],
+            "backStatement": [14],
+            "courtRecordToggle": [9],
+            "crNavigateUp": [12],
+            "crNavigateDown": [13],
+            "crSelect": [0],
+            "crCheck": [2],
+            "crSwitchTab": [3]
+        }
+    },
+    "display": {
+        "pixelated": false,
+        "nightMode": false,
+        "textSpeed": 1.0,
+        "instantText": false,
+        "blipVolume": 70,
+        "expandEvidenceDescriptions": false,
+        "mute": false
+    },
+    "layout": {
+        "screenScale": 1.0,
+        "mobileScreenScale": 1.4,
+        "courtRecordPosition": "right",
+        "settingsPosition": "auto",
+        "fullWidth": false
+    },
+    "features": {
+        "debugPanel": false,
+        "autoSave": true,
+        "showHealthBar": true
+    },
+    "accessibility": {
+        "reduceMotion": false,
+        "disableScreenShake": false,
+        "disableFlash": false,
+        "fontSize": 1.0,
+        "lineSpacing": 1.0
+    },
+    "theme": {
+        "name": "default",
+        "customCSS": ""
+    }
+}
