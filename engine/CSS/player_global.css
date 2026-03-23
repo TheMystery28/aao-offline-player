@@ -50,7 +50,7 @@ body > #content > section
 @media (orientation: portrait) {
 	#screens
 	{
-		transform: scale(1.4);
+		transform: scale(var(--mobile-screen-scale, 1.4));
 		margin: auto;
 		margin-bottom: 9em;
 		margin-top: 6em;
