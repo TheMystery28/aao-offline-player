@@ -29,6 +29,10 @@ var ThemeManager = (function() {
 	let lastNonSettingsTab = 'evidence';
 	let lastTabPressTime = 0;
 
+	// ============================================================
+	// SECTION: Constants
+	// ============================================================
+
 	// Valid arrangement values and their types
 	var ARRANGEMENT_CLASSES = [
 		'1-2-3', '1-3-2', '2-1-3', '2-3-1', '3-1-2', '3-2-1',
@@ -46,6 +50,10 @@ var ThemeManager = (function() {
 		return 'row'; // fallback
 	}
 
+	// ============================================================
+	// SECTION: Apply Functions (config → DOM/CSS)
+	// ============================================================
+
 	function applyAll() {
 		applyBodyWidth();
 		applyScale();
@@ -61,6 +69,23 @@ var ThemeManager = (function() {
 		applyPanelWidths();
 		applyPanelArrangement();
 		applyNarrowMode();
+		applyAccessibility();
+	}
+
+	/**
+	 * Compute the scaled screens width based on viewport height and screen scale.
+	 * Shared by updateLayoutMode() and getMinBodyScale().
+	 */
+	function computeScaledScreensWidth() {
+		var header = document.querySelector('header.compact');
+		var headerH = (header && header.style.display !== 'none') ? header.offsetHeight : 0;
+		var boundedHeight = window.innerHeight - headerH;
+		var metaH = 18;
+		var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
+		var totalPreZoomH = metaH + (2 * gapPx) + (2 * 192);
+		var fitScale = boundedHeight / totalPreZoomH;
+		var screenScale = EngineConfig.get('layout.screenScale') || 1;
+		return 256 * fitScale * screenScale;
 	}
 
 	// Base flex values: slider 1.0 = these values (original panel proportions)
@@ -289,6 +314,89 @@ var ThemeManager = (function() {
 		updateLayoutMode();
 	}
 
+	function toggleBodyClass(configPath, className) {
+		if (EngineConfig.get(configPath)) {
+			document.body.classList.add(className);
+		} else {
+			document.body.classList.remove(className);
+		}
+	}
+
+	function applyAccessibility() {
+		toggleBodyClass('accessibility.reduceMotion', 'reduce-motion');
+		toggleBodyClass('accessibility.disableScreenShake', 'no-shake');
+		toggleBodyClass('accessibility.disableFlash', 'no-flash');
+		// fontSize and lineSpacing use CSS custom properties (different pattern)
+		var root = document.documentElement;
+		var fontSize = EngineConfig.get('accessibility.fontSize');
+		if (fontSize !== undefined && fontSize !== 1) {
+			root.style.setProperty('--font-scale', String(fontSize));
+		} else {
+			root.style.removeProperty('--font-scale');
+		}
+		var lineSpacing = EngineConfig.get('accessibility.lineSpacing');
+		if (lineSpacing !== undefined && lineSpacing !== 1) {
+			root.style.setProperty('--line-spacing', String(lineSpacing));
+		} else {
+			root.style.removeProperty('--line-spacing');
+		}
+	}
+
+	// ============================================================
+	// SECTION: Layout Tier Detection & Flex Management
+	// ============================================================
+
+	/**
+	 * Compute layout tier based on scaled screens width and viewport.
+	 * Uses viewport-based projections to prevent oscillation.
+	 * @param {number} scaledScreensWidth - Pre-computed scaled screens width
+	 * @returns {'wide'|'medium'|'narrow'}
+	 */
+	function computeTier(scaledScreensWidth) {
+		var viewportWidth = document.documentElement.clientWidth;
+		var userBodyScale = EngineConfig.get('layout.bodyWidth') || 1;
+		var wideVw = Math.round(85 * userBodyScale);
+		if (wideVw > 100) wideVw = 100;
+		var expectedWideWidth = viewportWidth * (wideVw / 100);
+		var expectedMediumWidth = viewportWidth; // non-wide forces 100vw
+
+		if (scaledScreensWidth + 250 + 280 <= expectedWideWidth) return 'wide';
+		if (scaledScreensWidth + 250 <= expectedMediumWidth) return 'medium';
+		return 'narrow';
+	}
+
+	/** Save current flex/scale values and set to defaults (entering non-wide mode). */
+	function saveFlex() {
+		if (flexOverridden) return;
+		savedEvidenceScale = EngineConfig.get('layout.evidenceWidth') || 1;
+		savedSettingsScale = EngineConfig.get('layout.settingsWidth') || 1;
+		savedScreenScale = EngineConfig.get('layout.screenScale') || 1;
+		flexOverridden = true;
+		var root = document.documentElement;
+		root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX));
+		root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX));
+		root.style.setProperty('--screen-scale', '1');
+		root.style.setProperty('--body-max-width', '100vw');
+		computeAutoFitScreenSize();
+	}
+
+	/** Restore saved flex/scale values (returning to wide mode). */
+	function restoreFlex() {
+		if (!flexOverridden) return;
+		flexOverridden = false;
+		var root = document.documentElement;
+		root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX * ((savedEvidenceScale !== null) ? savedEvidenceScale : 1)));
+		root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX * ((savedSettingsScale !== null) ? savedSettingsScale : 1)));
+		if (savedScreenScale !== null) {
+			root.style.setProperty('--screen-scale', String(savedScreenScale));
+			computeAutoFitScreenSize();
+		}
+		applyBodyWidth();
+		savedEvidenceScale = null;
+		savedSettingsScale = null;
+		savedScreenScale = null;
+	}
+
 	function updateLayoutMode() {
 		var section = document.querySelector('#content > section');
 		var screens = document.getElementById('screens');
@@ -298,43 +406,7 @@ var ThemeManager = (function() {
 
 		var content = section.parentElement;
 
-		// Calculate what the zoomed screens width WOULD be in wide mode (height-based).
-		// Use viewport height minus header for a stable reference that doesn't
-		// change when settings panel content is shown/hidden.
-		var header = document.querySelector('header.compact');
-		var headerH = (header && header.style.display !== 'none') ? header.offsetHeight : 0;
-		var boundedHeight = window.innerHeight - headerH;
-		var metaH = 18; // --meta-height
-		var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
-		var totalPreZoomH = metaH + (2 * gapPx) + (2 * 192);
-		var fitScale = boundedHeight / totalPreZoomH;
-		var wideScreenWidth = 256 * fitScale;
-		var userScale = EngineConfig.get('layout.screenScale') || 1;
-		var scaledScreensWidth = wideScreenWidth * userScale;
-
-		// Flex item minimum widths (from CSS)
-		var crMinWidth = 250;
-		var settingsW = 280;
-
-		// Predict container widths to prevent oscillation.
-		// The tier decision changes --body-max-width (85vw for wide, 100vw for non-wide),
-		// which changes section.clientWidth, which would re-trigger tier detection.
-		// Instead, use viewport-based projections that are stable regardless of current tier.
-		var viewportWidth = document.documentElement.clientWidth;
-		var userBodyScale = EngineConfig.get('layout.bodyWidth') || 1;
-		var wideVw = Math.round(85 * userBodyScale);
-		if (wideVw > 100) wideVw = 100;
-		var expectedWideWidth = viewportWidth * (wideVw / 100);
-		var expectedMediumWidth = viewportWidth; // non-wide forces 100vw
-
-		var newTier;
-		if (scaledScreensWidth + crMinWidth + settingsW <= expectedWideWidth) {
-			newTier = 'wide';
-		} else if (scaledScreensWidth + crMinWidth <= expectedMediumWidth) {
-			newTier = 'medium';
-		} else {
-			newTier = 'narrow';
-		}
+		var newTier = computeTier(computeScaledScreensWidth());
 
 		if (newTier === currentLayoutTier) return;
 		currentLayoutTier = newTier;
@@ -382,41 +454,9 @@ var ThemeManager = (function() {
 		var tabsActive = (newTier === 'medium' && narrowMode === 'tabs') ||
 			(newTier === 'wide' && userOverrodeNarrowMode && narrowMode === 'tabs');
 
-		// In non-layout modes (tabs/medium/narrow/stack), override to defaults and restore on return
+		// In non-layout modes, override flex to defaults and restore on return
 		var isLayoutFree = !tabsActive && newTier === 'wide';
-		if (isLayoutFree) {
-			// Entering pure wide: restore saved values
-			if (flexOverridden) {
-				flexOverridden = false;
-				var root = document.documentElement;
-				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX * ((savedEvidenceScale !== null) ? savedEvidenceScale : 1)));
-				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX * ((savedSettingsScale !== null) ? savedSettingsScale : 1)));
-				if (savedScreenScale !== null) {
-					root.style.setProperty('--screen-scale', String(savedScreenScale));
-					computeAutoFitScreenSize();
-				}
-				// Restore user's body width setting
-				applyBodyWidth();
-				savedEvidenceScale = null;
-				savedSettingsScale = null;
-				savedScreenScale = null;
-			}
-		} else {
-			// Entering tabs/medium/narrow/stack: save current and set to defaults
-			if (!flexOverridden) {
-				savedEvidenceScale = EngineConfig.get('layout.evidenceWidth') || 1;
-				savedSettingsScale = EngineConfig.get('layout.settingsWidth') || 1;
-				savedScreenScale = EngineConfig.get('layout.screenScale') || 1;
-				flexOverridden = true;
-				var root = document.documentElement;
-				root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX));
-				root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX));
-				root.style.setProperty('--screen-scale', '1');
-				// Force full width in non-wide modes (especially mobile)
-				root.style.setProperty('--body-max-width', '100vw');
-				computeAutoFitScreenSize();
-			}
-		}
+		if (isLayoutFree) { restoreFlex(); } else { saveFlex(); }
 
 		// Notify settings panel — hide layout when tabs active or non-wide
 		// Pass whether wide mode is possible (so narrowMode selector can show)
@@ -425,6 +465,10 @@ var ThemeManager = (function() {
 			SettingsPanel.updateLayoutTier(tabsActive ? 'tabs' : currentLayoutTier, wideIsPossible);
 		}
 	}
+
+	// ============================================================
+	// SECTION: Tabbed Zone Management
+	// ============================================================
 
 	function createTabbedZone(courtrecord, settings) {
 		if (tabbedZoneBar) return; // already created
@@ -627,44 +671,48 @@ var ThemeManager = (function() {
 		updateLayoutMode();
 	}
 
+	// ============================================================
+	// SECTION: Config Change Router
+	// ============================================================
+
+	// Config path → handler lookup (direct matches)
+	var CONFIG_HANDLERS = {
+		'layout.bodyWidth': applyBodyWidth,
+		'layout.screenScale': applyScale,
+		'layout.mobileScreenScale': applyScale,
+		'display.nightMode': applyNightMode,
+		'display.pixelated': applyPixelated,
+		'theme.customCSS': applyCustomCSS,
+		'display.mute': applyMute,
+		'display.instantText': applyInstantText,
+		'display.expandEvidenceDescriptions': applyExpandDescriptions,
+		'display.blipVolume': applyBlipVolume,
+		'display.hideHeader': applyHideHeader,
+		'display.fullscreen': applyFullscreen,
+		'layout.panelArrangement': applyPanelArrangement,
+		'layout.evidenceWidth': applyPanelWidths,
+		'layout.settingsWidth': applyPanelWidths
+	};
+
 	function onConfigChanged(data) {
 		if (!data.path) {
-			// Full config reload (e.g. reset or loadCaseConfig)
 			applyAll();
 			return;
 		}
-		// Apply only relevant section
-		if (data.path === 'layout.bodyWidth') {
-			applyBodyWidth();
-		} else if (data.path.indexOf('layout.screenScale') === 0 || data.path.indexOf('layout.mobileScreenScale') === 0) {
-			applyScale();
-		} else if (data.path === 'display.nightMode') {
-			applyNightMode();
-		} else if (data.path === 'display.pixelated') {
-			applyPixelated();
-		} else if (data.path === 'theme.customCSS') {
-			applyCustomCSS();
-		} else if (data.path === 'display.mute') {
-			applyMute();
-		} else if (data.path === 'display.instantText') {
-			applyInstantText();
-		} else if (data.path === 'display.expandEvidenceDescriptions') {
-			applyExpandDescriptions();
-		} else if (data.path === 'display.blipVolume') {
-			applyBlipVolume();
-		} else if (data.path === 'display.hideHeader') {
-			applyHideHeader();
-		} else if (data.path === 'display.fullscreen') {
-			applyFullscreen();
-		} else if (data.path === 'layout.panelArrangement') {
-			applyPanelArrangement();
-		} else if (data.path === 'layout.evidenceWidth' || data.path === 'layout.settingsWidth') {
-			applyPanelWidths();
+		var handler = CONFIG_HANDLERS[data.path];
+		if (handler) {
+			handler();
 		} else if (data.path === 'layout.narrowMode') {
 			userOverrodeNarrowMode = true;
 			applyNarrowMode();
+		} else if (data.path.indexOf('accessibility') === 0) {
+			applyAccessibility();
 		}
 	}
+
+	// ============================================================
+	// SECTION: Public API
+	// ============================================================
 
 	return {
 		_init: function() {
@@ -738,15 +786,7 @@ var ThemeManager = (function() {
 		 * Returns the scale value (e.g. 0.8) or 0 if wide is impossible at any scale.
 		 */
 		getMinBodyScale: function() {
-			var header = document.querySelector('header.compact');
-			var headerH = (header && header.style.display !== 'none') ? header.offsetHeight : 0;
-			var boundedHeight = window.innerHeight - headerH;
-			var metaH = 18;
-			var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
-			var totalPreZoomH = metaH + (2 * gapPx) + (2 * 192);
-			var fitScale = boundedHeight / totalPreZoomH;
-			var screenScale = EngineConfig.get('layout.screenScale') || 1;
-			var scaledScreensWidth = 256 * fitScale * screenScale;
+			var scaledScreensWidth = computeScaledScreensWidth();
 			var wideThreshold = scaledScreensWidth + 250 + 280;
 			var viewportWidth = document.documentElement.clientWidth;
 			if (viewportWidth <= 0) return 0;
