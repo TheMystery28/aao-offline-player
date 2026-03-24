@@ -35,11 +35,9 @@ The app also imports from [aaoffline](https://github.com/falko17/aaoffline) HTML
 
 ### The player
 
-![Player interface](docs/images/player_interface.PNG)
+![Player settings and layout](docs/images/player_settings.gif)
 
 The in-game player is a modified version of the AAO engine with a configurable settings panel, dark mode, and built-in keyboard/gamepad controls.
-
-![Player settings and layout](docs/images/player_settings.gif)
 
 Features added to the engine:
 - **Dark mode** (grey palette, on by default)
