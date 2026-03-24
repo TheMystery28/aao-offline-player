@@ -128,28 +128,35 @@ var InputManager = (function() {
 		EngineConfig.set('display.fullscreen', !current);
 	}
 
+	// Hardcoded shortcuts (not config-driven)
+	var HARDCODED_SHORTCUTS = [
+		{ ctrl: true, codes: ['KeyD'], key: 'd', handler: function(e) { e.preventDefault(); EngineConfig.reset(); } },
+		{ ctrl: true, codes: ['KeyS'], key: 's', handler: function(e) { e.preventDefault(); handleSave(); } },
+		{ ctrl: true, codes: ['KeyL'], key: 'l', handler: function(e) { e.preventDefault(); handleLoadLatest(); } },
+		{ ctrl: false, codes: ['F11'], key: 'F11', handler: function(e) { e.preventDefault(); handleFullscreenToggle(); } }
+	];
+
+	// Gamepad actions handled directly (not emitted as input:action events)
+	var GAMEPAD_SPECIAL_ACTIONS = {
+		'save': handleSave,
+		'loadLatest': handleLoadLatest,
+		'fullscreen': handleFullscreenToggle
+	};
+
 	function onKeyDown(e) {
 		// Tab: always prevent default to disable browser focus navigation
 		if (e.code === 'Tab' || e.key === 'Tab') {
 			e.preventDefault();
 		}
-		// Ctrl+D: reset all settings to defaults
-		if (e.ctrlKey && (e.code === 'KeyD' || e.key === 'd')) {
-			e.preventDefault();
-			EngineConfig.reset();
-			return;
-		}
-		// Ctrl+S: quick save
-		if (e.ctrlKey && (e.code === 'KeyS' || e.key === 's')) {
-			e.preventDefault(); handleSave(); return;
-		}
-		// Ctrl+L: load latest save
-		if (e.ctrlKey && (e.code === 'KeyL' || e.key === 'l')) {
-			e.preventDefault(); handleLoadLatest(); return;
-		}
-		// F11: toggle fullscreen
-		if (e.code === 'F11' || e.key === 'F11') {
-			e.preventDefault(); handleFullscreenToggle(); return;
+		// Check hardcoded shortcuts
+		for (var si = 0; si < HARDCODED_SHORTCUTS.length; si++) {
+			var s = HARDCODED_SHORTCUTS[si];
+			if (s.ctrl && !e.ctrlKey) continue;
+			if (!s.ctrl && e.ctrlKey) continue;
+			if (s.codes.indexOf(e.code) !== -1 || e.key === s.key) {
+				s.handler(e);
+				return;
+			}
 		}
 
 		// Try event.code first (physical key), then event.key (logical key)
@@ -177,6 +184,18 @@ var InputManager = (function() {
 		}
 	}
 
+	function checkGamepadCombos(buttons, gamepadIndex) {
+		var comboKey = gamepadIndex + '_resetCombo';
+		if (buttons[5] && buttons[5].pressed && buttons[7] && buttons[7].pressed) {
+			if (!gamepadWasPressed[comboKey]) {
+				gamepadWasPressed[comboKey] = true;
+				EngineConfig.reset();
+			}
+		} else {
+			gamepadWasPressed[comboKey] = false;
+		}
+	}
+
 	function pollGamepads() {
 		const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
 
@@ -184,31 +203,17 @@ var InputManager = (function() {
 			const gp = gamepads[g];
 			if (!gp) continue;
 
-			const buttons = gp.buttons;
+			checkGamepadCombos(gp.buttons, g);
 
-			// Combo: RB + RT = reset settings
-			var comboKey = g + '_resetCombo';
-			if (buttons[5] && buttons[5].pressed &&
-				buttons[7] && buttons[7].pressed) {
-				if (!gamepadWasPressed[comboKey]) {
-					gamepadWasPressed[comboKey] = true;
-					EngineConfig.reset();
-				}
-			} else {
-				gamepadWasPressed[comboKey] = false;
-			}
-
-			for (let b = 0; b < buttons.length; b++) {
+			for (let b = 0; b < gp.buttons.length; b++) {
 				const key = g + '_' + b;
 				const action = gamepadLookup[String(b)];
 
-				if (buttons[b] && buttons[b].pressed) {
+				if (gp.buttons[b] && gp.buttons[b].pressed) {
 					if (action && !gamepadWasPressed[key]) {
 						gamepadWasPressed[key] = true;
-						// Handle special actions directly
-						if (action === 'save') { handleSave(); }
-						else if (action === 'loadLatest') { handleLoadLatest(); }
-						else if (action === 'fullscreen') { handleFullscreenToggle(); }
+						var specialHandler = GAMEPAD_SPECIAL_ACTIONS[action];
+						if (specialHandler) { specialHandler(); }
 						else { EngineEvents.emit('input:action', { source: 'gamepad', action: action }); }
 					}
 				} else {
