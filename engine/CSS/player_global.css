@@ -1355,3 +1355,32 @@ a.courtrecord-switchview:active {
 .layout-thumb.top-layout .block-bottom-row .block {
 	flex: 1;
 }
+
+/* -------------
+ * ACCESSIBILITY
+ * ------------- */
+
+body.reduce-motion *,
+body.reduce-motion *::before,
+body.reduce-motion *::after {
+	animation: none !important;
+	transition: none !important;
+}
+
+body.no-shake .shaking {
+	animation: none !important;
+}
+
+body.no-flash .flashing {
+	animation: none !important;
+}
+
+/* Font scale and line spacing (set via --font-scale and --line-spacing CSS vars) */
+.textbox .dialogue {
+	font-size: calc(var(--font-size-dialogue) * var(--font-scale, 1));
+	line-height: var(--line-spacing, normal);
+}
+
+.textbox .name {
+	font-size: calc(9px * var(--font-scale, 1));
+}
