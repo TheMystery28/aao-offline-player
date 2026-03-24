@@ -41,17 +41,18 @@ The in-game player is a modified version of the AAO engine with a dark mode and 
 
 ### Controls
 
-| Input | Action |
-|-------|--------|
-| **Enter / Space** | Proceed / skip |
-| **Shift** | Fast-forward (hold) |
-| **Arrow Left / Right** | Statement navigation |
-| **Gamepad A / Cross** | Proceed / skip |
-| **Gamepad B / Circle** | Back statement |
-| **Gamepad D-pad** | Statement navigation |
-| **Gamepad Start** | Toggle court record |
+| Action | Keyboard | Gamepad |
+|--------|----------|---------|
+| Proceed / skip | Enter, Space | A |
+| Fast-forward (hold) | Shift | RB |
+| Back statement | Arrow Left | B, D-Left |
+| Forward statement | Arrow Right | D-Right |
+| Save | Ctrl+S | LB |
+| Load latest save | Ctrl+L | LT |
+| Toggle fullscreen | F11 | View |
+| Reset settings | Ctrl+D | RB+RT |
 
-Keyboard controls were inspired by the [AAO Keyboard Controls userscript](https://aaonline.fr/forum/viewtopic.php?t=13534). Gamepad support is an original addition.
+Keyboard controls were inspired by the [AAO Keyboard Controls userscript](https://aaonline.fr/forum/viewtopic.php?t=13534). Gamepad support uses the W3C Standard Gamepad mapping.
 
 ### Known issues
 
