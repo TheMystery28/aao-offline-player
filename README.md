@@ -2,7 +2,7 @@
 
 A desktop and mobile app (Tauri v2) that lets users download, manage, and play Ace Attorney Online cases completely offline.
 
-![Main interface](main_interface.PNG)
+![Main interface](docs/images/main_interface.PNG)
 
 ### Download
 
@@ -35,9 +35,22 @@ The app also imports from [aaoffline](https://github.com/falko17/aaoffline) HTML
 
 ### The player
 
-![Player interface](player_interface.PNG)
+![Player interface](docs/images/player_interface.PNG)
 
-The in-game player is a modified version of the AAO engine with a dark mode and built-in keyboard/gamepad controls. Further visual changes are possible but aren't a priority right now.
+The in-game player is a modified version of the AAO engine with a configurable settings panel, dark mode, and built-in keyboard/gamepad controls.
+
+![Player settings and layout](docs/images/player_settings.gif)
+
+Features added to the engine:
+- **Dark mode** (grey palette, on by default)
+- **Responsive layout** with automatic wide/tabbed/stacked modes based on window size
+- **Panel arrangement picker** to reorder the screen, evidence, and settings panels
+- **Width sliders** for page, screen, evidence, and settings panels with live ghost preview
+- **Fullscreen toggle** (F11 / gamepad View button)
+- **Hide header** option
+- **Quick save/load** (Ctrl+S / Ctrl+L / gamepad LB / LT)
+- **Gamepad support** with W3C Standard mapping
+- **Save management** with sorted list across sequence parts and load-latest
 
 ### Controls
 
