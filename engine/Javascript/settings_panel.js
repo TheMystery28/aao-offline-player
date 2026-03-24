@@ -49,6 +49,26 @@ var SettingsPanel = (function() {
 	var MIXED_LAYOUTS = [];
 	var TOP_LAYOUTS = [];
 
+	// CR keybindings that are non-functional — skip from display
+	var HIDDEN_BINDINGS = [
+		'courtRecordToggle', 'courtRecordEvidence', 'courtRecordProfiles',
+		'crCheck', 'crNavigateUp', 'crNavigateDown', 'crNavigateLeft',
+		'crNavigateRight', 'crSelect'
+	];
+
+	/** Show or hide an element via display style. */
+	function showHide(el, visible) {
+		if (el) el.style.display = visible ? '' : 'none';
+	}
+
+	// Gamepad button index → readable name (W3C standard mapping)
+	var GAMEPAD_NAMES = {
+		0: 'A', 1: 'B', 2: 'X', 3: 'Y',
+		4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT',
+		8: 'View', 9: 'Menu', 10: 'L3', 11: 'R3',
+		12: 'D-Up', 13: 'D-Down', 14: 'D-Left', 15: 'D-Right', 16: 'Xbox'
+	};
+
 	function addCheckbox(container, configPath, labelKey) {
 		const checkbox = createFormElement('checkbox');
 		checkbox.checked = !!EngineConfig.get(configPath);
@@ -198,24 +218,17 @@ var SettingsPanel = (function() {
 		var settingsW = availableW - evidenceW;
 
 		var colors = ['rgba(80,80,80,0.3)', 'rgba(100,170,100,0.3)', 'rgba(180,130,70,0.3)'];
-		var ghostHTML = '';
-		// Ghost for screens
-		ghostHTML += '<div style="position:absolute;left:' + futureLeft + 'px;top:' + sectionTop + 'px;' +
-			'width:' + screensW + 'px;height:' + sectionH + 'px;' +
-			'background:' + colors[0] + ';border:2px dashed rgba(255,255,255,0.4);' +
-			'border-radius:4px;box-sizing:border-box;"></div>';
-		// Ghost for evidence
-		ghostHTML += '<div style="position:absolute;left:' + (futureLeft + screensW) + 'px;top:' + sectionTop + 'px;' +
-			'width:' + evidenceW + 'px;height:' + sectionH + 'px;' +
-			'background:' + colors[1] + ';border:2px dashed rgba(255,255,255,0.4);' +
-			'border-radius:4px;box-sizing:border-box;"></div>';
-		// Ghost for settings
-		ghostHTML += '<div style="position:absolute;left:' + (futureLeft + screensW + evidenceW) + 'px;top:' + sectionTop + 'px;' +
-			'width:' + settingsW + 'px;height:' + sectionH + 'px;' +
-			'background:' + colors[2] + ';border:2px dashed rgba(255,255,255,0.4);' +
-			'border-radius:4px;box-sizing:border-box;"></div>';
+		ghostOverlay.innerHTML =
+			buildGhostDiv(futureLeft, sectionTop, screensW, sectionH, colors[0]) +
+			buildGhostDiv(futureLeft + screensW, sectionTop, evidenceW, sectionH, colors[1]) +
+			buildGhostDiv(futureLeft + screensW + evidenceW, sectionTop, settingsW, sectionH, colors[2]);
+	}
 
-		ghostOverlay.innerHTML = ghostHTML;
+	function buildGhostDiv(left, top, width, height, color) {
+		return '<div style="position:absolute;left:' + left + 'px;top:' + top + 'px;' +
+			'width:' + width + 'px;height:' + height + 'px;' +
+			'background:' + color + ';border:2px dashed rgba(255,255,255,0.4);' +
+			'border-radius:4px;box-sizing:border-box;"></div>';
 	}
 
 	function removeGhosts() {
@@ -321,21 +334,6 @@ var SettingsPanel = (function() {
 		});
 		container.appendChild(btn);
 	}
-
-	// CR keybindings that are non-functional — skip from display
-	var HIDDEN_BINDINGS = [
-		'courtRecordToggle', 'courtRecordEvidence', 'courtRecordProfiles',
-		'crCheck', 'crNavigateUp', 'crNavigateDown', 'crNavigateLeft',
-		'crNavigateRight', 'crSelect'
-	];
-
-	// Gamepad button index → readable name (W3C standard mapping)
-	var GAMEPAD_NAMES = {
-		0: 'A', 1: 'B', 2: 'X', 3: 'Y',
-		4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT',
-		8: 'View', 9: 'Menu', 10: 'L3', 11: 'R3',
-		12: 'D-Up', 13: 'D-Down', 14: 'D-Left', 15: 'D-Right', 16: 'Xbox'
-	};
 
 	function addBindingsDisplay(container) {
 		var kbConfig = EngineConfig.get('controls.keyboard') || {};
@@ -514,7 +512,7 @@ var SettingsPanel = (function() {
 		return value && value.length === 5 && value.charAt(1) === '-' && value.charAt(3) === '-';
 	}
 
-	function updateBodyWidthMin() {
+	function updateBodyWidthBounds() {
 		if (!bodyWidthSlider || typeof ThemeManager === 'undefined' || !ThemeManager.getMinBodyScale) return;
 		var minScale = ThemeManager.getMinBodyScale();
 		if (minScale > 0) {
@@ -651,7 +649,7 @@ var SettingsPanel = (function() {
 
 			// Update body width slider min on resize (wide threshold depends on viewport)
 			window.addEventListener('resize', function() {
-				updateBodyWidthMin();
+				updateBodyWidthBounds();
 			});
 		},
 
@@ -663,37 +661,17 @@ var SettingsPanel = (function() {
 		 */
 		updateLayoutTier: function(tier, wideIsPossible) {
 			var isWide = (tier === 'wide');
-			// Show narrowMode selector when in wide+tabs (user can switch back)
-			// but NOT when forced into tabs by narrow window
-			var showNarrowMode = isWide || (tier === 'tabs' && wideIsPossible);
-			// In non-wide modes, hide layout options except narrowMode when applicable
-			if (pickerContainer) {
-				pickerContainer.style.display = isWide ? '' : 'none';
-			}
-			if (rowGroup) {
-				rowGroup.style.display = isWide ? '' : 'none';
-			}
-			if (mixedGroup) {
-				mixedGroup.style.display = isWide ? '' : 'none';
-			}
-			if (narrowModeWrapper) {
-				narrowModeWrapper.style.display = showNarrowMode ? '' : 'none';
-			}
-			if (bodyWidthWrapper) {
-				bodyWidthWrapper.style.display = isWide ? '' : 'none';
-			}
-			if (evidenceWidthWrapper) {
-				evidenceWidthWrapper.style.display = isWide ? '' : 'none';
-			}
-			if (settingsWidthWrapper) {
-				settingsWidthWrapper.style.display = isWide ? '' : 'none';
-			}
-			// Hide entire Layout section unless wide or narrowMode is shown
-			if (layoutDetailsRef) {
-				layoutDetailsRef.style.display = (isWide || showNarrowMode) ? '' : 'none';
-			}
+			var showNarrow = isWide || (tier === 'tabs' && wideIsPossible);
+			showHide(pickerContainer, isWide);
+			showHide(rowGroup, isWide);
+			showHide(mixedGroup, isWide);
+			showHide(narrowModeWrapper, showNarrow);
+			showHide(bodyWidthWrapper, isWide);
+			showHide(evidenceWidthWrapper, isWide);
+			showHide(settingsWidthWrapper, isWide);
+			showHide(layoutDetailsRef, isWide || showNarrow);
 			// Clamp body width slider min to the threshold that keeps wide mode
-			updateBodyWidthMin();
+			updateBodyWidthBounds();
 		}
 	};
 })();
