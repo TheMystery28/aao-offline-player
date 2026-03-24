@@ -61,6 +61,15 @@ var SettingsPanel = (function() {
 		if (el) el.style.display = visible ? '' : 'none';
 	}
 
+	// Action name → readable display label for the Controls table
+	var ACTION_LABELS = {
+		'proceed': 'proceed',
+		'skip': 'fast-forward (hold)',
+		'back': 'back statement',
+		'forward': 'forward statement',
+		'crSwitchTab': 'switch tab'
+	};
+
 	// Gamepad button index → readable name (W3C standard mapping)
 	var GAMEPAD_NAMES = {
 		0: 'A', 1: 'B', 2: 'X', 3: 'Y',
@@ -356,7 +365,7 @@ var SettingsPanel = (function() {
 			var keys = kbConfig[actions[i]];
 			if (!Array.isArray(keys) || keys.length === 0) continue;
 			var row = document.createElement('tr');
-			var ac = document.createElement('td'); ac.textContent = actions[i]; row.appendChild(ac);
+			var ac = document.createElement('td'); ac.textContent = ACTION_LABELS[actions[i]] || actions[i]; row.appendChild(ac);
 			var kc = document.createElement('td'); kc.textContent = keys.join(', '); row.appendChild(kc);
 			// Gamepad column
 			var gc = document.createElement('td');
@@ -383,6 +392,12 @@ var SettingsPanel = (function() {
 			table.appendChild(row);
 		}
 		container.appendChild(table);
+
+		// Tab behavior description
+		var tabNote = document.createElement('p');
+		tabNote.style.cssText = 'font-size:10px;color:grey;margin:4px 0 0;';
+		tabNote.textContent = 'Switch tab: toggles Evidence/Profiles. Double-press to open Settings, press again to return.';
+		container.appendChild(tabNote);
 	}
 
 	function buildLayoutPicker(container, configPath) {

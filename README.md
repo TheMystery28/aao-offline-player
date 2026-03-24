@@ -58,10 +58,13 @@ Features added to the engine:
 | Fast-forward (hold) | Shift | RB |
 | Back statement | Arrow Left | B, D-Left |
 | Forward statement | Arrow Right | D-Right |
+| Switch tab | Tab | Y |
 | Save | Ctrl+S | LB |
 | Load latest save | Ctrl+L | LT |
 | Toggle fullscreen | F11 | View |
 | Reset settings | Ctrl+D | RB+RT |
+
+In tabbed mode, **Switch tab** toggles between Evidence and Profiles. Double-press to open Settings, press once to return.
 
 Keyboard controls were inspired by the [AAO Keyboard Controls userscript](https://aaonline.fr/forum/viewtopic.php?t=13534). Gamepad support uses the W3C Standard Gamepad mapping.
 
