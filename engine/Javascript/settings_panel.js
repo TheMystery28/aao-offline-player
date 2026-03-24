@@ -660,7 +660,7 @@ var SettingsPanel = (function() {
 			// Sync controls when config changes externally
 			EngineEvents.on('config:changed', function() {
 				syncAll();
-			});
+			}, 0, 'engine');
 
 			// Update body width slider min on resize (wide threshold depends on viewport)
 			window.addEventListener('resize', function() {

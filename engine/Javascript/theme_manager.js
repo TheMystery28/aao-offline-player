@@ -726,14 +726,14 @@ var ThemeManager = (function() {
 			} catch (e) { /* ignore parse errors */ }
 
 			applyAll();
-			EngineEvents.on('config:changed', onConfigChanged);
+			EngineEvents.on('config:changed', onConfigChanged, 0, 'engine');
 
 			// Listen for tab cycling input (no source filter — works for keyboard and gamepad)
 			EngineEvents.on('input:action', function(data) {
 				if (data.action === 'crSwitchTab') {
 					cycleTab();
 				}
-			});
+			}, 0, 'engine');
 
 			// Listen for config sync messages from parent frame
 			window.addEventListener('message', function(e) {

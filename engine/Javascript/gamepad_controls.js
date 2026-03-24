@@ -58,7 +58,7 @@ Modules.load(new Object({
 					clickFirstVisible(forwardIds);
 					break;
 			}
-		});
+		}, 0, 'engine');
 	}
 }));
 

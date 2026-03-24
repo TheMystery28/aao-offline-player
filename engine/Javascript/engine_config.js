@@ -108,19 +108,27 @@ var EngineConfig = (function() {
 		}
 		// Strip any stored keys that don't exist in current defaults.
 		// This auto-cleans stale keys from old versions.
-		pruneToDefaults(parsed, defaults);
+		pruneToDefaults(parsed, defaults, '');
 	}
 
-	// Recursively remove keys from obj that don't exist in reference
-	function pruneToDefaults(obj, reference) {
+	// Recursively remove keys from obj that don't exist in reference.
+	// The 'plugins' namespace is protected — plugin config keys are never pruned.
+	function pruneToDefaults(obj, reference, currentPath) {
 		if (!obj || typeof obj !== 'object' || !reference || typeof reference !== 'object') return;
+		var pathPrefix = currentPath ? currentPath + '.' : '';
 		var keys = Object.keys(obj);
 		for (var i = 0; i < keys.length; i++) {
-			if (reference[keys[i]] === undefined) {
-				delete obj[keys[i]];
-			} else if (typeof obj[keys[i]] === 'object' && !Array.isArray(obj[keys[i]]) &&
-					   typeof reference[keys[i]] === 'object' && !Array.isArray(reference[keys[i]])) {
-				pruneToDefaults(obj[keys[i]], reference[keys[i]]);
+			var key = keys[i];
+			var fullPath = pathPrefix + key;
+			// Skip pruning for the plugins namespace (plugin config is dynamic)
+			if (fullPath === 'plugins' || fullPath.indexOf('plugins.') === 0) {
+				continue;
+			}
+			if (reference[key] === undefined) {
+				delete obj[key];
+			} else if (typeof obj[key] === 'object' && !Array.isArray(obj[key]) &&
+					   typeof reference[key] === 'object' && !Array.isArray(reference[key])) {
+				pruneToDefaults(obj[key], reference[key], fullPath);
 			}
 		}
 	}

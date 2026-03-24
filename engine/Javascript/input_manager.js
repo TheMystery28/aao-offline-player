@@ -246,7 +246,7 @@ var InputManager = (function() {
 				if (!data.path || data.path.indexOf('controls') === 0) {
 					buildLookups();
 				}
-			});
+			}, 0, 'engine');
 
 			// Keyboard event listeners
 			document.addEventListener('keydown', onKeyDown);
