@@ -742,6 +742,8 @@ async fn update_case(
         },
         asset_map,
         failed_assets: result.failed,
+        has_plugins: false,
+        has_case_config: false,
     };
     downloader::manifest::write_manifest(&manifest, &case_dir)?;
 
@@ -1095,15 +1097,13 @@ async fn pick_import_file(app: tauri::AppHandle) -> Result<Option<String>, Strin
     let mut builder = app
         .dialog()
         .file()
-        .set_title("Select .aaocase file");
+        .set_title("Select .aaocase or .aaoplug file");
 
     // On Android, the SAF uses MIME types instead of file extensions.
-    // .aaocase files are ZIP archives with a custom extension, so we filter by application/zip.
-    // On desktop, filter by file extension.
     if cfg!(target_os = "android") {
-        builder = builder.add_filter("AAO Case", &["application/zip", "application/octet-stream"]);
+        builder = builder.add_filter("AAO Files", &["application/zip", "application/octet-stream"]);
     } else {
-        builder = builder.add_filter("AAO Case", &["aaocase", "zip"]);
+        builder = builder.add_filter("AAO Files", &["aaocase", "aaoplug", "zip"]);
     }
 
     let result = builder.blocking_pick_file();
@@ -1244,6 +1244,36 @@ fn import_case(
     );
 
     Ok(import_result)
+}
+
+/// Import a .aaoplug plugin file into one or more existing cases.
+#[tauri::command]
+fn import_plugin(
+    state: State<'_, Mutex<AppState>>,
+    source_path: String,
+    target_case_ids: Vec<u32>,
+) -> Result<Vec<u32>, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    let path = std::path::PathBuf::from(&source_path);
+    importer::import_aaoplug(&path, &target_case_ids, &data_dir)
+}
+
+/// Attach raw plugin JS code to one or more existing cases.
+#[tauri::command]
+fn attach_plugin_code(
+    state: State<'_, Mutex<AppState>>,
+    code: String,
+    filename: String,
+    target_case_ids: Vec<u32>,
+) -> Result<Vec<u32>, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    importer::attach_plugin_code(&code, &filename, &target_case_ids, &data_dir)
 }
 
 /// Open a native "Save As" dialog for exporting a .aaocase file.
@@ -1608,6 +1638,8 @@ pub fn run() {
             pick_folder,
             pick_import_file,
             import_case,
+            import_plugin,
+            attach_plugin_code,
             pick_export_file,
             export_case,
             export_sequence

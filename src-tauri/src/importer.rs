@@ -248,6 +248,8 @@ pub fn import_aaoffline(
         },
         asset_map,
         failed_assets: Vec::new(),
+        has_plugins: false,
+        has_case_config: false,
     };
     write_manifest(&manifest, &case_dir)?;
 
@@ -493,6 +495,46 @@ pub fn export_aaocase(
         if let Some(cb) = &on_progress {
             cb(completed, total);
         }
+    }
+
+    // Add plugins directory if present
+    let plugins_dir = case_dir.join("plugins");
+    if plugins_dir.is_dir() {
+        fn add_dir_to_zip(
+            zip: &mut zip::ZipWriter<fs::File>,
+            dir: &Path,
+            prefix: &str,
+            options: zip::write::SimpleFileOptions,
+        ) -> Result<(), String> {
+            for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read {}: {}", prefix, e))? {
+                let entry = entry.map_err(|e| format!("Dir entry error: {}", e))?;
+                let path = entry.path();
+                let name = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
+                if path.is_dir() {
+                    add_dir_to_zip(zip, &path, &name, options)?;
+                } else if path.is_file() {
+                    let data = fs::read(&path)
+                        .map_err(|e| format!("Failed to read {}: {}", name, e))?;
+                    zip.start_file(&name, options)
+                        .map_err(|e| format!("Failed to add {} to ZIP: {}", name, e))?;
+                    io::Write::write_all(zip, &data)
+                        .map_err(|e| format!("Failed to write {} to ZIP: {}", name, e))?;
+                }
+            }
+            Ok(())
+        }
+        let _ = add_dir_to_zip(&mut zip, &plugins_dir, "plugins", options);
+    }
+
+    // Add case_config.json if present
+    let case_config_path = case_dir.join("case_config.json");
+    if case_config_path.is_file() {
+        let data = fs::read(&case_config_path)
+            .map_err(|e| format!("Failed to read case_config.json: {}", e))?;
+        zip.start_file("case_config.json", options)
+            .map_err(|e| format!("Failed to add case_config.json to ZIP: {}", e))?;
+        io::Write::write_all(&mut zip, &data)
+            .map_err(|e| format!("Failed to write case_config.json to ZIP: {}", e))?;
     }
 
     // Add saves.json if provided
@@ -1111,14 +1153,201 @@ fn import_single_case_zip(
         if let Some(cb) = &on_progress { cb(i + 1, total); }
     }
 
-    // 3. Read the manifest we just extracted (or use the one from the ZIP)
+    // 3. Detect plugins and case_config
+    let has_plugins = case_dir.join("plugins").is_dir();
+    let has_case_config = case_dir.join("case_config.json").is_file();
+
+    // 4. Read the manifest we just extracted (or use the one from the ZIP)
     let final_manifest_path = case_dir.join("manifest.json");
-    if final_manifest_path.exists() {
-        read_manifest(&case_dir)
+    let mut manifest = if final_manifest_path.exists() {
+        read_manifest(&case_dir)?
     } else {
-        write_manifest(&zip_manifest, &case_dir)?;
-        Ok(zip_manifest)
+        zip_manifest
+    };
+    manifest.has_plugins = has_plugins;
+    manifest.has_case_config = has_case_config;
+    write_manifest(&manifest, &case_dir)?;
+    Ok(manifest)
+}
+
+/// Import a plugin from a .aaoplug ZIP file into one or more existing cases.
+///
+/// The .aaoplug format:
+/// ```text
+/// manifest.json        Plugin metadata + optional external asset URLs
+/// *.js                 Plugin code files
+/// assets/              Pre-bundled assets (flat folder)
+/// case_config.json     Optional config overrides
+/// ```
+pub fn import_aaoplug(
+    zip_path: &Path,
+    target_case_ids: &[u32],
+    engine_dir: &Path,
+) -> Result<Vec<u32>, String> {
+    let file = fs::File::open(zip_path)
+        .map_err(|e| format!("Failed to open .aaoplug file: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Invalid .aaoplug file: {}", e))?;
+
+    // Validate: manifest.json must exist
+    let manifest_text = read_zip_text(&mut archive, "manifest.json")
+        .map_err(|_| "Invalid .aaoplug: missing manifest.json".to_string())?;
+
+    // Parse manifest for external assets
+    let plugin_manifest: serde_json::Value = serde_json::from_str(&manifest_text)
+        .unwrap_or(serde_json::Value::Null);
+
+    let mut imported_cases = Vec::new();
+
+    for &case_id in target_case_ids {
+        let case_dir = engine_dir.join("case").join(case_id.to_string());
+        if !case_dir.exists() {
+            eprintln!("[IMPORT_PLUGIN] Case {} does not exist, skipping", case_id);
+            continue;
+        }
+
+        let plugins_dir = case_dir.join("plugins");
+        fs::create_dir_all(&plugins_dir)
+            .map_err(|e| format!("Failed to create plugins directory for case {}: {}", case_id, e))?;
+
+        // Extract all ZIP entries to plugins/
+        for i in 0..archive.len() {
+            let mut entry = archive
+                .by_index(i)
+                .map_err(|e| format!("Failed to read ZIP entry {}: {}", i, e))?;
+
+            let entry_name = entry.name().to_string();
+            if entry.is_dir() {
+                let dir_path = plugins_dir.join(&entry_name);
+                let _ = fs::create_dir_all(&dir_path);
+                continue;
+            }
+
+            let dest_path = plugins_dir.join(&entry_name);
+            if let Some(parent) = dest_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create directory for {}: {}", entry_name, e))?;
+            }
+
+            let mut outfile = fs::File::create(&dest_path)
+                .map_err(|e| format!("Failed to create {}: {}", entry_name, e))?;
+            io::copy(&mut entry, &mut outfile)
+                .map_err(|e| format!("Failed to write {}: {}", entry_name, e))?;
+        }
+
+        // Download external assets if declared in manifest
+        if let Some(assets) = plugin_manifest.get("assets") {
+            if let Some(externals) = assets.get("external").and_then(|e| e.as_array()) {
+                let assets_dir = plugins_dir.join("assets");
+                fs::create_dir_all(&assets_dir).ok();
+
+                let client = reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()
+                    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+                for ext in externals {
+                    let url = ext.get("url").and_then(|u| u.as_str()).unwrap_or("");
+                    let path = ext.get("path").and_then(|p| p.as_str()).unwrap_or("");
+                    if url.is_empty() || path.is_empty() { continue; }
+
+                    let dest = plugins_dir.join(path);
+                    if let Some(parent) = dest.parent() {
+                        fs::create_dir_all(parent).ok();
+                    }
+
+                    match client.get(url).send() {
+                        Ok(resp) => {
+                            if resp.status().is_success() {
+                                if let Ok(bytes) = resp.bytes() {
+                                    let _ = fs::write(&dest, &bytes);
+                                    eprintln!("[IMPORT_PLUGIN] Downloaded external asset: {} → {}", url, dest.display());
+                                }
+                            } else {
+                                eprintln!("[IMPORT_PLUGIN] Failed to download {}: HTTP {}", url, resp.status());
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[IMPORT_PLUGIN] Failed to download {}: {}", url, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update case manifest
+        let manifest_path = case_dir.join("manifest.json");
+        if manifest_path.exists() {
+            if let Ok(mut manifest) = read_manifest(&case_dir) {
+                manifest.has_plugins = true;
+                if plugins_dir.join("case_config.json").exists() {
+                    manifest.has_case_config = true;
+                }
+                let _ = write_manifest(&manifest, &case_dir);
+            }
+        }
+
+        imported_cases.push(case_id);
     }
+
+    Ok(imported_cases)
+}
+
+/// Attach raw plugin JS code to one or more existing cases.
+pub fn attach_plugin_code(
+    code: &str,
+    filename: &str,
+    target_case_ids: &[u32],
+    engine_dir: &Path,
+) -> Result<Vec<u32>, String> {
+    let mut attached_cases = Vec::new();
+
+    for &case_id in target_case_ids {
+        let case_dir = engine_dir.join("case").join(case_id.to_string());
+        if !case_dir.exists() { continue; }
+
+        let plugins_dir = case_dir.join("plugins");
+        fs::create_dir_all(&plugins_dir)
+            .map_err(|e| format!("Failed to create plugins dir: {}", e))?;
+
+        // Write the JS file
+        let dest = plugins_dir.join(filename);
+        fs::write(&dest, code)
+            .map_err(|e| format!("Failed to write plugin file: {}", e))?;
+
+        // Create/update plugins manifest
+        let manifest_file = plugins_dir.join("manifest.json");
+        let mut scripts: Vec<String> = Vec::new();
+        if manifest_file.exists() {
+            if let Ok(text) = fs::read_to_string(&manifest_file) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if let Some(arr) = val.get("scripts").and_then(|s| s.as_array()) {
+                        for s in arr {
+                            if let Some(name) = s.as_str() {
+                                scripts.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !scripts.contains(&filename.to_string()) {
+            scripts.push(filename.to_string());
+        }
+        let manifest_json = serde_json::json!({ "scripts": scripts });
+        fs::write(&manifest_file, serde_json::to_string_pretty(&manifest_json).unwrap())
+            .map_err(|e| format!("Failed to write plugin manifest: {}", e))?;
+
+        // Update case manifest
+        if let Ok(mut case_manifest) = read_manifest(&case_dir) {
+            case_manifest.has_plugins = true;
+            let _ = write_manifest(&case_manifest, &case_dir);
+        }
+
+        attached_cases.push(case_id);
+    }
+
+    Ok(attached_cases)
 }
 
 /// Export multiple cases (a sequence) as a single .aaocase ZIP file.
@@ -2343,6 +2572,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
                 },
                 asset_map: HashMap::new(),
                 failed_assets: vec![],
+                has_plugins: false,
+                has_case_config: false,
             };
             write_manifest(&manifest, &case_dir).unwrap();
             fs::write(case_dir.join("trial_info.json"), r#"{"id":0}"#).unwrap();
@@ -2411,6 +2642,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
                 },
                 asset_map: HashMap::new(),
                 failed_assets: vec![],
+                has_plugins: false,
+                has_case_config: false,
             };
             write_manifest(&manifest, &case_dir).unwrap();
             fs::write(case_dir.join("trial_info.json"), format!(r#"{{"id":{}}}"#, case_id)).unwrap();
@@ -2470,6 +2703,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
                 },
                 asset_map: HashMap::new(),
                 failed_assets: vec![],
+                has_plugins: false,
+                has_case_config: false,
             };
             write_manifest(&manifest, &case_dir).unwrap();
             fs::write(case_dir.join("trial_info.json"), "{}").unwrap();
@@ -2495,6 +2730,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
             asset_map: HashMap::new(),
             failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
         };
         write_manifest(&pre_manifest, &pre_case_dir).unwrap();
 
@@ -2560,6 +2797,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
             asset_map: HashMap::new(),
             failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
         };
         write_manifest(&manifest, &case_dir).unwrap();
         fs::write(case_dir.join("trial_info.json"), "{}").unwrap();
@@ -2915,6 +3154,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             assets: AssetSummary { case_specific: 1, shared_defaults: 0, total_downloaded: 1, total_size_bytes: 10 },
             asset_map: HashMap::new(),
             failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
         };
         write_manifest(&manifest, &case_dir).unwrap();
         fs::write(case_dir.join("trial_info.json"), r#"{"id":77001}"#).unwrap();
@@ -2960,6 +3201,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
                 assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
                 asset_map: HashMap::new(),
                 failed_assets: vec![],
+                has_plugins: false,
+                has_case_config: false,
             };
             write_manifest(&manifest, &case_dir).unwrap();
             fs::write(case_dir.join("trial_info.json"), "{}").unwrap();
@@ -3018,6 +3261,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             assets: AssetSummary { case_specific: 1, shared_defaults: 0, total_downloaded: 1, total_size_bytes: 8 },
             asset_map: HashMap::new(),
             failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
         };
         write_manifest(&original, &case_dir).unwrap();
         fs::write(case_dir.join("trial_info.json"), r#"{"id":77005}"#).unwrap();
@@ -3063,6 +3308,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
                 assets: AssetSummary { case_specific: 1, shared_defaults: 0, total_downloaded: 1, total_size_bytes: 5 },
                 asset_map: HashMap::new(),
                 failed_assets: vec![],
+                has_plugins: false,
+                has_case_config: false,
             };
             write_manifest(&manifest, &case_dir).unwrap();
             fs::write(case_dir.join("trial_info.json"), format!(r#"{{"id":{}}}"#, case_id)).unwrap();
@@ -3109,6 +3356,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
             asset_map: HashMap::new(),
             failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
         };
         write_manifest(&manifest, &case_dir).unwrap();
         fs::write(case_dir.join("trial_info.json"), r#"{"id":78001}"#).unwrap();
@@ -3233,6 +3482,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
             asset_map: HashMap::new(),
             failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
         };
         write_manifest(&manifest, &case_dir).unwrap();
         fs::write(case_dir.join("trial_info.json"), r#"{"id":78004}"#).unwrap();
@@ -3281,6 +3532,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
                 assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
                 asset_map: HashMap::new(),
                 failed_assets: vec![],
+                has_plugins: false,
+                has_case_config: false,
             };
             write_manifest(&manifest, &case_dir).unwrap();
             fs::write(case_dir.join("trial_info.json"), format!(r#"{{"id":{}}}"#, case_id)).unwrap();
@@ -3334,6 +3587,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
                 assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
                 asset_map: HashMap::new(),
                 failed_assets: vec![],
+                has_plugins: false,
+                has_case_config: false,
             };
             write_manifest(&manifest, &case_dir).unwrap();
             fs::write(case_dir.join("trial_info.json"), format!(r#"{{"id":{}}}"#, case_id)).unwrap();
@@ -3378,6 +3633,8 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
             asset_map: HashMap::new(),
             failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
         };
         write_manifest(&manifest, &case_dir).unwrap();
         fs::write(case_dir.join("trial_info.json"), r#"{"id":78009}"#).unwrap();
@@ -3457,5 +3714,151 @@ return 'data:image/gif;base64,'
         // Running again should skip existing files
         let (copied2, _) = copy_default_sprites(&mappings, source.path(), engine.path());
         assert_eq!(copied2, 0);
+    }
+
+    #[test]
+    fn test_import_aaoplug_extracts_to_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        // Create a fake case directory with minimal manifest
+        let case_dir = engine_dir.join("case/99999");
+        std::fs::create_dir_all(&case_dir).unwrap();
+        let manifest = CaseManifest {
+            case_id: 99999,
+            title: "Test".to_string(),
+            author: "Test".to_string(),
+            language: "en".to_string(),
+            download_date: "2026-01-01".to_string(),
+            format: "test".to_string(),
+            sequence: None,
+            assets: crate::downloader::manifest::AssetSummary {
+                case_specific: 0,
+                shared_defaults: 0,
+                total_downloaded: 0,
+                total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        // Create a .aaoplug ZIP in memory
+        let plug_path = dir.path().join("test.aaoplug");
+        {
+            let file = std::fs::File::create(&plug_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+
+            zip.start_file("manifest.json", options).unwrap();
+            std::io::Write::write_all(&mut zip, b"{\"scripts\":[\"test_plugin.js\"]}").unwrap();
+
+            zip.start_file("test_plugin.js", options).unwrap();
+            std::io::Write::write_all(&mut zip, b"console.log('test plugin');").unwrap();
+
+            zip.start_file("assets/test_sound.opus", options).unwrap();
+            std::io::Write::write_all(&mut zip, b"fake audio data").unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        // Import the plugin
+        let result = import_aaoplug(&plug_path, &[99999], engine_dir);
+        assert!(result.is_ok(), "import_aaoplug should succeed");
+        let imported = result.unwrap();
+        assert_eq!(imported, vec![99999]);
+
+        // Verify files were extracted
+        assert!(case_dir.join("plugins/manifest.json").exists());
+        assert!(case_dir.join("plugins/test_plugin.js").exists());
+        assert!(case_dir.join("plugins/assets/test_sound.opus").exists());
+
+        // Verify case manifest updated
+        let updated_manifest = read_manifest(&case_dir).unwrap();
+        assert!(updated_manifest.has_plugins);
+    }
+
+    #[test]
+    fn test_import_aaoplug_invalid_zip() {
+        let dir = tempfile::tempdir().unwrap();
+        let bad_path = dir.path().join("bad.aaoplug");
+        std::fs::write(&bad_path, "not a zip").unwrap();
+        let result = import_aaoplug(&bad_path, &[1], dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_import_aaoplug_nonexistent_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let plug_path = dir.path().join("test.aaoplug");
+        {
+            let file = std::fs::File::create(&plug_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            zip.start_file("manifest.json", options).unwrap();
+            std::io::Write::write_all(&mut zip, b"{}").unwrap();
+            zip.finish().unwrap();
+        }
+        let result = import_aaoplug(&plug_path, &[99998], dir.path());
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty(), "Should skip non-existent case");
+    }
+
+    #[test]
+    fn test_attach_plugin_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        // Create a fake case
+        let case_dir = engine_dir.join("case/88888");
+        std::fs::create_dir_all(&case_dir).unwrap();
+        let manifest = CaseManifest {
+            case_id: 88888,
+            title: "Test".to_string(),
+            author: "Test".to_string(),
+            language: "en".to_string(),
+            download_date: "2026-01-01".to_string(),
+            format: "test".to_string(),
+            sequence: None,
+            assets: crate::downloader::manifest::AssetSummary {
+                case_specific: 0,
+                shared_defaults: 0,
+                total_downloaded: 0,
+                total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        // Attach plugin code
+        let result = attach_plugin_code(
+            "console.log('hello');",
+            "my_plugin.js",
+            &[88888],
+            engine_dir,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec![88888]);
+
+        // Verify file exists
+        assert!(case_dir.join("plugins/my_plugin.js").exists());
+        let content = std::fs::read_to_string(case_dir.join("plugins/my_plugin.js")).unwrap();
+        assert_eq!(content, "console.log('hello');");
+
+        // Verify plugin manifest
+        let plugin_manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(case_dir.join("plugins/manifest.json")).unwrap()
+        ).unwrap();
+        let scripts = plugin_manifest.get("scripts").unwrap().as_array().unwrap();
+        assert!(scripts.iter().any(|s| s.as_str() == Some("my_plugin.js")));
+
+        // Verify case manifest updated
+        let updated = read_manifest(&case_dir).unwrap();
+        assert!(updated.has_plugins);
     }
 }

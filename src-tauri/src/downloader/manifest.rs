@@ -32,6 +32,12 @@ pub struct CaseManifest {
     /// Assets that failed to download (empty if all succeeded).
     #[serde(default)]
     pub failed_assets: Vec<FailedAsset>,
+    /// Whether the case has bundled plugins in case/{id}/plugins/
+    #[serde(default)]
+    pub has_plugins: bool,
+    /// Whether the case has a case_config.json for plugin configuration
+    #[serde(default)]
+    pub has_case_config: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +86,8 @@ pub fn build_manifest(
         },
         asset_map,
         failed_assets: failed,
+        has_plugins: false,
+        has_case_config: false,
     }
 }
 

@@ -680,7 +680,7 @@ mod tests {
     }
 
     /// Regression: verify Cache-Control headers for different path types.
-    /// After Phase 1A, case/* and defaults/* should get immutable caching.
+    /// case/* and defaults/* should get immutable caching.
     #[test]
     fn test_server_cache_control_engine_files() {
         let (port, _dir) = setup_test_server();
@@ -754,7 +754,7 @@ mod tests {
     }
 
     /// Regression: concurrent requests must all succeed.
-    /// Before Phase 1B (multi-threading), the server is single-threaded
+    /// The server is single-threaded
     /// and processes requests sequentially. All must still return 200.
     #[test]
     fn test_server_handles_concurrent_requests() {

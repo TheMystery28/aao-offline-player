@@ -172,6 +172,8 @@ mod tests {
             },
             asset_map: std::collections::HashMap::new(),
             failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
         };
 
         let dir = tempfile::tempdir().unwrap();
