@@ -148,4 +148,79 @@ function testInputManager() {
 
 		EngineEvents.off('input:release', handler);
 	})();
+
+	// --- Tab maps to crSwitchTab ---
+	(function() {
+		var lookup = InputManager.getKeyboardLookup();
+		TestHarness.assertEqual(lookup['Tab'], 'crSwitchTab', 'Tab key maps to crSwitchTab action');
+	})();
+
+	// --- Gamepad Y maps to crSwitchTab ---
+	(function() {
+		var lookup = InputManager.getGamepadLookup();
+		TestHarness.assertEqual(lookup['3'], 'crSwitchTab', 'Gamepad button 3 (Y) maps to crSwitchTab');
+	})();
+
+	// --- Tab preventDefault ---
+	(function() {
+		var evt = new KeyboardEvent('keydown', { code: 'Tab', key: 'Tab', bubbles: true, cancelable: true });
+		document.dispatchEvent(evt);
+		TestHarness.assert(evt.defaultPrevented, 'Tab key preventDefault is called');
+		// Cleanup keyup
+		document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Tab', key: 'Tab', bubbles: true }));
+	})();
+
+	// --- Gamepad save/loadLatest/fullscreen mapped ---
+	(function() {
+		var lookup = InputManager.getGamepadLookup();
+		TestHarness.assertEqual(lookup['4'], 'save', 'Gamepad button 4 (LB) maps to save');
+		TestHarness.assertEqual(lookup['6'], 'loadLatest', 'Gamepad button 6 (LT) maps to loadLatest');
+		TestHarness.assertEqual(lookup['8'], 'fullscreen', 'Gamepad button 8 (View) maps to fullscreen');
+	})();
+
+	// --- unmapped key does not emit ---
+	(function() {
+		var received = false;
+		var handler = function() { received = true; };
+		EngineEvents.on('input:action', handler);
+		document.dispatchEvent(makeKeyEvent('keydown', 'F2', 'F2', 113));
+		document.dispatchEvent(makeKeyEvent('keyup', 'F2', 'F2', 113));
+		TestHarness.assert(!received, 'Unmapped key (F2) does not emit input:action');
+		EngineEvents.off('input:action', handler);
+	})();
+
+	// --- repeat guard ---
+	(function() {
+		var count = 0;
+		var handler = function(data) { if (data.action === 'proceed') count++; };
+		EngineEvents.on('input:action', handler);
+		document.dispatchEvent(makeKeyEvent('keydown', 'Enter', 'Enter', 13));
+		document.dispatchEvent(makeKeyEvent('keydown', 'Enter', 'Enter', 13));
+		TestHarness.assertEqual(count, 1, 'Repeat guard: Enter held does not emit twice');
+		document.dispatchEvent(makeKeyEvent('keyup', 'Enter', 'Enter', 13));
+		EngineEvents.off('input:action', handler);
+	})();
+
+	// --- Ctrl+non-shortcut key does not trigger hardcoded shortcuts ---
+	(function() {
+		var configBefore = EngineConfig.get('display.nightMode');
+		var ctrlA = makeKeyEvent('keydown', 'KeyA', 'a', 65);
+		Object.defineProperty(ctrlA, 'ctrlKey', { value: true });
+		document.dispatchEvent(ctrlA);
+		var configAfter = EngineConfig.get('display.nightMode');
+		TestHarness.assertEqual(configBefore, configAfter, 'Ctrl+A does not trigger any hardcoded shortcut');
+		document.dispatchEvent(makeKeyEvent('keyup', 'KeyA', 'a', 65));
+	})();
+
+	// --- skip allows repeat ---
+	(function() {
+		var count = 0;
+		var handler = function(data) { if (data.action === 'skip') count++; };
+		EngineEvents.on('input:action', handler);
+		document.dispatchEvent(makeKeyEvent('keydown', 'Shift', 'Shift', 16));
+		document.dispatchEvent(makeKeyEvent('keydown', 'Shift', 'Shift', 16));
+		TestHarness.assert(count >= 2, 'Skip action allows repeat (count=' + count + ')');
+		document.dispatchEvent(makeKeyEvent('keyup', 'Shift', 'Shift', 16));
+		EngineEvents.off('input:action', handler);
+	})();
 }

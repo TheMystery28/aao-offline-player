@@ -170,7 +170,8 @@
 		['EngineConfig', typeof testEngineConfig === 'function' ? testEngineConfig : null],
 		['InputManager', typeof testInputManager === 'function' ? testInputManager : null],
 		['ThemeManager', typeof testThemeManager === 'function' ? testThemeManager : null],
-		['SettingsPanel', typeof testSettingsPanel === 'function' ? testSettingsPanel : null]
+		['SettingsPanel', typeof testSettingsPanel === 'function' ? testSettingsPanel : null],
+		['EngineConfig Migration', typeof testEngineConfigMigration === 'function' ? testEngineConfigMigration : null]
 		];
 
 		for (var i = 0; i < suites.length; i++) {
