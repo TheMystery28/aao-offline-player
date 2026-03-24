@@ -171,7 +171,8 @@
 		['InputManager', typeof testInputManager === 'function' ? testInputManager : null],
 		['ThemeManager', typeof testThemeManager === 'function' ? testThemeManager : null],
 		['SettingsPanel', typeof testSettingsPanel === 'function' ? testSettingsPanel : null],
-		['EngineConfig Migration', typeof testEngineConfigMigration === 'function' ? testEngineConfigMigration : null]
+		['EngineConfig Migration', typeof testEngineConfigMigration === 'function' ? testEngineConfigMigration : null],
+		['Plugins', typeof testPlugins === 'function' ? testPlugins : null]
 		];
 
 		for (var i = 0; i < suites.length; i++) {
