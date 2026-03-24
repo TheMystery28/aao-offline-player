@@ -26,6 +26,8 @@ var ThemeManager = (function() {
 	let tabbedZoneContent = null;
 	let userOverrodeNarrowMode = false;
 	let activeTab = 'evidence';
+	let lastNonSettingsTab = 'evidence';
+	let lastTabPressTime = 0;
 
 	// Valid arrangement values and their types
 	var ARRANGEMENT_CLASSES = [
@@ -435,14 +437,14 @@ var ThemeManager = (function() {
 		evidenceBtn.className = 'tab-button active';
 		evidenceBtn.setAttribute('data-tab', 'evidence');
 		evidenceBtn.textContent = 'Evidence';
-		evidenceBtn.addEventListener('click', function() { switchTab('evidence', courtrecord, settings); });
+		evidenceBtn.addEventListener('click', function() { switchTab('evidence'); });
 		tabbedZoneBar.appendChild(evidenceBtn);
 
 		const settingsBtn = document.createElement('a');
 		settingsBtn.className = 'tab-button';
 		settingsBtn.setAttribute('data-tab', 'settings');
 		settingsBtn.textContent = 'Settings';
-		settingsBtn.addEventListener('click', function() { switchTab('settings', courtrecord, settings); });
+		settingsBtn.addEventListener('click', function() { switchTab('settings'); });
 		tabbedZoneBar.appendChild(settingsBtn);
 
 		// Insert tab bar as first child of courtrecord
@@ -498,30 +500,74 @@ var ThemeManager = (function() {
 		activeTab = 'evidence';
 	}
 
-	function switchTab(tab, courtrecord, settings) {
+	function switchTab(tab) {
 		activeTab = tab;
-		const crEvidence = document.getElementById('cr_evidence');
-		const crProfiles = document.getElementById('cr_profiles');
+		var cr = document.getElementById('courtrecord');
+		var crEvidence = document.getElementById('cr_evidence');
+		var crProfiles = document.getElementById('cr_profiles');
 
 		if (tab === 'evidence') {
+			// Show evidence section (CSS controls which is visible via .evidence class)
+			if (cr) { cr.classList.remove('profiles'); cr.classList.add('evidence'); }
+			if (crEvidence) crEvidence.style.display = '';
+			if (crProfiles) crProfiles.style.display = '';
+			if (tabbedZoneContent) tabbedZoneContent.style.display = 'none';
+		} else if (tab === 'profiles') {
+			// Show profiles section
+			if (cr) { cr.classList.remove('evidence'); cr.classList.add('profiles'); }
 			if (crEvidence) crEvidence.style.display = '';
 			if (crProfiles) crProfiles.style.display = '';
 			if (tabbedZoneContent) tabbedZoneContent.style.display = 'none';
 		} else {
+			// Settings tab — hide evidence/profiles, show settings content
 			if (crEvidence) crEvidence.style.display = 'none';
 			if (crProfiles) crProfiles.style.display = 'none';
 			if (tabbedZoneContent) tabbedZoneContent.style.display = '';
 		}
 
-		// Update active tab styling
+		// Update active tab styling — evidence and profiles both highlight the "Evidence" button
 		if (tabbedZoneBar) {
-			const buttons = tabbedZoneBar.querySelectorAll('.tab-button');
-			for (let i = 0; i < buttons.length; i++) {
-				if (buttons[i].getAttribute('data-tab') === tab) {
+			var buttons = tabbedZoneBar.querySelectorAll('.tab-button');
+			for (var i = 0; i < buttons.length; i++) {
+				var btnTab = buttons[i].getAttribute('data-tab');
+				// "Evidence" button is active for both evidence and profiles tabs
+				if ((tab === 'evidence' || tab === 'profiles') && btnTab === 'evidence') {
+					buttons[i].classList.add('active');
+				} else if (tab === 'settings' && btnTab === 'settings') {
 					buttons[i].classList.add('active');
 				} else {
 					buttons[i].classList.remove('active');
 				}
+			}
+		}
+	}
+
+	function cycleTab() {
+		// Only works when tabbed zone is active
+		if (!tabbedZoneBar) return;
+
+		var now = Date.now();
+		var isDoublePress = (now - lastTabPressTime) < 300;
+		lastTabPressTime = now;
+
+		if (isDoublePress) {
+			// Double press: toggle to/from Settings
+			if (activeTab === 'settings') {
+				// Return to last non-settings tab
+				switchTab(lastNonSettingsTab);
+			} else {
+				// Go to settings, remember where we were
+				lastNonSettingsTab = activeTab;
+				switchTab('settings');
+			}
+		} else {
+			// Single press: cycle Evidence ↔ Profiles (or exit Settings)
+			if (activeTab === 'settings') {
+				switchTab(lastNonSettingsTab);
+			} else if (activeTab === 'evidence') {
+				switchTab('profiles');
+			} else {
+				switchTab('evidence');
 			}
 		}
 	}
@@ -634,6 +680,13 @@ var ThemeManager = (function() {
 			applyAll();
 			EngineEvents.on('config:changed', onConfigChanged);
 
+			// Listen for tab cycling input (no source filter — works for keyboard and gamepad)
+			EngineEvents.on('input:action', function(data) {
+				if (data.action === 'crSwitchTab') {
+					cycleTab();
+				}
+			});
+
 			// Listen for config sync messages from parent frame
 			window.addEventListener('message', function(e) {
 				if (e.data && e.data.type === 'aao-set-config' && e.data.path) {
@@ -672,6 +725,13 @@ var ThemeManager = (function() {
 		reapply: function() {
 			applyAll();
 		},
+
+		/**
+		 * Cycle between Evidence/Profiles/Settings tabs.
+		 * Single press: Evidence ↔ Profiles. Double press (~300ms): toggle Settings.
+		 * Does nothing in wide mode (no tabbed zone).
+		 */
+		cycleTab: cycleTab,
 
 		/**
 		 * Compute the minimum bodyWidth scale that keeps wide mode.

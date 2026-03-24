@@ -4,7 +4,8 @@
             "proceed": ["Enter", "Space"],
             "skip": ["Shift"],
             "back": ["ArrowLeft"],
-            "forward": ["ArrowRight"]
+            "forward": ["ArrowRight"],
+            "crSwitchTab": ["Tab"]
         },
         "gamepad": {
             "proceed": [0],
@@ -13,7 +14,8 @@
             "forward": [15],
             "save": [4],
             "loadLatest": [6],
-            "fullscreen": [8]
+            "fullscreen": [8],
+            "crSwitchTab": [3]
         }
     },
     "display": {

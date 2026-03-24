@@ -129,6 +129,10 @@ var InputManager = (function() {
 	}
 
 	function onKeyDown(e) {
+		// Tab: always prevent default to disable browser focus navigation
+		if (e.code === 'Tab' || e.key === 'Tab') {
+			e.preventDefault();
+		}
 		// Ctrl+D: reset all settings to defaults
 		if (e.ctrlKey && (e.code === 'KeyD' || e.key === 'd')) {
 			e.preventDefault();

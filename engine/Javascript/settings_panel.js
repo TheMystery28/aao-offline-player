@@ -326,7 +326,7 @@ var SettingsPanel = (function() {
 	var HIDDEN_BINDINGS = [
 		'courtRecordToggle', 'courtRecordEvidence', 'courtRecordProfiles',
 		'crCheck', 'crNavigateUp', 'crNavigateDown', 'crNavigateLeft',
-		'crNavigateRight', 'crSelect', 'crSwitchTab'
+		'crNavigateRight', 'crSelect'
 	];
 
 	// Gamepad button index → readable name (W3C standard mapping)

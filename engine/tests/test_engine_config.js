@@ -83,11 +83,11 @@ function testEngineConfig() {
 		var handler = function(data) { received = data; };
 		EngineEvents.on('config:changed', handler);
 
-		EngineConfig.set('display.nightMode', true);
+		EngineConfig.set('display.pixelated', true);
 		TestHarness.assert(received !== null, 'set() emits config:changed event');
-		TestHarness.assertEqual(received.path, 'display.nightMode', 'config:changed carries correct path');
+		TestHarness.assertEqual(received.path, 'display.pixelated', 'config:changed carries correct path');
 		TestHarness.assertEqual(received.value, true, 'config:changed carries new value');
-		TestHarness.assertEqual(received.oldValue, false, 'config:changed carries old value');
+		TestHarness.assertEqual(received.oldValue, false, 'config:changed carries old value (pixelated defaults to false)');
 
 		EngineEvents.off('config:changed', handler);
 		EngineConfig.reset();

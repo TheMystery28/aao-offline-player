@@ -42,21 +42,6 @@ Modules.load(new Object({
 			return false;
 		}
 
-		function toggleCourtRecord() {
-			var cr = document.getElementById('courtrecord');
-			if (!cr) return;
-			var header = cr.querySelector('.courtrecord-header, #cr-header');
-			if (header) {
-				header.click();
-				return;
-			}
-			if (cr.classList.contains('open')) {
-				cr.classList.remove('open');
-			} else {
-				cr.classList.add('open');
-			}
-		}
-
 		// Listen to input:action events from InputManager
 		EngineEvents.on('input:action', function(data) {
 			if (data.source !== 'gamepad') return;
@@ -71,9 +56,6 @@ Modules.load(new Object({
 					break;
 				case 'forward':
 					clickFirstVisible(forwardIds);
-					break;
-				case 'courtRecordToggle':
-					toggleCourtRecord();
 					break;
 			}
 		});

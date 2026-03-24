@@ -190,23 +190,7 @@ function testThemeManager() {
 		SoundHowler.setSoundVolume = origSetVol;
 	})();
 
-	// --- NEW: Court record position class (Fix 6) ---
-	(function() {
-		var section = document.querySelector('#content > section');
-		if (!section) return;
-		EngineConfig.set('layout.courtRecordPosition', 'left');
-		ThemeManager.reapply();
-		TestHarness.assert(
-			section.classList.contains('cr-left'),
-			'CR position: parent section has cr-left class when position is left'
-		);
-		EngineConfig.set('layout.courtRecordPosition', 'right');
-		ThemeManager.reapply();
-		TestHarness.assert(
-			!section.classList.contains('cr-left'),
-			'CR position: cr-left class removed when position is right (default)'
-		);
-	})();
+	// (courtRecordPosition test removed — config key no longer exists, replaced by panelArrangement)
 
 	// --- NEW: Text speed config accessible (Fix 5) ---
 	(function() {

@@ -46,7 +46,7 @@ function testInputManager() {
 		TestHarness.assertEqual(lookup['Shift'], 'skip', 'Default config maps Shift to skip');
 		TestHarness.assertEqual(lookup['ArrowLeft'], 'back', 'Default config maps ArrowLeft to back');
 		TestHarness.assertEqual(lookup['ArrowRight'], 'forward', 'Default config maps ArrowRight to forward');
-		TestHarness.assertEqual(lookup['Tab'], 'courtRecordToggle', 'Default config maps Tab to courtRecordToggle');
+		TestHarness.assertEqual(lookup['Tab'], 'crSwitchTab', 'Default config maps Tab to crSwitchTab');
 	})();
 
 	// --- Gamepad buttons map correctly ---
@@ -55,7 +55,7 @@ function testInputManager() {
 		TestHarness.assertEqual(lookup['0'], 'proceed', 'Default gamepad maps button 0 to proceed');
 		TestHarness.assertEqual(lookup['1'], 'back', 'Default gamepad maps button 1 to back');
 		TestHarness.assertEqual(lookup['15'], 'forward', 'Default gamepad maps button 15 to forward');
-		TestHarness.assertEqual(lookup['9'], 'courtRecordToggle', 'Default gamepad maps button 9 to courtRecordToggle');
+		TestHarness.assertEqual(lookup['3'], 'crSwitchTab', 'Default gamepad maps button 3 (Y) to crSwitchTab');
 	})();
 
 	// --- input:action carries correct data ---
