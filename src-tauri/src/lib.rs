@@ -41,6 +41,8 @@ struct AppState {
 #[tauri::command]
 fn open_game(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<String, String> {
     let state = state.lock().map_err(|e| e.to_string())?;
+    // Resolve which global plugins apply to this case (writes resolved_plugins.json)
+    let _ = importer::resolve_plugins_for_case(case_id, &state.data_dir);
     Ok(format!(
         "http://localhost:{}/player.html?trial_id={}&lang={}",
         state.server_port, case_id, state.config.language
@@ -1436,6 +1438,52 @@ fn toggle_global_plugin(
     importer::toggle_global_plugin(&filename, enabled, &data_dir)
 }
 
+/// Check for duplicate plugin code across global and all case plugins.
+#[tauri::command]
+fn check_plugin_duplicate(
+    state: State<'_, Mutex<AppState>>,
+    code: String,
+) -> Result<Vec<importer::DuplicateMatch>, String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    Ok(importer::check_plugin_duplicate(&code, &data_dir))
+}
+
+/// Set the scope for a global plugin.
+#[tauri::command]
+fn set_global_plugin_scope(
+    state: State<'_, Mutex<AppState>>,
+    filename: String,
+    scope: serde_json::Value,
+) -> Result<(), String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::set_global_plugin_scope(&filename, &scope, &data_dir)
+}
+
+/// Set params for a global plugin at a specific cascade level.
+#[tauri::command]
+fn set_global_plugin_params(
+    state: State<'_, Mutex<AppState>>,
+    filename: String,
+    level: String,
+    key: String,
+    params: serde_json::Value,
+) -> Result<(), String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::set_global_plugin_params(&filename, &level, &key, &params, &data_dir)
+}
+
+/// Promote a case plugin to a global plugin.
+#[tauri::command]
+fn promote_plugin_to_global(
+    state: State<'_, Mutex<AppState>>,
+    case_id: u32,
+    filename: String,
+    scope: serde_json::Value,
+) -> Result<(), String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::promote_plugin_to_global(case_id, &filename, &scope, &data_dir)
+}
+
 /// Export saves as a .aaosave file.
 #[tauri::command]
 fn export_save(
@@ -1867,6 +1915,10 @@ pub fn run() {
             attach_global_plugin_code,
             remove_global_plugin,
             toggle_global_plugin,
+            check_plugin_duplicate,
+            set_global_plugin_scope,
+            set_global_plugin_params,
+            promote_plugin_to_global,
             export_save,
             import_save,
             pick_export_save_file,

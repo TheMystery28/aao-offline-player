@@ -1552,6 +1552,443 @@ pub fn toggle_global_plugin(filename: &str, enabled: bool, engine_dir: &Path) ->
     Ok(())
 }
 
+/// Migrate a global plugin manifest from old format to new format.
+/// Old: { "scripts": [...], "disabled": [...] }
+/// New: { "scripts": [...], "plugins": { "file.js": { "scope": {...}, "params": {...} } } }
+/// If `plugins` key already exists, does nothing. If manifest doesn't exist, does nothing.
+pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), String> {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() {
+        return Ok(());
+    }
+
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read global manifest: {}", e))?;
+    let mut val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse global manifest: {}", e))?;
+
+    // Already migrated?
+    if val.get("plugins").is_some() {
+        return Ok(());
+    }
+
+    let scripts = val.get("scripts")
+        .and_then(|s| s.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let disabled: Vec<String> = val.get("disabled")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    let mut plugins = serde_json::Map::new();
+    for script_val in &scripts {
+        if let Some(script_name) = script_val.as_str() {
+            let is_disabled = disabled.contains(&script_name.to_string());
+            plugins.insert(script_name.to_string(), serde_json::json!({
+                "scope": {
+                    "all": !is_disabled,
+                    "case_ids": [],
+                    "sequence_titles": [],
+                    "collection_ids": []
+                },
+                "params": {}
+            }));
+        }
+    }
+
+    val.as_object_mut().unwrap().insert("plugins".to_string(), serde_json::Value::Object(plugins));
+    // Remove old disabled array
+    val.as_object_mut().unwrap().remove("disabled");
+
+    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+        .map_err(|e| format!("Failed to write migrated manifest: {}", e))?;
+
+    Ok(())
+}
+
+/// Resolve which global plugins should load for a given case.
+/// Reads global manifest, collections, and case manifest to determine scope matches.
+/// Merges params cascade: plugin defaults → global → collection → sequence → case.
+/// Writes `case/{id}/resolved_plugins.json`.
+pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_json::Value, String> {
+    let global_manifest_path = data_dir.join("plugins").join("manifest.json");
+
+    // Migrate if needed
+    migrate_global_manifest(data_dir)?;
+
+    // Read global manifest
+    if !global_manifest_path.exists() {
+        // No global plugins — write empty resolved file
+        let resolved = serde_json::json!({ "active": [], "available": [] });
+        let case_dir = data_dir.join("case").join(case_id.to_string());
+        if case_dir.exists() {
+            let _ = fs::write(case_dir.join("resolved_plugins.json"),
+                serde_json::to_string_pretty(&resolved).unwrap());
+        }
+        return Ok(resolved);
+    }
+
+    let manifest_text = fs::read_to_string(&global_manifest_path)
+        .map_err(|e| format!("Failed to read global manifest: {}", e))?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_text)
+        .map_err(|e| format!("Failed to parse global manifest: {}", e))?;
+
+    let scripts = manifest.get("scripts")
+        .and_then(|s| s.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let plugins_config = manifest.get("plugins")
+        .and_then(|p| p.as_object())
+        .cloned()
+        .unwrap_or_default();
+
+    // Read case manifest for sequence info
+    let case_dir = data_dir.join("case").join(case_id.to_string());
+    let case_sequence_title: Option<String> = if case_dir.exists() {
+        let case_manifest_path = case_dir.join("manifest.json");
+        if case_manifest_path.exists() {
+            let cm_text = fs::read_to_string(&case_manifest_path).ok();
+            cm_text.and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                .and_then(|v| v.get("sequence").and_then(|s| s.get("title")).and_then(|t| t.as_str().map(|s| s.to_string())))
+        } else { None }
+    } else { None };
+
+    // Read collections to check membership
+    let collections_data = crate::collections::load_collections(data_dir);
+    let case_collection_ids: Vec<String> = collections_data.collections.iter()
+        .filter(|c| {
+            c.items.iter().any(|item| {
+                match item {
+                    crate::collections::CollectionItem::Case { case_id: cid } => *cid == case_id,
+                    crate::collections::CollectionItem::Sequence { title } => {
+                        // Check if this case's sequence title matches
+                        case_sequence_title.as_deref() == Some(title.as_str())
+                    }
+                }
+            })
+        })
+        .map(|c| c.id.clone())
+        .collect();
+
+    let mut active = Vec::new();
+    let mut available = Vec::new();
+
+    for script_val in &scripts {
+        let script_name = match script_val.as_str() {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let plugin_cfg = plugins_config.get(script_name);
+        let scope = plugin_cfg.and_then(|p| p.get("scope"));
+
+        let is_active = match scope {
+            Some(s) => {
+                let all = s.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
+                if all { true }
+                else {
+                    let case_ids = s.get("case_ids").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let seq_titles = s.get("sequence_titles").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let col_ids = s.get("collection_ids").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+                    let case_match = case_ids.iter().any(|id| id.as_u64() == Some(case_id as u64));
+                    let seq_match = case_sequence_title.as_ref().map(|st| {
+                        seq_titles.iter().any(|t| t.as_str() == Some(st.as_str()))
+                    }).unwrap_or(false);
+                    let col_match = col_ids.iter().any(|cid| {
+                        cid.as_str().map(|s| case_collection_ids.contains(&s.to_string())).unwrap_or(false)
+                    });
+
+                    case_match || seq_match || col_match
+                }
+            }
+            None => false,
+        };
+
+        if is_active {
+            // Resolve params cascade
+            let params = resolve_param_cascade(
+                plugin_cfg,
+                case_id,
+                case_sequence_title.as_deref(),
+                &case_collection_ids,
+            );
+
+            active.push(serde_json::json!({
+                "script": script_name,
+                "source": format!("plugins/{}", script_name),
+                "params": params
+            }));
+        } else {
+            available.push(serde_json::json!({
+                "script": script_name,
+                "reason": "disabled (no matching scope)"
+            }));
+        }
+    }
+
+    let resolved = serde_json::json!({ "active": active, "available": available });
+
+    // Write resolved file
+    if case_dir.exists() {
+        fs::write(case_dir.join("resolved_plugins.json"),
+            serde_json::to_string_pretty(&resolved).unwrap())
+            .map_err(|e| format!("Failed to write resolved_plugins.json: {}", e))?;
+    }
+
+    Ok(resolved)
+}
+
+/// Resolve cascading params for a single plugin.
+/// Merge order: params.default → by_collection → by_sequence → by_case
+fn resolve_param_cascade(
+    plugin_cfg: Option<&serde_json::Value>,
+    case_id: u32,
+    sequence_title: Option<&str>,
+    collection_ids: &[String],
+) -> serde_json::Value {
+    let empty_obj = serde_json::json!({});
+    let params = plugin_cfg
+        .and_then(|p| p.get("params"))
+        .unwrap_or(&empty_obj);
+
+    let mut result = serde_json::Map::new();
+
+    // 1. Global defaults
+    if let Some(defaults) = params.get("default").and_then(|d| d.as_object()) {
+        for (k, v) in defaults {
+            result.insert(k.clone(), v.clone());
+        }
+    }
+
+    // 2. Collection overrides (first matching collection wins for conflicts)
+    if let Some(by_col) = params.get("by_collection").and_then(|bc| bc.as_object()) {
+        for col_id in collection_ids {
+            if let Some(overrides) = by_col.get(col_id).and_then(|o| o.as_object()) {
+                for (k, v) in overrides {
+                    result.insert(k.clone(), v.clone());
+                }
+                break; // first matching collection wins
+            }
+        }
+    }
+
+    // 3. Sequence overrides
+    if let Some(seq_title) = sequence_title {
+        if let Some(by_seq) = params.get("by_sequence").and_then(|bs| bs.as_object()) {
+            if let Some(overrides) = by_seq.get(seq_title).and_then(|o| o.as_object()) {
+                for (k, v) in overrides {
+                    result.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+
+    // 4. Case overrides
+    let case_key = case_id.to_string();
+    if let Some(by_case) = params.get("by_case").and_then(|bc| bc.as_object()) {
+        if let Some(overrides) = by_case.get(&case_key).and_then(|o| o.as_object()) {
+            for (k, v) in overrides {
+                result.insert(k.clone(), v.clone());
+            }
+        }
+    }
+
+    serde_json::Value::Object(result)
+}
+
+/// Check if plugin code already exists somewhere (global or any case).
+/// Returns list of matches with filename and location.
+#[derive(Debug, Clone, Serialize)]
+pub struct DuplicateMatch {
+    pub filename: String,
+    pub location: String,
+}
+
+pub fn check_plugin_duplicate(code: &str, data_dir: &Path) -> Vec<DuplicateMatch> {
+    let trimmed = code.trim();
+    let mut matches = Vec::new();
+
+    // Check global plugins
+    let global_dir = data_dir.join("plugins");
+    if global_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&global_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("js") {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if content.trim() == trimmed {
+                            matches.push(DuplicateMatch {
+                                filename: entry.file_name().to_string_lossy().to_string(),
+                                location: "global".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check all case plugins
+    let cases_dir = data_dir.join("case");
+    if cases_dir.is_dir() {
+        if let Ok(case_entries) = fs::read_dir(&cases_dir) {
+            for case_entry in case_entries.flatten() {
+                let case_plugins_dir = case_entry.path().join("plugins");
+                if case_plugins_dir.is_dir() {
+                    if let Ok(plugin_entries) = fs::read_dir(&case_plugins_dir) {
+                        for pe in plugin_entries.flatten() {
+                            let path = pe.path();
+                            if path.extension().and_then(|e| e.to_str()) == Some("js") {
+                                if let Ok(content) = fs::read_to_string(&path) {
+                                    if content.trim() == trimmed {
+                                        let case_name = case_entry.file_name().to_string_lossy().to_string();
+                                        matches.push(DuplicateMatch {
+                                            filename: pe.file_name().to_string_lossy().to_string(),
+                                            location: format!("case {}", case_name),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    matches
+}
+
+/// Set the scope for a global plugin in the manifest.
+pub fn set_global_plugin_scope(filename: &str, scope: &serde_json::Value, engine_dir: &Path) -> Result<(), String> {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() {
+        return Err("No global plugin manifest".to_string());
+    }
+    migrate_global_manifest(engine_dir)?;
+
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read manifest: {}", e))?;
+    let mut val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse manifest: {}", e))?;
+
+    let plugins = val.get_mut("plugins")
+        .and_then(|p| p.as_object_mut())
+        .ok_or_else(|| "No plugins config in manifest".to_string())?;
+
+    let entry = plugins.entry(filename.to_string())
+        .or_insert(serde_json::json!({ "scope": {}, "params": {} }));
+    entry.as_object_mut().unwrap().insert("scope".to_string(), scope.clone());
+
+    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+        .map_err(|e| format!("Failed to write manifest: {}", e))?;
+    Ok(())
+}
+
+/// Set params for a global plugin at a specific level.
+/// level: "default", "by_case", "by_sequence", "by_collection"
+/// key: the case_id, sequence_title, or collection_id (ignored for "default")
+pub fn set_global_plugin_params(
+    filename: &str,
+    level: &str,
+    key: &str,
+    params: &serde_json::Value,
+    engine_dir: &Path,
+) -> Result<(), String> {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() {
+        return Err("No global plugin manifest".to_string());
+    }
+    migrate_global_manifest(engine_dir)?;
+
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read manifest: {}", e))?;
+    let mut val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse manifest: {}", e))?;
+
+    let plugins = val.get_mut("plugins")
+        .and_then(|p| p.as_object_mut())
+        .ok_or_else(|| "No plugins config".to_string())?;
+
+    let entry = plugins.entry(filename.to_string())
+        .or_insert(serde_json::json!({ "scope": { "all": false }, "params": {} }));
+    let entry_params = entry.get_mut("params")
+        .and_then(|p| p.as_object_mut());
+    if entry_params.is_none() {
+        entry.as_object_mut().unwrap().insert("params".to_string(), serde_json::json!({}));
+    }
+    let entry_params = entry.get_mut("params").unwrap().as_object_mut().unwrap();
+
+    if level == "default" {
+        entry_params.insert("default".to_string(), params.clone());
+    } else {
+        let level_obj = entry_params.entry(level.to_string())
+            .or_insert(serde_json::json!({}));
+        level_obj.as_object_mut().unwrap().insert(key.to_string(), params.clone());
+    }
+
+    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+        .map_err(|e| format!("Failed to write manifest: {}", e))?;
+    Ok(())
+}
+
+/// Promote a case plugin to global.
+pub fn promote_plugin_to_global(
+    case_id: u32,
+    filename: &str,
+    scope: &serde_json::Value,
+    engine_dir: &Path,
+) -> Result<(), String> {
+    let case_dir = engine_dir.join("case").join(case_id.to_string());
+    let case_plugin_path = case_dir.join("plugins").join(filename);
+    if !case_plugin_path.exists() {
+        return Err(format!("Plugin {} not found in case {}", filename, case_id));
+    }
+
+    // Copy to global
+    let global_dir = engine_dir.join("plugins");
+    fs::create_dir_all(&global_dir)
+        .map_err(|e| format!("Failed to create global plugins dir: {}", e))?;
+    let global_path = global_dir.join(filename);
+    fs::copy(&case_plugin_path, &global_path)
+        .map_err(|e| format!("Failed to copy plugin to global: {}", e))?;
+
+    // Update global manifest
+    migrate_global_manifest(engine_dir)?;
+    let manifest_path = global_dir.join("manifest.json");
+    let mut manifest: serde_json::Value = if manifest_path.exists() {
+        let text = fs::read_to_string(&manifest_path).unwrap_or_default();
+        serde_json::from_str(&text).unwrap_or(serde_json::json!({ "scripts": [], "plugins": {} }))
+    } else {
+        serde_json::json!({ "scripts": [], "plugins": {} })
+    };
+
+    // Add to scripts if not already there
+    let scripts = manifest.get_mut("scripts").and_then(|s| s.as_array_mut()).unwrap();
+    if !scripts.iter().any(|s| s.as_str() == Some(filename)) {
+        scripts.push(serde_json::Value::String(filename.to_string()));
+    }
+    // Add plugin config with scope
+    let plugins = manifest.get_mut("plugins").and_then(|p| p.as_object_mut()).unwrap();
+    plugins.insert(filename.to_string(), serde_json::json!({
+        "scope": scope,
+        "params": {}
+    }));
+
+    fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap())
+        .map_err(|e| format!("Failed to write global manifest: {}", e))?;
+
+    // Remove from case manifest
+    remove_plugin(case_id, filename, engine_dir)?;
+
+    // Delete the case file
+    let _ = fs::remove_file(&case_plugin_path);
+
+    Ok(())
+}
+
 /// Result of importing a .aaosave file.
 #[derive(Debug, Serialize)]
 pub struct ImportSaveResult {
@@ -4683,5 +5120,315 @@ return 'data:image/gif;base64,'
         ).unwrap();
         let disabled = manifest.get("disabled").and_then(|d| d.as_array());
         assert!(disabled.is_none() || disabled.unwrap().is_empty());
+    }
+
+    // ============================================================
+    // Global Plugin System — Phase A Tests
+    // ============================================================
+
+    #[test]
+    fn test_migrate_old_format_to_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js","b.js"],"disabled":["b.js"]}"#).unwrap();
+
+        migrate_global_manifest(engine_dir).unwrap();
+
+        let text = std::fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(val.get("plugins").is_some());
+        let plugins = val["plugins"].as_object().unwrap();
+        assert_eq!(plugins["a.js"]["scope"]["all"], true);
+        assert_eq!(plugins["b.js"]["scope"]["all"], false);
+        assert!(val.get("disabled").is_none()); // old field removed
+    }
+
+    #[test]
+    fn test_migrate_already_new_stays_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        let original = r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"x":1}}}}}"#;
+        std::fs::write(plugins_dir.join("manifest.json"), original).unwrap();
+
+        migrate_global_manifest(engine_dir).unwrap();
+
+        let text = std::fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        // Params should still be there (not wiped)
+        assert_eq!(val["plugins"]["a.js"]["params"]["default"]["x"], 1);
+    }
+
+    #[test]
+    fn test_migrate_missing_file_does_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = migrate_global_manifest(dir.path());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scope_all_matches_any_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+        std::fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{}}}}"#).unwrap();
+        // Create a case dir
+        let case_dir = engine_dir.join("case/99999");
+        std::fs::create_dir_all(&case_dir).unwrap();
+
+        let resolved = resolve_plugins_for_case(99999, engine_dir).unwrap();
+        let active = resolved["active"].as_array().unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0]["script"], "a.js");
+    }
+
+    #[test]
+    fn test_scope_case_ids_matching() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+        std::fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"case_ids":[12345],"sequence_titles":[],"collection_ids":[]},"params":{}}}}"#).unwrap();
+        std::fs::create_dir_all(engine_dir.join("case/12345")).unwrap();
+
+        let resolved = resolve_plugins_for_case(12345, engine_dir).unwrap();
+        assert_eq!(resolved["active"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_scope_case_ids_no_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+        std::fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"case_ids":[12345],"sequence_titles":[],"collection_ids":[]},"params":{}}}}"#).unwrap();
+        std::fs::create_dir_all(engine_dir.join("case/99999")).unwrap();
+
+        let resolved = resolve_plugins_for_case(99999, engine_dir).unwrap();
+        assert_eq!(resolved["active"].as_array().unwrap().len(), 0);
+        assert_eq!(resolved["available"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_scope_disabled_everywhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+        std::fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false},"params":{}}}}"#).unwrap();
+        std::fs::create_dir_all(engine_dir.join("case/11111")).unwrap();
+
+        let resolved = resolve_plugins_for_case(11111, engine_dir).unwrap();
+        assert_eq!(resolved["active"].as_array().unwrap().len(), 0);
+        assert_eq!(resolved["available"].as_array().unwrap().len(), 1);
+        assert!(resolved["available"][0]["reason"].as_str().unwrap().contains("no matching scope"));
+    }
+
+    #[test]
+    fn test_params_defaults_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("a.js"), "//").unwrap();
+        std::fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"font":"Arial","size":14}}}}}"#).unwrap();
+        std::fs::create_dir_all(engine_dir.join("case/1")).unwrap();
+
+        let resolved = resolve_plugins_for_case(1, engine_dir).unwrap();
+        let params = &resolved["active"][0]["params"];
+        assert_eq!(params["font"], "Arial");
+        assert_eq!(params["size"], 14);
+    }
+
+    #[test]
+    fn test_params_case_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("a.js"), "//").unwrap();
+        std::fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"font":"Arial","size":14},"by_case":{"42":{"font":"sans-serif","size":10}}}}}}"#).unwrap();
+        std::fs::create_dir_all(engine_dir.join("case/42")).unwrap();
+
+        let resolved = resolve_plugins_for_case(42, engine_dir).unwrap();
+        let params = &resolved["active"][0]["params"];
+        assert_eq!(params["font"], "sans-serif");
+        assert_eq!(params["size"], 10);
+    }
+
+    #[test]
+    fn test_params_partial_override_inherits() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("a.js"), "//").unwrap();
+        std::fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"font":"Arial","size":14},"by_case":{"42":{"font":"Calibri"}}}}}}"#).unwrap();
+        std::fs::create_dir_all(engine_dir.join("case/42")).unwrap();
+
+        let resolved = resolve_plugins_for_case(42, engine_dir).unwrap();
+        let params = &resolved["active"][0]["params"];
+        assert_eq!(params["font"], "Calibri"); // overridden
+        assert_eq!(params["size"], 14); // inherited from default
+    }
+
+    #[test]
+    fn test_duplicate_found_in_global() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+        std::fs::write(engine_dir.join("plugins/test.js"), "console.log('hello');").unwrap();
+
+        let matches = check_plugin_duplicate("console.log('hello');", engine_dir);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].filename, "test.js");
+        assert_eq!(matches[0].location, "global");
+    }
+
+    #[test]
+    fn test_duplicate_found_in_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        std::fs::create_dir_all(engine_dir.join("case/555/plugins")).unwrap();
+        std::fs::write(engine_dir.join("case/555/plugins/p.js"), "// dup").unwrap();
+
+        let matches = check_plugin_duplicate("// dup", engine_dir);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].location, "case 555");
+    }
+
+    #[test]
+    fn test_no_duplicate_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let matches = check_plugin_duplicate("unique code", dir.path());
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn test_duplicate_whitespace_trimmed() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+        std::fs::write(engine_dir.join("plugins/t.js"), "  code  \n").unwrap();
+
+        let matches = check_plugin_duplicate("\n  code  ", engine_dir);
+        assert_eq!(matches.len(), 1);
+    }
+
+    #[test]
+    fn test_set_scope_updates_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+        std::fs::write(engine_dir.join("plugins/manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false},"params":{}}}}"#).unwrap();
+
+        let new_scope = serde_json::json!({"all": true, "case_ids": [1,2,3]});
+        set_global_plugin_scope("a.js", &new_scope, engine_dir).unwrap();
+
+        let text = std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(val["plugins"]["a.js"]["scope"]["all"], true);
+        assert_eq!(val["plugins"]["a.js"]["scope"]["case_ids"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_set_params_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+        std::fs::write(engine_dir.join("plugins/manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{}}}}"#).unwrap();
+
+        set_global_plugin_params("a.js", "default", "", &serde_json::json!({"font":"Arial"}), engine_dir).unwrap();
+
+        let text = std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(val["plugins"]["a.js"]["params"]["default"]["font"], "Arial");
+    }
+
+    #[test]
+    fn test_set_params_by_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+        std::fs::write(engine_dir.join("plugins/manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{}}}}"#).unwrap();
+
+        set_global_plugin_params("a.js", "by_case", "69063", &serde_json::json!({"font":"Mono"}), engine_dir).unwrap();
+
+        let text = std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(val["plugins"]["a.js"]["params"]["by_case"]["69063"]["font"], "Mono");
+    }
+
+    #[test]
+    fn test_promote_copies_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 55555);
+        attach_plugin_code("// promote me", "prom.js", &[55555], engine_dir).unwrap();
+
+        let scope = serde_json::json!({"all": true});
+        promote_plugin_to_global(55555, "prom.js", &scope, engine_dir).unwrap();
+
+        assert!(engine_dir.join("plugins/prom.js").exists());
+        let content = std::fs::read_to_string(engine_dir.join("plugins/prom.js")).unwrap();
+        assert_eq!(content, "// promote me");
+    }
+
+    #[test]
+    fn test_promote_updates_global_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 55556);
+        attach_plugin_code("// prom2", "p2.js", &[55556], engine_dir).unwrap();
+
+        let scope = serde_json::json!({"all": false, "case_ids": [1, 2]});
+        promote_plugin_to_global(55556, "p2.js", &scope, engine_dir).unwrap();
+
+        let text = std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(val["scripts"].as_array().unwrap().iter().any(|s| s == "p2.js"));
+        assert_eq!(val["plugins"]["p2.js"]["scope"]["case_ids"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_promote_removes_from_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 55557);
+        attach_plugin_code("// prom3", "p3.js", &[55557], engine_dir).unwrap();
+
+        promote_plugin_to_global(55557, "p3.js", &serde_json::json!({"all":true}), engine_dir).unwrap();
+
+        // Case plugin file should be gone
+        assert!(!engine_dir.join("case/55557/plugins/p3.js").exists());
+    }
+
+    #[test]
+    fn test_promote_nonexistent_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 55558);
+
+        let result = promote_plugin_to_global(55558, "nope.js", &serde_json::json!({"all":true}), engine_dir);
+        assert!(result.is_err());
     }
 }
