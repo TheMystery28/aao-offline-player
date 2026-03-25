@@ -679,6 +679,7 @@ window.addEventListener("DOMContentLoaded", function () {
           escapeHtml(manifest.title) +
           '<span class="muted"> &middot; ' + manifest.assets.total_downloaded + ' assets (' + sizeStr + ')' +
           (failedCount > 0 ? ' &middot; <span class="case-failed">' + failedCount + ' failed</span>' : '') +
+          (manifest.has_plugins ? ' &middot; <span class="case-plugins">Plugins</span>' : '') +
           '</span>' +
         '</span>';
 
@@ -730,6 +731,15 @@ window.addEventListener("DOMContentLoaded", function () {
       })(manifest));
       actions.appendChild(exportBtn);
 
+      var pluginBtn = document.createElement("button");
+      pluginBtn.className = "plugin-btn";
+      pluginBtn.textContent = "Plugins";
+      pluginBtn.title = "Manage plugins";
+      pluginBtn.addEventListener("click", (function (c) {
+        return function () { showPluginManagerModal(c.case_id, c.title); };
+      })(manifest));
+      actions.appendChild(pluginBtn);
+
       var deleteBtn = document.createElement("button");
       deleteBtn.className = "delete-btn";
       deleteBtn.textContent = "Delete";
@@ -770,6 +780,7 @@ window.addEventListener("DOMContentLoaded", function () {
           " &middot; " + assetCount + " assets (" + sizeStr + ")" +
           (failedCount > 0 ? ' &middot; <span class="case-failed">' + failedCount + " failed</span>" : "") +
           (dateStr ? ' &middot; <span class="case-date">' + dateStr + "</span>" : "") +
+          (c.has_plugins ? ' &middot; <span class="case-plugins">Plugins</span>' : "") +
         "</p>" +
       "</div>" +
       '<div class="case-actions">' +
@@ -779,6 +790,7 @@ window.addEventListener("DOMContentLoaded", function () {
         (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
         '<button class="link-btn" title="Copy AAO link">Link</button>' +
         '<button class="export-btn">Export</button>' +
+        '<button class="plugin-btn" title="Manage plugins">Plugins</button>' +
         '<button class="delete-btn">Delete</button>' +
       "</div>";
 
@@ -823,6 +835,10 @@ window.addEventListener("DOMContentLoaded", function () {
 
     card.querySelector(".export-btn").addEventListener("click", function () {
       exportCase(c.case_id, c.title);
+    });
+
+    card.querySelector(".plugin-btn").addEventListener("click", function () {
+      showPluginManagerModal(c.case_id, c.title);
     });
 
     card.querySelector(".delete-btn").addEventListener("click", function () {
@@ -1148,6 +1164,7 @@ window.addEventListener("DOMContentLoaded", function () {
           " &middot; " + assetCount + " assets (" + sizeStr + ")" +
           (failedCount > 0 ? ' &middot; <span class="case-failed">' + failedCount + " failed</span>" : "") +
           (dateStr ? ' &middot; <span class="case-date">' + dateStr + "</span>" : "") +
+          (c.has_plugins ? ' &middot; <span class="case-plugins">Plugins</span>' : "") +
         "</p>" +
       "</div>" +
       '<div class="case-actions">' +
@@ -1157,6 +1174,7 @@ window.addEventListener("DOMContentLoaded", function () {
         (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
         '<button class="link-btn" title="Copy AAO link">Link</button>' +
         '<button class="export-btn">Export</button>' +
+        '<button class="plugin-btn" title="Manage plugins">Plugins</button>' +
         '<button class="delete-btn">Delete</button>' +
       "</div>";
 
@@ -1196,6 +1214,9 @@ window.addEventListener("DOMContentLoaded", function () {
     });
     card.querySelector(".export-btn").addEventListener("click", function () {
       exportCase(c.case_id, c.title);
+    });
+    card.querySelector(".plugin-btn").addEventListener("click", function () {
+      showPluginManagerModal(c.case_id, c.title);
     });
     card.querySelector(".delete-btn").addEventListener("click", function () {
       deleteCase(c.case_id, c.title);
@@ -1926,6 +1947,411 @@ window.addEventListener("DOMContentLoaded", function () {
         statusMsg.textContent = "Export error: " + e;
         progressContainer.classList.add("hidden");
       });
+  }
+
+  // --- Plugins ---
+
+  function showPluginTargetModal(onConfirm) {
+    invoke("list_cases").then(function (cases) {
+      var overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+
+      var modal = document.createElement("div");
+      modal.className = "modal-dialog modal-dialog-wide";
+
+      var title = document.createElement("div");
+      title.className = "modal-message";
+      title.innerHTML = "<strong>Select cases to install plugin</strong>";
+
+      var selectAllLabel = document.createElement("label");
+      selectAllLabel.className = "collection-picker-item";
+      var selectAllCb = document.createElement("input");
+      selectAllCb.type = "checkbox";
+      var selectAllText = document.createElement("span");
+      selectAllText.textContent = "Select All";
+      selectAllText.style.fontWeight = "600";
+      selectAllLabel.appendChild(selectAllCb);
+      selectAllLabel.appendChild(selectAllText);
+
+      var picker = document.createElement("div");
+      picker.className = "collection-picker";
+
+      var checkboxes = [];
+
+      // Group by sequence
+      var sequenceGroups = {};
+      var standalone = [];
+      for (var i = 0; i < cases.length; i++) {
+        var c = cases[i];
+        var seq = c.sequence;
+        if (seq && seq.title && seq.list && seq.list.length > 1) {
+          if (!sequenceGroups[seq.title]) {
+            sequenceGroups[seq.title] = [];
+          }
+          sequenceGroups[seq.title].push(c);
+        } else {
+          standalone.push(c);
+        }
+      }
+
+      var groupKeys = Object.keys(sequenceGroups);
+      if (groupKeys.length > 0) {
+        var seqLabel = document.createElement("div");
+        seqLabel.className = "collection-picker-group-label";
+        seqLabel.textContent = "Sequences";
+        picker.appendChild(seqLabel);
+
+        for (var g = 0; g < groupKeys.length; g++) {
+          var seqCases = sequenceGroups[groupKeys[g]];
+          for (var sc = 0; sc < seqCases.length; sc++) {
+            (function (cs) {
+              var row = document.createElement("label");
+              row.className = "collection-picker-item";
+              var cb = document.createElement("input");
+              cb.type = "checkbox";
+              var label = document.createElement("span");
+              label.textContent = cs.title;
+              var meta = document.createElement("span");
+              meta.className = "picker-item-meta";
+              meta.textContent = "ID " + cs.case_id;
+              row.appendChild(cb);
+              row.appendChild(label);
+              row.appendChild(meta);
+              picker.appendChild(row);
+              checkboxes.push({ checkbox: cb, caseId: cs.case_id });
+            })(seqCases[sc]);
+          }
+        }
+      }
+
+      if (standalone.length > 0) {
+        var caseLabel = document.createElement("div");
+        caseLabel.className = "collection-picker-group-label";
+        caseLabel.textContent = "Standalone Cases";
+        picker.appendChild(caseLabel);
+
+        for (var s = 0; s < standalone.length; s++) {
+          (function (cs) {
+            var row = document.createElement("label");
+            row.className = "collection-picker-item";
+            var cb = document.createElement("input");
+            cb.type = "checkbox";
+            var label = document.createElement("span");
+            label.textContent = cs.title;
+            var meta = document.createElement("span");
+            meta.className = "picker-item-meta";
+            meta.textContent = "ID " + cs.case_id;
+            row.appendChild(cb);
+            row.appendChild(label);
+            row.appendChild(meta);
+            picker.appendChild(row);
+            checkboxes.push({ checkbox: cb, caseId: cs.case_id });
+          })(standalone[s]);
+        }
+      }
+
+      selectAllCb.addEventListener("change", function () {
+        for (var j = 0; j < checkboxes.length; j++) {
+          checkboxes[j].checkbox.checked = selectAllCb.checked;
+        }
+      });
+
+      var buttons = document.createElement("div");
+      buttons.className = "modal-row-buttons";
+
+      var installBtn = document.createElement("button");
+      installBtn.className = "modal-btn modal-btn-primary";
+      installBtn.textContent = "Install";
+
+      var cancelBtn = document.createElement("button");
+      cancelBtn.className = "modal-btn modal-btn-cancel";
+      cancelBtn.textContent = "Cancel";
+
+      function close() {
+        document.body.removeChild(overlay);
+      }
+
+      installBtn.addEventListener("click", function () {
+        var selected = [];
+        for (var j = 0; j < checkboxes.length; j++) {
+          if (checkboxes[j].checkbox.checked) {
+            selected.push(checkboxes[j].caseId);
+          }
+        }
+        if (selected.length === 0) {
+          picker.style.borderColor = "#a33";
+          return;
+        }
+        close();
+        onConfirm(selected);
+      });
+
+      cancelBtn.addEventListener("click", close);
+      overlay.addEventListener("click", function (e) {
+        if (e.target === overlay) close();
+      });
+
+      buttons.appendChild(installBtn);
+      buttons.appendChild(cancelBtn);
+
+      modal.appendChild(title);
+      modal.appendChild(selectAllLabel);
+      modal.appendChild(picker);
+      modal.appendChild(buttons);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+    });
+  }
+
+  function doImportPlugin(pluginPath) {
+    showPluginTargetModal(function (caseIds) {
+      importResult.textContent = "";
+      importResult.className = "";
+      statusMsg.textContent = "Installing plugin to " + caseIds.length + " case(s)...";
+
+      invoke("import_plugin", {
+        sourcePath: pluginPath,
+        targetCaseIds: caseIds
+      })
+      .then(function (importedIds) {
+        importResult.innerHTML = "Plugin installed to <strong>" +
+          importedIds.length + " case(s)</strong>";
+        importResult.className = "result-success";
+        statusMsg.textContent = "";
+        loadLibrary();
+      })
+      .catch(function (e) {
+        importResult.textContent = "Plugin import error: " + e;
+        importResult.className = "result-error";
+        statusMsg.textContent = "";
+      });
+    });
+  }
+
+  function showPluginManagerModal(caseId, caseTitle) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog modal-dialog-wide";
+
+    var titleEl = document.createElement("div");
+    titleEl.className = "modal-message";
+    titleEl.innerHTML = "<strong>Plugins &mdash; " + escapeHtml(caseTitle) + "</strong>";
+
+    var listContainer = document.createElement("div");
+    listContainer.className = "plugin-list";
+
+    var actionsRow = document.createElement("div");
+    actionsRow.className = "plugin-actions-row";
+
+    var importBtn = document.createElement("button");
+    importBtn.className = "modal-btn modal-btn-primary";
+    importBtn.textContent = "Import .aaoplug";
+
+    var attachBtn = document.createElement("button");
+    attachBtn.className = "modal-btn modal-btn-secondary";
+    attachBtn.textContent = "Attach Code";
+
+    actionsRow.appendChild(importBtn);
+    actionsRow.appendChild(attachBtn);
+
+    var closeBtn = document.createElement("button");
+    closeBtn.className = "modal-btn modal-btn-cancel";
+    closeBtn.textContent = "Close";
+    closeBtn.style.width = "100%";
+
+    function close() {
+      document.body.removeChild(overlay);
+      loadLibrary();
+    }
+
+    function refreshList() {
+      invoke("list_plugins", { caseId: caseId })
+        .then(function (manifest) {
+          var scripts = (manifest && manifest.scripts) || [];
+          listContainer.innerHTML = "";
+          if (scripts.length === 0) {
+            var empty = document.createElement("div");
+            empty.className = "plugin-list-empty";
+            empty.textContent = "No plugins installed.";
+            listContainer.appendChild(empty);
+          } else {
+            for (var i = 0; i < scripts.length; i++) {
+              (function (filename) {
+                var item = document.createElement("div");
+                item.className = "plugin-list-item";
+                var name = document.createElement("span");
+                name.className = "plugin-name";
+                name.textContent = filename;
+                var removeBtn = document.createElement("button");
+                removeBtn.className = "plugin-remove-btn";
+                removeBtn.textContent = "Remove";
+                removeBtn.addEventListener("click", function () {
+                  if (!confirm("Remove plugin \"" + filename + "\"?")) return;
+                  invoke("remove_plugin", { caseId: caseId, filename: filename })
+                    .then(function () { refreshList(); })
+                    .catch(function (e) {
+                      statusMsg.textContent = "Error removing plugin: " + e;
+                    });
+                });
+                item.appendChild(name);
+                item.appendChild(removeBtn);
+                listContainer.appendChild(item);
+              })(scripts[i]);
+            }
+          }
+        })
+        .catch(function (e) {
+          listContainer.innerHTML = "";
+          var errEl = document.createElement("div");
+          errEl.className = "plugin-list-empty";
+          errEl.textContent = "Error loading plugins: " + e;
+          listContainer.appendChild(errEl);
+        });
+    }
+
+    importBtn.addEventListener("click", function () {
+      invoke("pick_import_file")
+        .then(function (selected) {
+          if (!selected) return;
+          if (!selected.toLowerCase().endsWith(".aaoplug")) {
+            statusMsg.textContent = "Please select a .aaoplug file.";
+            return;
+          }
+          statusMsg.textContent = "Installing plugin...";
+          invoke("import_plugin", {
+            sourcePath: selected,
+            targetCaseIds: [caseId]
+          })
+          .then(function () {
+            statusMsg.textContent = "Plugin installed.";
+            refreshList();
+          })
+          .catch(function (e) {
+            statusMsg.textContent = "Plugin import error: " + e;
+          });
+        })
+        .catch(function (e) {
+          statusMsg.textContent = "Could not open file picker: " + e;
+        });
+    });
+
+    attachBtn.addEventListener("click", function () {
+      showAttachCodeModal(caseId, caseTitle, refreshList);
+    });
+
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    modal.appendChild(titleEl);
+    modal.appendChild(listContainer);
+    modal.appendChild(actionsRow);
+    modal.appendChild(closeBtn);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    refreshList();
+  }
+
+  function showAttachCodeModal(caseId, caseTitle, onDone) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog modal-dialog-wide";
+
+    var titleEl = document.createElement("div");
+    titleEl.className = "modal-message";
+    titleEl.innerHTML = "<strong>Attach Plugin Code &mdash; " + escapeHtml(caseTitle) + "</strong>";
+
+    var filenameField = document.createElement("div");
+    filenameField.className = "modal-field";
+    var filenameLabel = document.createElement("label");
+    filenameLabel.textContent = "Filename";
+    var filenameInput = document.createElement("input");
+    filenameInput.type = "text";
+    filenameInput.placeholder = "my_plugin.js";
+    filenameField.appendChild(filenameLabel);
+    filenameField.appendChild(filenameInput);
+
+    var codeField = document.createElement("div");
+    codeField.className = "modal-field";
+    var codeLabel = document.createElement("label");
+    codeLabel.textContent = "Plugin Code";
+    var codeInput = document.createElement("textarea");
+    codeInput.className = "attach-code-textarea";
+    codeInput.placeholder = "// Paste your plugin JS code here...";
+    codeField.appendChild(codeLabel);
+    codeField.appendChild(codeInput);
+
+    var buttons = document.createElement("div");
+    buttons.className = "modal-row-buttons";
+
+    var attachBtn = document.createElement("button");
+    attachBtn.className = "modal-btn modal-btn-secondary";
+    attachBtn.textContent = "Attach";
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+
+    function close() {
+      document.body.removeChild(overlay);
+    }
+
+    attachBtn.addEventListener("click", function () {
+      var filename = filenameInput.value.trim();
+      var code = codeInput.value;
+
+      if (!filename) {
+        filenameInput.style.borderColor = "#a33";
+        filenameInput.focus();
+        return;
+      }
+      if (!filename.toLowerCase().endsWith(".js")) {
+        filename = filename + ".js";
+      }
+      if (!code) {
+        codeInput.style.borderColor = "#a33";
+        codeInput.focus();
+        return;
+      }
+
+      close();
+      statusMsg.textContent = "Attaching plugin...";
+      invoke("attach_plugin_code", {
+        code: code,
+        filename: filename,
+        targetCaseIds: [caseId]
+      })
+      .then(function () {
+        statusMsg.textContent = "Plugin \"" + filename + "\" attached.";
+        if (onDone) onDone();
+      })
+      .catch(function (e) {
+        statusMsg.textContent = "Error attaching plugin: " + e;
+      });
+    });
+
+    cancelBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    buttons.appendChild(attachBtn);
+    buttons.appendChild(cancelBtn);
+
+    modal.appendChild(titleEl);
+    modal.appendChild(filenameField);
+    modal.appendChild(codeField);
+    modal.appendChild(buttons);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    filenameInput.focus();
   }
 
   // --- Download ---
@@ -2959,7 +3385,11 @@ window.addEventListener("DOMContentLoaded", function () {
       .then(function (selected) {
         console.log("[IMPORT] pick_import_file returned:", selected);
         if (!selected) return;
-        doImport(selected);
+        if (selected.toLowerCase().endsWith(".aaoplug")) {
+          doImportPlugin(selected);
+        } else {
+          doImport(selected);
+        }
       })
       .catch(function (e) {
         console.error("[IMPORT] pick_import_file error:", e);

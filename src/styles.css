@@ -344,6 +344,23 @@
   background: rgba(50, 120, 220, 0.1);
 }
 
+.plugin-btn {
+  background: none;
+  color: #a89;
+  border: 1px solid #654;
+  border-radius: 6px;
+  padding: 0.45rem 1rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.plugin-btn:hover {
+  color: #dcb;
+  border-color: #986;
+  background: rgba(200, 170, 140, 0.1);
+}
+
 .link-btn {
   background: none;
   color: #886;
@@ -474,6 +491,7 @@
 .sequence-part-actions .update-btn,
 .sequence-part-actions .link-btn,
 .sequence-part-actions .export-btn,
+.sequence-part-actions .plugin-btn,
 .sequence-part-actions .delete-btn {
   padding: 0.3rem 0.65rem;
   font-size: 0.78rem;
@@ -1115,6 +1133,95 @@
   color: #d9a8f0;
   border-color: #8e44ad;
   background: rgba(142, 68, 173, 0.08);
+}
+
+/* ── Plugin UI ── */
+
+.case-plugins {
+  color: #a89;
+}
+
+.sequence-part-actions .plugin-btn {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+}
+
+.plugin-list {
+  border: 1px solid #2a2a4a;
+  border-radius: 6px;
+  background: #0d1117;
+  margin-bottom: 0.75rem;
+  min-height: 40px;
+}
+
+.plugin-list-empty {
+  color: #555;
+  font-size: 0.85rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.plugin-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(42, 42, 74, 0.5);
+}
+
+.plugin-list-item:last-child {
+  border-bottom: none;
+}
+
+.plugin-list-item .plugin-name {
+  flex: 1;
+  color: #ccc;
+  font-size: 0.88rem;
+  font-family: monospace;
+}
+
+.plugin-list-item .plugin-remove-btn {
+  background: none;
+  border: none;
+  color: #844;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  transition: color 0.15s;
+}
+
+.plugin-list-item .plugin-remove-btn:hover {
+  color: #f55;
+}
+
+.attach-code-textarea {
+  width: 100%;
+  min-height: 180px;
+  padding: 0.6rem 0.75rem;
+  background: #0d1117;
+  border: 1px solid #2a2a4a;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.attach-code-textarea:focus {
+  outline: none;
+  border-color: #4a4a8a;
+}
+
+.plugin-actions-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.plugin-actions-row button {
+  flex: 1;
 }
 
 /* ── Responsive: narrow screens (phones, vertical mode) ── */

@@ -1350,6 +1350,66 @@ pub fn attach_plugin_code(
     Ok(attached_cases)
 }
 
+/// List plugins installed for a given case.
+/// Returns the parsed contents of `case/{id}/plugins/manifest.json`,
+/// or `{ "scripts": [] }` if no plugins directory exists.
+pub fn list_plugins(case_id: u32, engine_dir: &Path) -> Result<serde_json::Value, String> {
+    let manifest_path = engine_dir
+        .join("case")
+        .join(case_id.to_string())
+        .join("plugins")
+        .join("manifest.json");
+    if !manifest_path.exists() {
+        return Ok(serde_json::json!({ "scripts": [] }));
+    }
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read plugin manifest: {}", e))?;
+    serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse plugin manifest: {}", e))
+}
+
+/// Remove a plugin from a case by filename.
+/// Deletes the JS file, updates plugins/manifest.json, and if no scripts remain,
+/// sets `has_plugins = false` on the case manifest.
+pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<(), String> {
+    let case_dir = engine_dir.join("case").join(case_id.to_string());
+    if !case_dir.exists() {
+        return Err(format!("Case {} does not exist", case_id));
+    }
+
+    let plugins_dir = case_dir.join("plugins");
+    let plugin_file = plugins_dir.join(filename);
+    if plugin_file.exists() {
+        fs::remove_file(&plugin_file)
+            .map_err(|e| format!("Failed to delete plugin file: {}", e))?;
+    }
+
+    let manifest_path = plugins_dir.join("manifest.json");
+    let mut scripts_empty = true;
+    if manifest_path.exists() {
+        let text = fs::read_to_string(&manifest_path).unwrap_or_default();
+        if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(arr) = val.get_mut("scripts").and_then(|s| s.as_array_mut()) {
+                arr.retain(|s| s.as_str() != Some(filename));
+                scripts_empty = arr.is_empty();
+            }
+            let _ = fs::write(
+                &manifest_path,
+                serde_json::to_string_pretty(&val).unwrap(),
+            );
+        }
+    }
+
+    if scripts_empty {
+        if let Ok(mut case_manifest) = read_manifest(&case_dir) {
+            case_manifest.has_plugins = false;
+            let _ = write_manifest(&case_manifest, &case_dir);
+        }
+    }
+
+    Ok(())
+}
+
 /// Export multiple cases (a sequence) as a single .aaocase ZIP file.
 ///
 /// ZIP format:
@@ -3860,5 +3920,148 @@ return 'data:image/gif;base64,'
         // Verify case manifest updated
         let updated = read_manifest(&case_dir).unwrap();
         assert!(updated.has_plugins);
+    }
+
+    #[test]
+    fn test_list_plugins_empty_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let case_dir = engine_dir.join("case/90001");
+        std::fs::create_dir_all(&case_dir).unwrap();
+
+        let result = list_plugins(90001, engine_dir);
+        assert!(result.is_ok());
+        let val = result.unwrap();
+        let scripts = val.get("scripts").unwrap().as_array().unwrap();
+        assert!(scripts.is_empty());
+    }
+
+    #[test]
+    fn test_list_plugins_with_plugins() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let case_dir = engine_dir.join("case/90002");
+        std::fs::create_dir_all(&case_dir).unwrap();
+
+        let manifest = CaseManifest {
+            case_id: 90002,
+            title: "Test".to_string(),
+            author: "Test".to_string(),
+            language: "en".to_string(),
+            download_date: "2026-01-01".to_string(),
+            format: "test".to_string(),
+            sequence: None,
+            assets: AssetSummary {
+                case_specific: 0,
+                shared_defaults: 0,
+                total_downloaded: 0,
+                total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        attach_plugin_code("// a", "a.js", &[90002], engine_dir).unwrap();
+        attach_plugin_code("// b", "b.js", &[90002], engine_dir).unwrap();
+
+        let result = list_plugins(90002, engine_dir).unwrap();
+        let scripts = result.get("scripts").unwrap().as_array().unwrap();
+        assert_eq!(scripts.len(), 2);
+        let names: Vec<&str> = scripts.iter().map(|s| s.as_str().unwrap()).collect();
+        assert!(names.contains(&"a.js"));
+        assert!(names.contains(&"b.js"));
+    }
+
+    #[test]
+    fn test_remove_plugin_updates_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let case_dir = engine_dir.join("case/90003");
+        std::fs::create_dir_all(&case_dir).unwrap();
+
+        let manifest = CaseManifest {
+            case_id: 90003,
+            title: "Test".to_string(),
+            author: "Test".to_string(),
+            language: "en".to_string(),
+            download_date: "2026-01-01".to_string(),
+            format: "test".to_string(),
+            sequence: None,
+            assets: AssetSummary {
+                case_specific: 0,
+                shared_defaults: 0,
+                total_downloaded: 0,
+                total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        attach_plugin_code("// x", "x.js", &[90003], engine_dir).unwrap();
+        attach_plugin_code("// y", "y.js", &[90003], engine_dir).unwrap();
+
+        remove_plugin(90003, "x.js", engine_dir).unwrap();
+
+        // x.js file should be gone
+        assert!(!case_dir.join("plugins/x.js").exists());
+        // y.js should still exist
+        assert!(case_dir.join("plugins/y.js").exists());
+
+        // Plugin manifest should only list y.js
+        let val = list_plugins(90003, engine_dir).unwrap();
+        let scripts = val.get("scripts").unwrap().as_array().unwrap();
+        assert_eq!(scripts.len(), 1);
+        assert_eq!(scripts[0].as_str().unwrap(), "y.js");
+
+        // Case still has plugins
+        let updated = read_manifest(&case_dir).unwrap();
+        assert!(updated.has_plugins);
+    }
+
+    #[test]
+    fn test_remove_plugin_sets_has_plugins_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let case_dir = engine_dir.join("case/90004");
+        std::fs::create_dir_all(&case_dir).unwrap();
+
+        let manifest = CaseManifest {
+            case_id: 90004,
+            title: "Test".to_string(),
+            author: "Test".to_string(),
+            language: "en".to_string(),
+            download_date: "2026-01-01".to_string(),
+            format: "test".to_string(),
+            sequence: None,
+            assets: AssetSummary {
+                case_specific: 0,
+                shared_defaults: 0,
+                total_downloaded: 0,
+                total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        attach_plugin_code("// only", "only.js", &[90004], engine_dir).unwrap();
+        assert!(read_manifest(&case_dir).unwrap().has_plugins);
+
+        remove_plugin(90004, "only.js", engine_dir).unwrap();
+
+        // No more plugins — has_plugins should be false
+        let updated = read_manifest(&case_dir).unwrap();
+        assert!(!updated.has_plugins);
+
+        // File gone
+        assert!(!case_dir.join("plugins/only.js").exists());
     }
 }

@@ -1276,6 +1276,33 @@ fn attach_plugin_code(
     importer::attach_plugin_code(&code, &filename, &target_case_ids, &data_dir)
 }
 
+/// List plugins installed for a given case.
+#[tauri::command]
+fn list_plugins(
+    state: State<'_, Mutex<AppState>>,
+    case_id: u32,
+) -> Result<serde_json::Value, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    importer::list_plugins(case_id, &data_dir)
+}
+
+/// Remove a plugin from a case by filename.
+#[tauri::command]
+fn remove_plugin(
+    state: State<'_, Mutex<AppState>>,
+    case_id: u32,
+    filename: String,
+) -> Result<(), String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    importer::remove_plugin(case_id, &filename, &data_dir)
+}
+
 /// Open a native "Save As" dialog for exporting a .aaocase file.
 /// `default_name` is the suggested filename (e.g. "My Case.aaocase").
 #[tauri::command]
@@ -1640,6 +1667,8 @@ pub fn run() {
             import_case,
             import_plugin,
             attach_plugin_code,
+            list_plugins,
+            remove_plugin,
             pick_export_file,
             export_case,
             export_sequence
