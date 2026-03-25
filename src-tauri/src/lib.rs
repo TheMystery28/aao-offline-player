@@ -1380,6 +1380,62 @@ fn remove_plugin(
     importer::remove_plugin(case_id, &filename, &data_dir)
 }
 
+/// Toggle a plugin's enabled/disabled state.
+#[tauri::command]
+fn toggle_plugin(
+    state: State<'_, Mutex<AppState>>,
+    case_id: u32,
+    filename: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    importer::toggle_plugin(case_id, &filename, enabled, &data_dir)
+}
+
+/// List global plugins.
+#[tauri::command]
+fn list_global_plugins(
+    state: State<'_, Mutex<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::list_global_plugins(&data_dir)
+}
+
+/// Attach raw plugin code as a global plugin.
+#[tauri::command]
+fn attach_global_plugin_code(
+    state: State<'_, Mutex<AppState>>,
+    code: String,
+    filename: String,
+) -> Result<(), String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::attach_global_plugin_code(&code, &filename, &data_dir)
+}
+
+/// Remove a global plugin.
+#[tauri::command]
+fn remove_global_plugin(
+    state: State<'_, Mutex<AppState>>,
+    filename: String,
+) -> Result<(), String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::remove_global_plugin(&filename, &data_dir)
+}
+
+/// Toggle a global plugin's enabled/disabled state.
+#[tauri::command]
+fn toggle_global_plugin(
+    state: State<'_, Mutex<AppState>>,
+    filename: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::toggle_global_plugin(&filename, enabled, &data_dir)
+}
+
 /// Export saves as a .aaosave file.
 #[tauri::command]
 fn export_save(
@@ -1806,6 +1862,11 @@ pub fn run() {
             attach_plugin_code,
             list_plugins,
             remove_plugin,
+            toggle_plugin,
+            list_global_plugins,
+            attach_global_plugin_code,
+            remove_global_plugin,
+            toggle_global_plugin,
             export_save,
             import_save,
             pick_export_save_file,

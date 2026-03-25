@@ -234,7 +234,10 @@ var EnginePlugins = (function() {
 	function initPlugin(descriptor) {
 		if (!descriptor || typeof descriptor.init !== 'function') return;
 		try {
-			descriptor.init(EngineConfig, EngineEvents, frozenApi);
+			var handle = descriptor.init(EngineConfig, EngineEvents, frozenApi);
+			if (handle && typeof handle.destroy === 'function') {
+				descriptor._handle = handle;
+			}
 		} catch (e) {
 			console.error('[EnginePlugins] Plugin "' + (descriptor.name || 'unknown') + '" crashed during init:', e);
 		}
@@ -253,8 +256,123 @@ var EnginePlugins = (function() {
 	}
 
 	// ============================================================
-	// SECTION: Case Plugin Loading
+	// SECTION: Plugin Settings Panel
 	// ============================================================
+
+	function buildSettingsPanel() {
+		var container = document.getElementById('player-parametres');
+		if (!container) return;
+
+		// Remove existing plugin settings panel if any
+		var existing = container.querySelector('details[data-plugin-section="__plugins__"]');
+		if (existing) existing.parentNode.removeChild(existing);
+
+		if (registry.length === 0) return;
+
+		var details = document.createElement('details');
+		details.setAttribute('data-plugin-section', '__plugins__');
+		var summary = document.createElement('summary');
+		summary.textContent = 'Plugins';
+		details.appendChild(summary);
+
+		var content = document.createElement('div');
+		content.className = 'settings-section-content';
+
+		for (var i = 0; i < registry.length; i++) {
+			(function(desc) {
+				var label = document.createElement('label');
+				label.className = 'regular_label';
+				var cb = document.createElement('input');
+				cb.type = 'checkbox';
+				var configKey = 'plugins.' + desc.name + '.enabled';
+				var enabled = EngineConfig.get(configKey);
+				cb.checked = (enabled === undefined || enabled === null) ? !desc._disabled : !!enabled;
+
+				cb.addEventListener('change', function() {
+					if (cb.checked) {
+						// Enable
+						EngineConfig.set(configKey, true);
+						if (desc._disabled && desc._handle && typeof desc._handle.destroy === 'function') {
+							// Re-init by calling init again
+							desc._disabled = false;
+							initPlugin(desc);
+						} else if (desc._disabled) {
+							desc._disabled = false;
+						}
+					} else {
+						// Disable
+						EngineConfig.set(configKey, false);
+						if (desc._handle && typeof desc._handle.destroy === 'function') {
+							desc._handle.destroy();
+							desc._disabled = true;
+						} else {
+							desc._disabled = true;
+						}
+					}
+				});
+
+				label.appendChild(cb);
+				var text = ' ' + (desc.name || 'unnamed');
+				if (desc.version) text += ' v' + desc.version;
+				if (!desc._handle || typeof desc._handle.destroy !== 'function') {
+					text += ' (reload to apply)';
+				}
+				label.appendChild(document.createTextNode(text));
+				content.appendChild(label);
+			})(registry[i]);
+		}
+
+		details.appendChild(content);
+
+		// Insert before Controls section
+		var allDetails = container.querySelectorAll('details');
+		var controlsSection = null;
+		for (var j = 0; j < allDetails.length; j++) {
+			var summaryEl = allDetails[j].querySelector('summary');
+			if (summaryEl && summaryEl.textContent.indexOf('Controls') !== -1) {
+				controlsSection = allDetails[j];
+				break;
+			}
+		}
+		if (controlsSection) {
+			container.insertBefore(details, controlsSection);
+		} else {
+			container.appendChild(details);
+		}
+	}
+
+	// ============================================================
+	// SECTION: Plugin Loading (global + case)
+	// ============================================================
+
+	function loadGlobalPlugins() {
+		var manifestUrl = 'plugins/manifest.json';
+		try {
+			var xhr = new XMLHttpRequest();
+			xhr.open('GET', manifestUrl, false);
+			xhr.send();
+			if (xhr.status !== 200) return;
+
+			var manifest = JSON.parse(xhr.responseText);
+			if (!manifest || !Array.isArray(manifest.scripts)) return;
+
+			var disabledList = Array.isArray(manifest.disabled) ? manifest.disabled : [];
+			for (var i = 0; i < manifest.scripts.length; i++) {
+				if (disabledList.indexOf(manifest.scripts[i]) !== -1) {
+					console.log('[EnginePlugins] Skipping disabled global plugin: ' + manifest.scripts[i]);
+					continue;
+				}
+				var scriptUrl = 'plugins/' + manifest.scripts[i];
+				var script = document.createElement('script');
+				script.src = scriptUrl;
+				script.async = false;
+				script.setAttribute('data-plugin-scope', 'global');
+				document.head.appendChild(script);
+			}
+		} catch (e) {
+			// No global plugins — that's fine
+		}
+	}
 
 	function loadCasePlugins() {
 		if (typeof trial_information === 'undefined' || !trial_information) return;
@@ -286,8 +404,13 @@ var EnginePlugins = (function() {
 				}
 			}
 
-			// Inject plugin script tags
+			// Inject plugin script tags (skip disabled ones)
+			var disabledList = Array.isArray(manifest.disabled) ? manifest.disabled : [];
 			for (var i = 0; i < manifest.scripts.length; i++) {
+				if (disabledList.indexOf(manifest.scripts[i]) !== -1) {
+					console.log('[EnginePlugins] Skipping disabled plugin: ' + manifest.scripts[i]);
+					continue;
+				}
 				var scriptUrl = caseBase + 'plugins/' + manifest.scripts[i];
 				var script = document.createElement('script');
 				script.src = scriptUrl;
@@ -308,8 +431,11 @@ var EnginePlugins = (function() {
 			// Listen for player:init to trigger plugin initialization
 			EngineEvents.on('player:init', function() {
 				isReady = true;
+				loadGlobalPlugins();
 				loadCasePlugins();
 				initAllPending();
+				// Build settings panel after a short delay to let scripts load
+				setTimeout(buildSettingsPanel, 100);
 			}, 0, 'engine');
 		},
 

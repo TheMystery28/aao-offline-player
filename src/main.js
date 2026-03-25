@@ -2285,6 +2285,7 @@ window.addEventListener("DOMContentLoaded", function () {
       invoke("list_plugins", { caseId: caseId })
         .then(function (manifest) {
           var scripts = (manifest && manifest.scripts) || [];
+          var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
           listContainer.innerHTML = "";
           if (scripts.length === 0) {
             var empty = document.createElement("div");
@@ -2294,11 +2295,28 @@ window.addEventListener("DOMContentLoaded", function () {
           } else {
             for (var i = 0; i < scripts.length; i++) {
               (function (filename) {
+                var isDisabled = disabledList.indexOf(filename) !== -1;
                 var item = document.createElement("div");
-                item.className = "plugin-list-item";
+                item.className = "plugin-list-item" + (isDisabled ? " disabled" : "");
+
+                var toggle = document.createElement("input");
+                toggle.type = "checkbox";
+                toggle.checked = !isDisabled;
+                toggle.title = isDisabled ? "Enable plugin" : "Disable plugin";
+                toggle.style.accentColor = "#4a90d9";
+                toggle.style.width = "1rem";
+                toggle.style.height = "1rem";
+                toggle.style.flexShrink = "0";
+                toggle.addEventListener("change", function () {
+                  invoke("toggle_plugin", { caseId: caseId, filename: filename, enabled: toggle.checked })
+                    .then(function () { refreshList(); })
+                    .catch(function (e) { statusMsg.textContent = "Error toggling plugin: " + e; });
+                });
+
                 var name = document.createElement("span");
                 name.className = "plugin-name";
                 name.textContent = filename;
+
                 var removeBtn = document.createElement("button");
                 removeBtn.className = "plugin-remove-btn";
                 removeBtn.textContent = "Remove";
@@ -2313,6 +2331,8 @@ window.addEventListener("DOMContentLoaded", function () {
                     }
                   );
                 });
+
+                item.appendChild(toggle);
                 item.appendChild(name);
                 item.appendChild(removeBtn);
                 listContainer.appendChild(item);
@@ -2364,13 +2384,94 @@ window.addEventListener("DOMContentLoaded", function () {
       if (e.target === overlay) close();
     });
 
+    // Global plugins section
+    var globalLabel = document.createElement("div");
+    globalLabel.style.color = "#999";
+    globalLabel.style.fontSize = "0.75rem";
+    globalLabel.style.textTransform = "uppercase";
+    globalLabel.style.letterSpacing = "0.04em";
+    globalLabel.style.marginBottom = "0.35rem";
+    globalLabel.textContent = "Global Plugins";
+
+    var globalListContainer = document.createElement("div");
+    globalListContainer.className = "plugin-list";
+
+    function refreshGlobalList() {
+      invoke("list_global_plugins")
+        .then(function (manifest) {
+          var scripts = (manifest && manifest.scripts) || [];
+          var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
+          globalListContainer.innerHTML = "";
+          if (scripts.length === 0) {
+            var empty = document.createElement("div");
+            empty.className = "plugin-list-empty";
+            empty.textContent = "No global plugins.";
+            globalListContainer.appendChild(empty);
+          } else {
+            for (var i = 0; i < scripts.length; i++) {
+              (function (filename) {
+                var isDisabled = disabledList.indexOf(filename) !== -1;
+                var item = document.createElement("div");
+                item.className = "plugin-list-item" + (isDisabled ? " disabled" : "");
+
+                var toggle = document.createElement("input");
+                toggle.type = "checkbox";
+                toggle.checked = !isDisabled;
+                toggle.style.accentColor = "#4a90d9";
+                toggle.style.width = "1rem";
+                toggle.style.height = "1rem";
+                toggle.style.flexShrink = "0";
+                toggle.addEventListener("change", function () {
+                  invoke("toggle_global_plugin", { filename: filename, enabled: toggle.checked })
+                    .then(function () { refreshGlobalList(); })
+                    .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+                });
+
+                var name = document.createElement("span");
+                name.className = "plugin-name";
+                name.textContent = filename;
+
+                var removeBtn = document.createElement("button");
+                removeBtn.className = "plugin-remove-btn";
+                removeBtn.textContent = "Remove";
+                removeBtn.addEventListener("click", function () {
+                  showConfirmModal("Remove global plugin \"" + filename + "\"?", "Remove", function () {
+                    invoke("remove_global_plugin", { filename: filename })
+                      .then(function () { refreshGlobalList(); })
+                      .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+                  });
+                });
+
+                item.appendChild(toggle);
+                item.appendChild(name);
+                item.appendChild(removeBtn);
+                globalListContainer.appendChild(item);
+              })(scripts[i]);
+            }
+          }
+        });
+    }
+
+    var caseLabel = document.createElement("div");
+    caseLabel.style.color = "#999";
+    caseLabel.style.fontSize = "0.75rem";
+    caseLabel.style.textTransform = "uppercase";
+    caseLabel.style.letterSpacing = "0.04em";
+    caseLabel.style.marginTop = "0.75rem";
+    caseLabel.style.marginBottom = "0.35rem";
+    caseLabel.textContent = "Case Plugins";
+
     modal.appendChild(titleEl);
+    modal.appendChild(globalLabel);
+    modal.appendChild(globalListContainer);
+    modal.appendChild(caseLabel);
     modal.appendChild(listContainer);
     modal.appendChild(actionsRow);
     modal.appendChild(closeBtn);
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
+    refreshGlobalList();
     refreshList();
   }
 
@@ -2405,6 +2506,29 @@ window.addEventListener("DOMContentLoaded", function () {
     codeField.appendChild(codeLabel);
     codeField.appendChild(codeInput);
 
+    // Auto-detect plugin name from pasted code
+    var userEditedFilename = false;
+    filenameInput.addEventListener("input", function () {
+      userEditedFilename = true;
+    });
+
+    function detectPluginName() {
+      var code = codeInput.value;
+      var nameMatch = code.match(/EnginePlugins\.register\s*\(\s*\{[^}]*name\s*:\s*['"]([^'"]+)['"]/);
+      if (nameMatch) {
+        var detected = nameMatch[1] + ".js";
+        filenameInput.placeholder = detected;
+        if (!userEditedFilename) {
+          filenameInput.value = detected;
+        }
+      }
+    }
+
+    codeInput.addEventListener("input", detectPluginName);
+    codeInput.addEventListener("paste", function () {
+      setTimeout(detectPluginName, 0);
+    });
+
     var buttons = document.createElement("div");
     buttons.className = "modal-row-buttons";
 
@@ -2422,6 +2546,9 @@ window.addEventListener("DOMContentLoaded", function () {
 
     attachBtn.addEventListener("click", function () {
       var filename = filenameInput.value.trim();
+      if (!filename && filenameInput.placeholder && filenameInput.placeholder !== "my_plugin.js") {
+        filename = filenameInput.placeholder;
+      }
       var code = codeInput.value;
 
       if (!filename) {

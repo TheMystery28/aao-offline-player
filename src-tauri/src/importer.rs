@@ -1410,6 +1410,148 @@ pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<
     Ok(())
 }
 
+/// Toggle a plugin's enabled/disabled state in the manifest.
+/// When `enabled` is false, the filename is added to the `disabled` array.
+/// When `enabled` is true, the filename is removed from `disabled`.
+pub fn toggle_plugin(case_id: u32, filename: &str, enabled: bool, engine_dir: &Path) -> Result<(), String> {
+    let plugins_dir = engine_dir.join("case").join(case_id.to_string()).join("plugins");
+    let manifest_path = plugins_dir.join("manifest.json");
+    if !manifest_path.exists() {
+        return Err(format!("No plugin manifest for case {}", case_id));
+    }
+
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read plugin manifest: {}", e))?;
+    let mut val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse plugin manifest: {}", e))?;
+
+    // Ensure disabled array exists
+    if val.get("disabled").is_none() {
+        val.as_object_mut().unwrap().insert("disabled".to_string(), serde_json::json!([]));
+    }
+
+    let disabled = val.get_mut("disabled").unwrap().as_array_mut().unwrap();
+
+    if enabled {
+        disabled.retain(|s| s.as_str() != Some(filename));
+    } else {
+        if !disabled.iter().any(|s| s.as_str() == Some(filename)) {
+            disabled.push(serde_json::Value::String(filename.to_string()));
+        }
+    }
+
+    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+        .map_err(|e| format!("Failed to write plugin manifest: {}", e))?;
+
+    Ok(())
+}
+
+/// List global plugins from {data_dir}/plugins/manifest.json.
+pub fn list_global_plugins(engine_dir: &Path) -> Result<serde_json::Value, String> {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() {
+        return Ok(serde_json::json!({ "scripts": [], "disabled": [] }));
+    }
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read global plugin manifest: {}", e))?;
+    serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse global plugin manifest: {}", e))
+}
+
+/// Attach raw plugin JS code as a global plugin.
+pub fn attach_global_plugin_code(code: &str, filename: &str, engine_dir: &Path) -> Result<(), String> {
+    let plugins_dir = engine_dir.join("plugins");
+    fs::create_dir_all(&plugins_dir)
+        .map_err(|e| format!("Failed to create global plugins dir: {}", e))?;
+
+    let dest = plugins_dir.join(filename);
+    fs::write(&dest, code)
+        .map_err(|e| format!("Failed to write global plugin file: {}", e))?;
+
+    let manifest_file = plugins_dir.join("manifest.json");
+    let mut scripts: Vec<String> = Vec::new();
+    let mut disabled: Vec<String> = Vec::new();
+    if manifest_file.exists() {
+        if let Ok(text) = fs::read_to_string(&manifest_file) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(arr) = val.get("scripts").and_then(|s| s.as_array()) {
+                    for s in arr {
+                        if let Some(name) = s.as_str() { scripts.push(name.to_string()); }
+                    }
+                }
+                if let Some(arr) = val.get("disabled").and_then(|s| s.as_array()) {
+                    for s in arr {
+                        if let Some(name) = s.as_str() { disabled.push(name.to_string()); }
+                    }
+                }
+            }
+        }
+    }
+    if !scripts.contains(&filename.to_string()) {
+        scripts.push(filename.to_string());
+    }
+    let manifest_json = serde_json::json!({ "scripts": scripts, "disabled": disabled });
+    fs::write(&manifest_file, serde_json::to_string_pretty(&manifest_json).unwrap())
+        .map_err(|e| format!("Failed to write global plugin manifest: {}", e))?;
+
+    Ok(())
+}
+
+/// Remove a global plugin.
+pub fn remove_global_plugin(filename: &str, engine_dir: &Path) -> Result<(), String> {
+    let plugins_dir = engine_dir.join("plugins");
+    let plugin_file = plugins_dir.join(filename);
+    if plugin_file.exists() {
+        fs::remove_file(&plugin_file)
+            .map_err(|e| format!("Failed to delete global plugin: {}", e))?;
+    }
+
+    let manifest_path = plugins_dir.join("manifest.json");
+    if manifest_path.exists() {
+        let text = fs::read_to_string(&manifest_path).unwrap_or_default();
+        if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(arr) = val.get_mut("scripts").and_then(|s| s.as_array_mut()) {
+                arr.retain(|s| s.as_str() != Some(filename));
+            }
+            if let Some(arr) = val.get_mut("disabled").and_then(|s| s.as_array_mut()) {
+                arr.retain(|s| s.as_str() != Some(filename));
+            }
+            let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap());
+        }
+    }
+    Ok(())
+}
+
+/// Toggle a global plugin's enabled/disabled state.
+pub fn toggle_global_plugin(filename: &str, enabled: bool, engine_dir: &Path) -> Result<(), String> {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() {
+        return Err("No global plugin manifest".to_string());
+    }
+
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read global plugin manifest: {}", e))?;
+    let mut val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse global plugin manifest: {}", e))?;
+
+    if val.get("disabled").is_none() {
+        val.as_object_mut().unwrap().insert("disabled".to_string(), serde_json::json!([]));
+    }
+    let disabled = val.get_mut("disabled").unwrap().as_array_mut().unwrap();
+
+    if enabled {
+        disabled.retain(|s| s.as_str() != Some(filename));
+    } else {
+        if !disabled.iter().any(|s| s.as_str() == Some(filename)) {
+            disabled.push(serde_json::Value::String(filename.to_string()));
+        }
+    }
+
+    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+        .map_err(|e| format!("Failed to write global plugin manifest: {}", e))?;
+    Ok(())
+}
+
 /// Result of importing a .aaosave file.
 #[derive(Debug, Serialize)]
 pub struct ImportSaveResult {
@@ -4464,5 +4606,82 @@ return 'data:image/gif;base64,'
         let case_dir2 = engine_dir2.join("case/70001");
         assert!(case_dir2.join("plugins/rt.js").exists());
         assert!(read_manifest(&case_dir2).unwrap().has_plugins);
+    }
+
+    #[test]
+    fn test_attach_global_plugin() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        attach_global_plugin_code("// global", "global.js", engine_dir).unwrap();
+        assert!(engine_dir.join("plugins/global.js").exists());
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
+        ).unwrap();
+        assert!(manifest["scripts"].as_array().unwrap().iter().any(|s| s.as_str() == Some("global.js")));
+    }
+
+    #[test]
+    fn test_remove_global_plugin() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        attach_global_plugin_code("// global", "global.js", engine_dir).unwrap();
+        remove_global_plugin("global.js", engine_dir).unwrap();
+        assert!(!engine_dir.join("plugins/global.js").exists());
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
+        ).unwrap();
+        assert!(manifest["scripts"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_toggle_global_plugin() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        attach_global_plugin_code("// global", "g.js", engine_dir).unwrap();
+        toggle_global_plugin("g.js", false, engine_dir).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
+        ).unwrap();
+        assert!(manifest["disabled"].as_array().unwrap().iter().any(|s| s.as_str() == Some("g.js")));
+
+        toggle_global_plugin("g.js", true, engine_dir).unwrap();
+        let manifest2: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
+        ).unwrap();
+        assert!(manifest2["disabled"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_toggle_plugin_disables() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 80001);
+        attach_plugin_code("// test", "test.js", &[80001], engine_dir).unwrap();
+
+        toggle_plugin(80001, "test.js", false, engine_dir).unwrap();
+
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(engine_dir.join("case/80001/plugins/manifest.json")).unwrap()
+        ).unwrap();
+        let disabled = manifest["disabled"].as_array().unwrap();
+        assert!(disabled.iter().any(|s| s.as_str() == Some("test.js")));
+    }
+
+    #[test]
+    fn test_toggle_plugin_enables() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 80002);
+        attach_plugin_code("// test", "test.js", &[80002], engine_dir).unwrap();
+
+        // Disable then re-enable
+        toggle_plugin(80002, "test.js", false, engine_dir).unwrap();
+        toggle_plugin(80002, "test.js", true, engine_dir).unwrap();
+
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(engine_dir.join("case/80002/plugins/manifest.json")).unwrap()
+        ).unwrap();
+        let disabled = manifest.get("disabled").and_then(|d| d.as_array());
+        assert!(disabled.is_none() || disabled.unwrap().is_empty());
     }
 }

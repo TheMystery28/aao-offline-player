@@ -36,5 +36,13 @@ EnginePlugins.register({
 			}
 		}, 0, 'better_layout');
 		updateStyles();
+
+		return {
+			destroy: function() {
+				if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+				events.clearNamespace('better_layout');
+				api.settings.removeSection('Custom Layout');
+			}
+		};
 	}
 });
