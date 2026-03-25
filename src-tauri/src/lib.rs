@@ -3,6 +3,7 @@ mod config;
 mod downloader;
 mod importer;
 mod server;
+pub mod utils;
 
 use std::fs;
 use std::path::PathBuf;
@@ -742,8 +743,8 @@ async fn update_case(
         },
         asset_map,
         failed_assets: result.failed,
-        has_plugins: false,
-        has_case_config: false,
+        has_plugins: old_manifest.has_plugins || case_dir.join("plugins").is_dir(),
+        has_case_config: old_manifest.has_case_config || case_dir.join("case_config.json").is_file(),
     };
     downloader::manifest::write_manifest(&manifest, &case_dir)?;
 
@@ -854,6 +855,82 @@ fn load_saves_backup(
     let value: serde_json::Value = serde_json::from_str(&json)
         .map_err(|e| format!("Failed to parse saves backup: {}", e))?;
     Ok(Some(value))
+}
+
+/// Read saves from the backup file, filtered by case IDs.
+/// Returns the saves for only the requested cases, or None if no backup or no matching saves.
+#[tauri::command]
+fn read_saves_for_export(
+    state: State<'_, Mutex<AppState>>,
+    case_ids: Vec<u32>,
+) -> Result<Option<serde_json::Value>, String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let path = data_dir.join("saves_backup.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let json = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read saves backup: {}", e))?;
+    let all: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse saves backup: {}", e))?;
+
+    let mut filtered = serde_json::Map::new();
+    for id in &case_ids {
+        let key = id.to_string();
+        if let Some(val) = all.get(&key) {
+            filtered.insert(key, val.clone());
+        }
+    }
+    if filtered.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::Value::Object(filtered)))
+}
+
+/// Find the latest save across the given case IDs from the disk backup.
+/// Returns { partId, saveDate, saveString } or null.
+#[tauri::command]
+fn find_latest_save(
+    state: State<'_, Mutex<AppState>>,
+    case_ids: Vec<u32>,
+) -> Result<Option<serde_json::Value>, String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let path = data_dir.join("saves_backup.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let json = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read saves backup: {}", e))?;
+    let all: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse saves backup: {}", e))?;
+
+    let mut latest_ts: u64 = 0;
+    let mut latest_part: Option<u32> = None;
+    let mut latest_save: Option<String> = None;
+
+    for &id in &case_ids {
+        let key = id.to_string();
+        if let Some(saves) = all.get(&key).and_then(|v| v.as_object()) {
+            for (ts_str, save_val) in saves {
+                if let Ok(ts) = ts_str.parse::<u64>() {
+                    if ts > latest_ts {
+                        latest_ts = ts;
+                        latest_part = Some(id);
+                        latest_save = save_val.as_str().map(|s| s.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    match (latest_part, latest_save) {
+        (Some(part_id), Some(save_string)) => Ok(Some(serde_json::json!({
+            "partId": part_id,
+            "saveDate": latest_ts,
+            "saveString": save_string
+        }))),
+        _ => Ok(None),
+    }
 }
 
 /// List all collections.
@@ -1708,6 +1785,8 @@ pub fn run() {
             delete_case,
             backup_saves,
             load_saves_backup,
+            read_saves_for_export,
+            find_latest_save,
             list_collections,
             create_collection,
             update_collection,

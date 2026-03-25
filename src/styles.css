@@ -218,6 +218,48 @@
   min-height: 1.5em;
 }
 
+/* ── Library Controls ── */
+
+.library-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+#library-search {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: #16213e;
+  border: 1px solid #2a2a4a;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 0.85rem;
+}
+
+#library-search::placeholder {
+  color: #555;
+}
+
+#library-search:focus {
+  outline: none;
+  border-color: #4a4a8a;
+}
+
+#library-sort {
+  background: #16213e;
+  border: 1px solid #2a2a4a;
+  border-radius: 6px;
+  color: #e0e0e0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+#library-sort:focus {
+  outline: none;
+  border-color: #4a4a8a;
+}
+
 /* ── Case Cards ── */
 
 .case-card {

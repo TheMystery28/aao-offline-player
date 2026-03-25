@@ -31,7 +31,24 @@ The aaoffline project was a helpful reference for understanding how to approach 
 
 Cases can be exported as `.aaocase` files — a minimalist ZIP-based format — and shared with others. No internet connection needed to import and play. The format supports single cases, multi-part sequences, and collections (groups of cases/sequences). Save data can optionally be included. See [FORMAT.md](FORMAT.md) for the full spec.
 
+Save data can also be exported separately as `.aaosave` files — lightweight ZIPs containing just save progress and optionally plugins. Saves can be imported from files or by pasting AAO share links directly (the `save_data=` URL parameter).
+
 The app also imports from [aaoffline](https://github.com/falko17/aaoffline) HTML folders, converting them into its native managed format.
+
+### Plugins
+
+The engine supports a plugin system for extending the player. Plugins are JS files that register via `EnginePlugins.register()` and receive a frozen API with access to DOM, player state, sound, court record, input, settings, and display modules.
+
+Plugins can be:
+- **Bundled in `.aaocase`** exports (case authors can include plugins with their cases)
+- **Distributed as `.aaoplug`** files (standalone ZIP with plugin code, assets, and optional config)
+- **Attached as raw code** via the launcher's plugin manager
+
+The launcher provides per-case plugin management: install from `.aaoplug`, attach code, view installed plugins, and remove plugins. See `engine/plugins_examples/` for sample plugins.
+
+### Library management
+
+The library supports collections — user-created groups of cases and/or sequences with custom ordering. Cases can be searched by title, author, or ID, and sorted by name, date, or size.
 
 ### The player
 
@@ -42,13 +59,16 @@ The in-game player is a modified version of the AAO engine with a configurable s
 Features added to the engine:
 - **Dark mode** (grey palette, on by default)
 - **Responsive layout** with automatic wide/tabbed/stacked modes based on window size
-- **Panel arrangement picker** to reorder the screen, evidence, and settings panels
+- **Panel arrangement picker** (12 layouts) to reorder the screen, evidence, and settings panels
 - **Width sliders** for page, screen, evidence, and settings panels with live ghost preview
 - **Fullscreen toggle** (F11 / gamepad View button)
 - **Hide header** option
 - **Quick save/load** (Ctrl+S / Ctrl+L / gamepad LB / LT)
 - **Gamepad support** with W3C Standard mapping
 - **Save management** with sorted list across sequence parts and load-latest
+- **Plugin system** with full API for extending the player
+- **Config-driven architecture** with persistent user settings in localStorage
+- **Event bus** for decoupled module communication
 
 ### Controls
 
