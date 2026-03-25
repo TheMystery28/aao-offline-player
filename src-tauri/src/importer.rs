@@ -1410,6 +1410,242 @@ pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<
     Ok(())
 }
 
+/// Result of importing a .aaosave file.
+#[derive(Debug, Serialize)]
+pub struct ImportSaveResult {
+    pub saves: serde_json::Value,
+    pub metadata: serde_json::Value,
+    pub plugins_installed: Vec<u32>,
+}
+
+/// Export saves as a .aaosave ZIP file.
+///
+/// ZIP format:
+/// ```text
+/// saves.json           Save data (required)
+/// metadata.json        Export metadata (required)
+/// plugins/{case_id}/   Per-case plugins (optional)
+/// case_config/{id}.json Per-case config (optional)
+/// ```
+pub fn export_aaosave(
+    case_ids: &[u32],
+    saves: &serde_json::Value,
+    include_plugins: bool,
+    dest_path: &Path,
+    engine_dir: &Path,
+) -> Result<u64, String> {
+    let file = fs::File::create(dest_path)
+        .map_err(|e| format!("Failed to create .aaosave file: {}", e))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    // Write saves.json
+    let saves_bytes = serde_json::to_string_pretty(saves)
+        .map_err(|e| format!("Failed to serialize saves: {}", e))?;
+    zip.start_file("saves.json", options)
+        .map_err(|e| format!("Failed to add saves.json to ZIP: {}", e))?;
+    io::Write::write_all(&mut zip, saves_bytes.as_bytes())
+        .map_err(|e| format!("Failed to write saves.json to ZIP: {}", e))?;
+
+    // Build metadata.json
+    let mut cases_meta = Vec::new();
+    let mut has_plugins = false;
+    for &case_id in case_ids {
+        let case_dir = engine_dir.join("case").join(case_id.to_string());
+        let title = if let Ok(manifest) = read_manifest(&case_dir) {
+            if include_plugins && manifest.has_plugins {
+                has_plugins = true;
+            }
+            manifest.title
+        } else {
+            format!("Case {}", case_id)
+        };
+
+        let save_count = saves
+            .get(case_id.to_string())
+            .and_then(|v| v.as_object())
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        cases_meta.push(serde_json::json!({
+            "id": case_id,
+            "title": title,
+            "save_count": save_count
+        }));
+    }
+
+    let metadata = serde_json::json!({
+        "version": 1,
+        "export_date": format_timestamp(std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()),
+        "cases": cases_meta,
+        "has_plugins": has_plugins
+    });
+
+    let metadata_bytes = serde_json::to_string_pretty(&metadata)
+        .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+    zip.start_file("metadata.json", options)
+        .map_err(|e| format!("Failed to add metadata.json to ZIP: {}", e))?;
+    io::Write::write_all(&mut zip, metadata_bytes.as_bytes())
+        .map_err(|e| format!("Failed to write metadata.json to ZIP: {}", e))?;
+
+    // Add plugins and case_config if requested
+    if include_plugins {
+        for &case_id in case_ids {
+            let case_dir = engine_dir.join("case").join(case_id.to_string());
+            let plugins_dir = case_dir.join("plugins");
+            if plugins_dir.is_dir() {
+                let prefix = format!("plugins/{}", case_id);
+                add_dir_to_zip_recursive(&mut zip, &plugins_dir, &prefix, options)?;
+            }
+
+            let config_path = case_dir.join("case_config.json");
+            if config_path.is_file() {
+                let data = fs::read(&config_path)
+                    .map_err(|e| format!("Failed to read case_config.json: {}", e))?;
+                let zip_name = format!("case_config/{}.json", case_id);
+                zip.start_file(&zip_name, options)
+                    .map_err(|e| format!("Failed to add {} to ZIP: {}", zip_name, e))?;
+                io::Write::write_all(&mut zip, &data)
+                    .map_err(|e| format!("Failed to write {} to ZIP: {}", zip_name, e))?;
+            }
+        }
+    }
+
+    zip.finish()
+        .map_err(|e| format!("Failed to finalize .aaosave ZIP: {}", e))?;
+
+    let meta = fs::metadata(dest_path)
+        .map_err(|e| format!("Failed to get .aaosave file size: {}", e))?;
+    Ok(meta.len())
+}
+
+/// Import saves from a .aaosave ZIP file.
+pub fn import_aaosave(
+    zip_path: &Path,
+    engine_dir: &Path,
+) -> Result<ImportSaveResult, String> {
+    let file = fs::File::open(zip_path)
+        .map_err(|e| format!("Failed to open .aaosave file: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Invalid .aaosave file: {}", e))?;
+
+    // Read saves.json (required)
+    let saves_text = read_zip_text(&mut archive, "saves.json")
+        .map_err(|_| "Invalid .aaosave: missing saves.json".to_string())?;
+    let saves: serde_json::Value = serde_json::from_str(&saves_text)
+        .map_err(|e| format!("Failed to parse saves.json: {}", e))?;
+
+    // Read metadata.json (required)
+    let metadata_text = read_zip_text(&mut archive, "metadata.json")
+        .map_err(|_| "Invalid .aaosave: missing metadata.json".to_string())?;
+    let metadata: serde_json::Value = serde_json::from_str(&metadata_text)
+        .map_err(|e| format!("Failed to parse metadata.json: {}", e))?;
+
+    // Collect plugins/ and case_config/ entries
+    let mut plugin_entries: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut config_entries: Vec<(String, Vec<u8>)> = Vec::new();
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)
+            .map_err(|e| format!("Failed to read ZIP entry {}: {}", i, e))?;
+        let name = entry.name().to_string();
+        if entry.is_dir() { continue; }
+
+        if name.starts_with("plugins/") {
+            let mut buf = Vec::new();
+            io::Read::read_to_end(&mut entry, &mut buf)
+                .map_err(|e| format!("Failed to read {}: {}", name, e))?;
+            plugin_entries.push((name, buf));
+        } else if name.starts_with("case_config/") {
+            let mut buf = Vec::new();
+            io::Read::read_to_end(&mut entry, &mut buf)
+                .map_err(|e| format!("Failed to read {}: {}", name, e))?;
+            config_entries.push((name, buf));
+        }
+    }
+
+    // Extract plugins if present
+    let mut plugins_installed = Vec::new();
+    for (zip_name, data) in &plugin_entries {
+        // zip_name = "plugins/{case_id}/manifest.json" etc.
+        let parts: Vec<&str> = zip_name.splitn(3, '/').collect();
+        if parts.len() < 3 { continue; }
+        let case_id_str = parts[1];
+        let case_id: u32 = match case_id_str.parse() {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
+
+        let case_dir = engine_dir.join("case").join(case_id_str);
+        if !case_dir.exists() { continue; }
+
+        let dest = case_dir.join("plugins").join(parts[2]);
+        if let Some(parent) = dest.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(&dest, data);
+
+        if !plugins_installed.contains(&case_id) {
+            plugins_installed.push(case_id);
+        }
+    }
+
+    // Update case manifests for plugins
+    for &case_id in &plugins_installed {
+        let case_dir = engine_dir.join("case").join(case_id.to_string());
+        if let Ok(mut manifest) = read_manifest(&case_dir) {
+            manifest.has_plugins = true;
+            let _ = write_manifest(&manifest, &case_dir);
+        }
+    }
+
+    // Extract case_config entries
+    for (zip_name, data) in &config_entries {
+        // zip_name = "case_config/{case_id}.json"
+        let filename = zip_name.trim_start_matches("case_config/");
+        let case_id_str = filename.trim_end_matches(".json");
+        let case_dir = engine_dir.join("case").join(case_id_str);
+        if case_dir.exists() {
+            let _ = fs::write(case_dir.join("case_config.json"), data);
+        }
+    }
+
+    Ok(ImportSaveResult {
+        saves,
+        metadata,
+        plugins_installed,
+    })
+}
+
+/// Helper: recursively add a directory to a ZIP under a prefix.
+fn add_dir_to_zip_recursive(
+    zip: &mut zip::ZipWriter<fs::File>,
+    dir: &Path,
+    prefix: &str,
+    options: zip::write::SimpleFileOptions,
+) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read {}: {}", prefix, e))? {
+        let entry = entry.map_err(|e| format!("Dir entry error: {}", e))?;
+        let path = entry.path();
+        let name = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
+        if path.is_dir() {
+            add_dir_to_zip_recursive(zip, &path, &name, options)?;
+        } else if path.is_file() {
+            let data = fs::read(&path)
+                .map_err(|e| format!("Failed to read {}: {}", name, e))?;
+            zip.start_file(&name, options)
+                .map_err(|e| format!("Failed to add {} to ZIP: {}", name, e))?;
+            io::Write::write_all(zip, &data)
+                .map_err(|e| format!("Failed to write {} to ZIP: {}", name, e))?;
+        }
+    }
+    Ok(())
+}
+
 /// Export multiple cases (a sequence) as a single .aaocase ZIP file.
 ///
 /// ZIP format:
@@ -4063,5 +4299,196 @@ return 'data:image/gif;base64,'
 
         // File gone
         assert!(!case_dir.join("plugins/only.js").exists());
+    }
+
+    fn create_test_case_for_save(engine_dir: &Path, case_id: u32) -> std::path::PathBuf {
+        let case_dir = engine_dir.join("case").join(case_id.to_string());
+        std::fs::create_dir_all(&case_dir).unwrap();
+        let manifest = CaseManifest {
+            case_id,
+            title: format!("Test Case {}", case_id),
+            author: "Tester".to_string(),
+            language: "en".to_string(),
+            download_date: "2026-01-01".to_string(),
+            format: "test".to_string(),
+            sequence: None,
+            assets: AssetSummary {
+                case_specific: 0,
+                shared_defaults: 0,
+                total_downloaded: 0,
+                total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+        case_dir
+    }
+
+    #[test]
+    fn test_export_aaosave_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 50001);
+
+        let saves = serde_json::json!({
+            "50001": { "1700000000000": "{\"trial_id\":50001}" }
+        });
+        let dest = engine_dir.join("test.aaosave");
+        let size = export_aaosave(&[50001], &saves, false, &dest, engine_dir).unwrap();
+        assert!(size > 0);
+
+        // Verify ZIP contents
+        let file = std::fs::File::open(&dest).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        assert!(archive.by_name("saves.json").is_ok());
+        assert!(archive.by_name("metadata.json").is_ok());
+
+        let meta_text = read_zip_text(&mut archive, "metadata.json").unwrap();
+        let meta: serde_json::Value = serde_json::from_str(&meta_text).unwrap();
+        assert_eq!(meta["version"], 1);
+        let export_date = meta["export_date"].as_str().unwrap();
+        assert!(export_date.contains("T"), "export_date should be ISO-8601: {}", export_date);
+        assert!(export_date.ends_with("Z"), "export_date should end with Z: {}", export_date);
+        assert_eq!(meta["has_plugins"], false);
+        let cases = meta["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 1);
+        assert_eq!(cases[0]["id"], 50001);
+        assert_eq!(cases[0]["save_count"], 1);
+    }
+
+    #[test]
+    fn test_export_aaosave_with_plugins() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 50002);
+        attach_plugin_code("// test", "test.js", &[50002], engine_dir).unwrap();
+
+        let saves = serde_json::json!({
+            "50002": { "1700000000000": "{\"trial_id\":50002}" }
+        });
+        let dest = engine_dir.join("test_plug.aaosave");
+        export_aaosave(&[50002], &saves, true, &dest, engine_dir).unwrap();
+
+        let file = std::fs::File::open(&dest).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        assert!(archive.by_name("plugins/50002/manifest.json").is_ok());
+        assert!(archive.by_name("plugins/50002/test.js").is_ok());
+
+        let meta_text = read_zip_text(&mut archive, "metadata.json").unwrap();
+        let meta: serde_json::Value = serde_json::from_str(&meta_text).unwrap();
+        assert_eq!(meta["has_plugins"], true);
+    }
+
+    #[test]
+    fn test_import_aaosave_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        // Create a .aaosave manually
+        let dest = engine_dir.join("import_test.aaosave");
+        let file = std::fs::File::create(&dest).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+
+        let saves = serde_json::json!({ "60001": { "999": "{\"trial_id\":60001}" } });
+        zip.start_file("saves.json", options).unwrap();
+        io::Write::write_all(&mut zip, serde_json::to_string(&saves).unwrap().as_bytes()).unwrap();
+
+        let meta = serde_json::json!({ "version": 1, "cases": [], "has_plugins": false });
+        zip.start_file("metadata.json", options).unwrap();
+        io::Write::write_all(&mut zip, serde_json::to_string(&meta).unwrap().as_bytes()).unwrap();
+        zip.finish().unwrap();
+
+        let result = import_aaosave(&dest, engine_dir).unwrap();
+        assert_eq!(result.saves["60001"]["999"], "{\"trial_id\":60001}");
+        assert!(result.plugins_installed.is_empty());
+    }
+
+    #[test]
+    fn test_import_aaosave_with_plugins() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let case_dir = create_test_case_for_save(engine_dir, 60002);
+
+        // Create .aaosave with plugins
+        let dest = engine_dir.join("plug_import.aaosave");
+        let file = std::fs::File::create(&dest).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+
+        let saves = serde_json::json!({ "60002": { "111": "{}" } });
+        zip.start_file("saves.json", options).unwrap();
+        io::Write::write_all(&mut zip, serde_json::to_string(&saves).unwrap().as_bytes()).unwrap();
+
+        let meta = serde_json::json!({ "version": 1, "cases": [], "has_plugins": true });
+        zip.start_file("metadata.json", options).unwrap();
+        io::Write::write_all(&mut zip, serde_json::to_string(&meta).unwrap().as_bytes()).unwrap();
+
+        zip.start_file("plugins/60002/manifest.json", options).unwrap();
+        io::Write::write_all(&mut zip, b"{\"scripts\":[\"plugin.js\"]}").unwrap();
+
+        zip.start_file("plugins/60002/plugin.js", options).unwrap();
+        io::Write::write_all(&mut zip, b"console.log('hi');").unwrap();
+        zip.finish().unwrap();
+
+        let result = import_aaosave(&dest, engine_dir).unwrap();
+        assert_eq!(result.plugins_installed, vec![60002]);
+        assert!(case_dir.join("plugins/manifest.json").exists());
+        assert!(case_dir.join("plugins/plugin.js").exists());
+        assert!(read_manifest(&case_dir).unwrap().has_plugins);
+    }
+
+    #[test]
+    fn test_import_aaosave_missing_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("bad.aaosave");
+        let file = std::fs::File::create(&dest).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("metadata.json", options).unwrap();
+        io::Write::write_all(&mut zip, b"{}").unwrap();
+        zip.finish().unwrap();
+
+        let result = import_aaosave(&dest, dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("saves.json"));
+    }
+
+    #[test]
+    fn test_export_import_aaosave_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        create_test_case_for_save(engine_dir, 70001);
+        attach_plugin_code("// roundtrip", "rt.js", &[70001], engine_dir).unwrap();
+
+        let saves = serde_json::json!({
+            "70001": {
+                "1000": "{\"trial_id\":70001,\"frame\":5}",
+                "2000": "{\"trial_id\":70001,\"frame\":10}"
+            }
+        });
+
+        let dest = engine_dir.join("roundtrip.aaosave");
+        export_aaosave(&[70001], &saves, true, &dest, engine_dir).unwrap();
+
+        // Import into a fresh engine dir with the same case
+        let dir2 = tempfile::tempdir().unwrap();
+        let engine_dir2 = dir2.path();
+        create_test_case_for_save(engine_dir2, 70001);
+
+        let result = import_aaosave(&dest, engine_dir2).unwrap();
+
+        // Saves preserved
+        assert_eq!(result.saves["70001"]["1000"], "{\"trial_id\":70001,\"frame\":5}");
+        assert_eq!(result.saves["70001"]["2000"], "{\"trial_id\":70001,\"frame\":10}");
+
+        // Plugins installed
+        assert_eq!(result.plugins_installed, vec![70001]);
+        let case_dir2 = engine_dir2.join("case/70001");
+        assert!(case_dir2.join("plugins/rt.js").exists());
+        assert!(read_manifest(&case_dir2).unwrap().has_plugins);
     }
 }

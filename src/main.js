@@ -641,6 +641,18 @@ window.addEventListener("DOMContentLoaded", function () {
       footer.appendChild(exportSeqBtn);
     }
 
+    // Export Save button for entire sequence
+    if (downloadedCases.length > 0) {
+      var exportSaveBtn = document.createElement("button");
+      exportSaveBtn.className = "save-btn";
+      exportSaveBtn.textContent = "Export Save";
+      exportSaveBtn.title = "Export saves for all parts";
+      exportSaveBtn.addEventListener("click", (function (ids, title) {
+        return function () { exportSave(ids, title); };
+      })(downloadedIds, sequenceTitle));
+      footer.appendChild(exportSaveBtn);
+    }
+
     // Delete all button
     var delAllBtn = document.createElement("button");
     delAllBtn.className = "delete-btn";
@@ -731,6 +743,15 @@ window.addEventListener("DOMContentLoaded", function () {
       })(manifest));
       actions.appendChild(exportBtn);
 
+      var saveBtn = document.createElement("button");
+      saveBtn.className = "save-btn";
+      saveBtn.textContent = "Save";
+      saveBtn.title = "Export saves";
+      saveBtn.addEventListener("click", (function (c) {
+        return function () { exportSave(c.case_id, c.title); };
+      })(manifest));
+      actions.appendChild(saveBtn);
+
       var pluginBtn = document.createElement("button");
       pluginBtn.className = "plugin-btn";
       pluginBtn.textContent = "Plugins";
@@ -790,6 +811,7 @@ window.addEventListener("DOMContentLoaded", function () {
         (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
         '<button class="link-btn" title="Copy AAO link">Link</button>' +
         '<button class="export-btn">Export</button>' +
+        '<button class="save-btn" title="Export saves">Save</button>' +
         '<button class="plugin-btn" title="Manage plugins">Plugins</button>' +
         '<button class="delete-btn">Delete</button>' +
       "</div>";
@@ -835,6 +857,10 @@ window.addEventListener("DOMContentLoaded", function () {
 
     card.querySelector(".export-btn").addEventListener("click", function () {
       exportCase(c.case_id, c.title);
+    });
+
+    card.querySelector(".save-btn").addEventListener("click", function () {
+      exportSave(c.case_id, c.title);
     });
 
     card.querySelector(".plugin-btn").addEventListener("click", function () {
@@ -1174,6 +1200,7 @@ window.addEventListener("DOMContentLoaded", function () {
         (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
         '<button class="link-btn" title="Copy AAO link">Link</button>' +
         '<button class="export-btn">Export</button>' +
+        '<button class="save-btn" title="Export saves">Save</button>' +
         '<button class="plugin-btn" title="Manage plugins">Plugins</button>' +
         '<button class="delete-btn">Delete</button>' +
       "</div>";
@@ -1214,6 +1241,9 @@ window.addEventListener("DOMContentLoaded", function () {
     });
     card.querySelector(".export-btn").addEventListener("click", function () {
       exportCase(c.case_id, c.title);
+    });
+    card.querySelector(".save-btn").addEventListener("click", function () {
+      exportSave(c.case_id, c.title);
     });
     card.querySelector(".plugin-btn").addEventListener("click", function () {
       showPluginManagerModal(c.case_id, c.title);
@@ -2354,6 +2384,216 @@ window.addEventListener("DOMContentLoaded", function () {
     filenameInput.focus();
   }
 
+  // --- Saves ---
+
+  function base64DecodeUtf8(str) {
+    var raw = atob(str);
+    var bytes = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) {
+      bytes[i] = raw.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  }
+
+  function parsePastedSave(input) {
+    var trimmed = input.trim();
+    if (!trimmed) return null;
+
+    var parsed = null;
+
+    // 1. Try URL with save_data= parameter
+    var saveDataMatch = trimmed.match(/[?&]save_data=([^&]+)/);
+    if (saveDataMatch) {
+      try {
+        var decoded = decodeURIComponent(saveDataMatch[1]);
+        var json = base64DecodeUtf8(decoded);
+        parsed = JSON.parse(json);
+      } catch (e) { /* not a valid URL save */ }
+    }
+
+    // 2. Try raw base64
+    if (!parsed) {
+      try {
+        var json2 = base64DecodeUtf8(trimmed);
+        parsed = JSON.parse(json2);
+      } catch (e) { /* not base64 */ }
+    }
+
+    // 3. Try raw JSON
+    if (!parsed) {
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch (e) { /* not JSON */ }
+    }
+
+    // Validate: must have numeric trial_id
+    if (!parsed || typeof parsed !== "object" || typeof parsed.trial_id !== "number") {
+      return null;
+    }
+
+    return {
+      trialId: parsed.trial_id,
+      saveString: JSON.stringify(parsed)
+    };
+  }
+
+  function showPasteSaveModal() {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog modal-dialog-wide";
+
+    var titleEl = document.createElement("div");
+    titleEl.className = "modal-message";
+    titleEl.innerHTML = "<strong>Import Save from Link or Code</strong>";
+
+    var field = document.createElement("div");
+    field.className = "modal-field";
+    var label = document.createElement("label");
+    label.textContent = "Paste a save link, base64 save code, or raw JSON";
+    var textarea = document.createElement("textarea");
+    textarea.className = "attach-code-textarea";
+    textarea.rows = 4;
+    textarea.placeholder = "https://aaonline.fr/player.php?trial_id=...&save_data=...\nor base64 code\nor raw JSON";
+    field.appendChild(label);
+    field.appendChild(textarea);
+
+    var buttons = document.createElement("div");
+    buttons.className = "modal-row-buttons";
+
+    var importBtn = document.createElement("button");
+    importBtn.className = "modal-btn modal-btn-primary";
+    importBtn.textContent = "Import";
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+
+    function close() {
+      document.body.removeChild(overlay);
+    }
+
+    importBtn.addEventListener("click", function () {
+      var result = parsePastedSave(textarea.value);
+      if (!result) {
+        textarea.style.borderColor = "#a33";
+        statusMsg.textContent = "Could not parse save data. Paste a save link, base64 code, or raw JSON.";
+        return;
+      }
+
+      close();
+      statusMsg.textContent = "Importing save for case " + result.trialId + "...";
+
+      var savesObj = {};
+      savesObj[String(result.trialId)] = {};
+      savesObj[String(result.trialId)][String(Date.now())] = result.saveString;
+
+      writeGameSaves(savesObj).then(function (writeResult) {
+        if (writeResult && writeResult.success) {
+          statusMsg.textContent = "Save imported for case " + result.trialId + " (" + writeResult.merged + " save merged).";
+        } else {
+          statusMsg.textContent = "Save imported for case " + result.trialId + ".";
+        }
+        loadLibrary();
+      }).catch(function (e) {
+        statusMsg.textContent = "Error importing save: " + e;
+      });
+    });
+
+    cancelBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    buttons.appendChild(importBtn);
+    buttons.appendChild(cancelBtn);
+
+    modal.appendChild(titleEl);
+    modal.appendChild(field);
+    modal.appendChild(buttons);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    textarea.focus();
+  }
+
+  function exportSave(caseIds, title) {
+    if (!Array.isArray(caseIds)) {
+      caseIds = [caseIds];
+    }
+    statusMsg.textContent = "Reading saves...";
+    readGameSaves(caseIds).then(function (saves) {
+      if (!saves) {
+        statusMsg.textContent = "No saves found for " + (caseIds.length > 1 ? "these cases" : "this case") + ".";
+        return;
+      }
+
+      var includePlugins = confirm("Include plugins in save export?");
+      var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+      var defaultName = safeName + ".aaosave";
+      statusMsg.textContent = "Choosing export location...";
+
+      invoke("pick_export_save_file", { defaultName: defaultName })
+        .then(function (destPath) {
+          if (!destPath) {
+            statusMsg.textContent = "";
+            return;
+          }
+          statusMsg.textContent = "Exporting saves...";
+          invoke("export_save", {
+            caseIds: caseIds,
+            saves: saves,
+            includePlugins: includePlugins,
+            destPath: destPath
+          })
+          .then(function (size) {
+            statusMsg.textContent = 'Exported saves (' + formatBytes(size) + ')';
+          })
+          .catch(function (e) {
+            statusMsg.textContent = "Export error: " + e;
+          });
+        })
+        .catch(function (e) {
+          statusMsg.textContent = "Could not open save dialog: " + e;
+        });
+    });
+  }
+
+  function doImportSave(path) {
+    importResult.textContent = "";
+    importResult.className = "";
+    statusMsg.textContent = "Importing saves...";
+
+    invoke("import_save", { sourcePath: path })
+      .then(function (result) {
+        var savesPromise = writeGameSaves(result.saves).then(function (writeResult) {
+          var mergedCount = (writeResult && writeResult.merged) || 0;
+
+          var cases = (result.metadata && result.metadata.cases) || [];
+          var totalSaves = 0;
+          for (var i = 0; i < cases.length; i++) {
+            totalSaves += (cases[i].save_count || 0);
+          }
+
+          var msg = "Imported " + totalSaves + " save(s) for " + cases.length + " case(s)";
+          if (mergedCount > 0) msg += " (" + mergedCount + " new)";
+          if (result.plugins_installed && result.plugins_installed.length > 0) {
+            msg += ", plugins installed for " + result.plugins_installed.length + " case(s)";
+          }
+          importResult.innerHTML = msg;
+          importResult.className = "result-success";
+          statusMsg.textContent = "";
+          loadLibrary();
+        });
+      })
+      .catch(function (e) {
+        importResult.textContent = "Save import error: " + e;
+        importResult.className = "result-error";
+        statusMsg.textContent = "";
+      });
+  }
+
   // --- Download ---
 
   caseIdInput.addEventListener("keydown", function (e) {
@@ -3210,6 +3450,7 @@ window.addEventListener("DOMContentLoaded", function () {
 
   var importFolderBtn = document.getElementById("import-folder-btn");
   var importFileBtn = document.getElementById("import-file-btn");
+  var importPasteSaveBtn = document.getElementById("import-paste-save-btn");
   var importResult = document.getElementById("import-result");
 
   function doImport(sourcePath) {
@@ -3385,7 +3626,9 @@ window.addEventListener("DOMContentLoaded", function () {
       .then(function (selected) {
         console.log("[IMPORT] pick_import_file returned:", selected);
         if (!selected) return;
-        if (selected.toLowerCase().endsWith(".aaoplug")) {
+        if (selected.toLowerCase().endsWith(".aaosave")) {
+          doImportSave(selected);
+        } else if (selected.toLowerCase().endsWith(".aaoplug")) {
           doImportPlugin(selected);
         } else {
           doImport(selected);
@@ -3396,6 +3639,10 @@ window.addEventListener("DOMContentLoaded", function () {
         importResult.textContent = "Could not open file picker: " + e;
         importResult.className = "result-error";
       });
+  });
+
+  importPasteSaveBtn.addEventListener("click", function () {
+    showPasteSaveModal();
   });
 
   // --- Init ---

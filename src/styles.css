@@ -177,7 +177,8 @@
 }
 
 #import-folder-btn,
-#import-file-btn {
+#import-file-btn,
+#import-paste-save-btn {
   background: #16213e;
   color: #ccc;
   border: 1px solid #2a2a4a;
@@ -190,14 +191,16 @@
 }
 
 #import-folder-btn:hover,
-#import-file-btn:hover {
+#import-file-btn:hover,
+#import-paste-save-btn:hover {
   background: #1a2a4e;
   border-color: #4a4a8a;
   color: #fff;
 }
 
 #import-folder-btn:disabled,
-#import-file-btn:disabled {
+#import-file-btn:disabled,
+#import-paste-save-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -342,6 +345,23 @@
   color: #8bf;
   border-color: #58a;
   background: rgba(50, 120, 220, 0.1);
+}
+
+.save-btn {
+  background: none;
+  color: #8a8;
+  border: 1px solid #464;
+  border-radius: 6px;
+  padding: 0.45rem 1rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.save-btn:hover {
+  color: #6d6;
+  border-color: #585;
+  background: rgba(50, 200, 50, 0.1);
 }
 
 .plugin-btn {
@@ -491,6 +511,7 @@
 .sequence-part-actions .update-btn,
 .sequence-part-actions .link-btn,
 .sequence-part-actions .export-btn,
+.sequence-part-actions .save-btn,
 .sequence-part-actions .plugin-btn,
 .sequence-part-actions .delete-btn {
   padding: 0.3rem 0.65rem;

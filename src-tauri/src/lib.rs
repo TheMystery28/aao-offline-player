@@ -1097,13 +1097,13 @@ async fn pick_import_file(app: tauri::AppHandle) -> Result<Option<String>, Strin
     let mut builder = app
         .dialog()
         .file()
-        .set_title("Select .aaocase or .aaoplug file");
+        .set_title("Select .aaocase, .aaoplug, or .aaosave file");
 
     // On Android, the SAF uses MIME types instead of file extensions.
     if cfg!(target_os = "android") {
         builder = builder.add_filter("AAO Files", &["application/zip", "application/octet-stream"]);
     } else {
-        builder = builder.add_filter("AAO Files", &["aaocase", "aaoplug", "zip"]);
+        builder = builder.add_filter("AAO Files", &["aaocase", "aaoplug", "aaosave", "zip"]);
     }
 
     let result = builder.blocking_pick_file();
@@ -1301,6 +1301,64 @@ fn remove_plugin(
         s.data_dir.clone()
     };
     importer::remove_plugin(case_id, &filename, &data_dir)
+}
+
+/// Export saves as a .aaosave file.
+#[tauri::command]
+fn export_save(
+    state: State<'_, Mutex<AppState>>,
+    case_ids: Vec<u32>,
+    saves: serde_json::Value,
+    include_plugins: bool,
+    dest_path: String,
+) -> Result<u64, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    let path = std::path::PathBuf::from(&dest_path);
+    importer::export_aaosave(&case_ids, &saves, include_plugins, &path, &data_dir)
+}
+
+/// Import saves from a .aaosave file.
+#[tauri::command]
+fn import_save(
+    state: State<'_, Mutex<AppState>>,
+    source_path: String,
+) -> Result<importer::ImportSaveResult, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    let path = std::path::PathBuf::from(&source_path);
+    importer::import_aaosave(&path, &data_dir)
+}
+
+/// Open a native "Save As" dialog for exporting a .aaosave file.
+#[tauri::command]
+async fn pick_export_save_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut builder = app
+        .dialog()
+        .file()
+        .set_title("Export saves as .aaosave")
+        .set_file_name(&default_name);
+
+    if !cfg!(target_os = "android") {
+        builder = builder.add_filter("AAO Save", &["aaosave"]);
+    }
+
+    let result = builder.blocking_save_file();
+    match result {
+        Some(file_path) => {
+            if let Some(path) = file_path.as_path() {
+                Ok(Some(path.to_string_lossy().to_string()))
+            } else {
+                Ok(Some(file_path.to_string()))
+            }
+        }
+        None => Ok(None),
+    }
 }
 
 /// Open a native "Save As" dialog for exporting a .aaocase file.
@@ -1669,6 +1727,9 @@ pub fn run() {
             attach_plugin_code,
             list_plugins,
             remove_plugin,
+            export_save,
+            import_save,
+            pick_export_save_file,
             pick_export_file,
             export_case,
             export_sequence

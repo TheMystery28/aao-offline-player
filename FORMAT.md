@@ -97,3 +97,68 @@ Assets can be:
 - **External** URLs declared in `manifest.json` → `assets.external` (downloaded during import)
 
 At runtime, ALL assets are local. No online fetching ever happens during gameplay.
+
+# The .aaosave Format
+
+Saves can be exported as lightweight `.aaosave` files — compressed ZIP archives for sharing game progress without re-exporting the full case and assets.
+
+```
+MySave.aaosave
+├── saves.json           Save data (required)
+├── metadata.json        Export metadata (required)
+├── plugins/             (optional) Bundled plugins per case
+│   └── 99990/
+│       ├── manifest.json
+│       ├── plugin.js
+│       └── assets/
+└── case_config/         (optional) Per-case config overrides
+    └── 99990.json
+```
+
+## saves.json
+
+Contains the raw save data, keyed by case ID and timestamp:
+
+```json
+{
+    "99990": {
+        "1700000000000": "{\"trial_id\":99990,\"trial_data_diffs\":[...],\"current_frame_index\":42}"
+    }
+}
+```
+
+Each save entry is a JSON string (not parsed — stored as-is). The timestamp is the millisecond epoch when the save was created.
+
+## metadata.json
+
+Provides human-readable context without parsing saves.json:
+
+```json
+{
+    "version": 1,
+    "export_date": "2026-03-25T14:30:00Z",
+    "cases": [
+        { "id": 99990, "title": "My Case", "save_count": 3 }
+    ],
+    "has_plugins": false
+}
+```
+
+## Plugins (optional)
+
+When exporting, the user can choose to include plugins. Plugins are stored per-case under `plugins/{case_id}/` mirroring the case's `plugins/` directory. On import, plugins are only installed if the target case exists locally. Case config overrides go in `case_config/{case_id}.json`.
+
+## Importing from a Save Link
+
+AAO online share links contain save data as a URL parameter:
+
+```
+https://aaonline.fr/player.php?trial_id=69063&save_data=eyJ0cmlhbF9pZCI6...
+```
+
+The `save_data` value is `Base64(JSON.stringify(saveObject))`. The app can import saves by pasting:
+- A full URL with `save_data=...`
+- A raw base64 string (just the save_data value)
+- A raw JSON string (the decoded save object)
+
+The save object must contain a numeric `trial_id` field to identify which case it belongs to.
