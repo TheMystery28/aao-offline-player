@@ -287,6 +287,73 @@ function testPlugins() {
 		EngineEvents.clear();
 	})();
 
+	// ============================================================
+	// Plugin params and resolved data
+	// ============================================================
+
+	// getPluginParams exists on both EnginePlugins and EngineConfig
+	TestHarness.assertType(EnginePlugins.getPluginParams, 'function', 'getPluginParams exists on EnginePlugins');
+	TestHarness.assertType(EngineConfig.getPluginParams, 'function', 'getPluginParams exists on EngineConfig');
+
+	// getPluginParams returns empty object for unknown plugin
+	(function() {
+		var params = EnginePlugins.getPluginParams('nonexistent_plugin_xyz');
+		TestHarness.assertDefined(params, 'getPluginParams returns object for unknown plugin');
+		TestHarness.assertEqual(Object.keys(params).length, 0, 'getPluginParams returns empty for unknown');
+	})();
+
+	// register() stores params declaration
+	(function() {
+		var testDesc = {
+			name: '__test_params_plugin__',
+			version: '1.0',
+			params: {
+				color: { type: 'text', default: 'red', label: 'Color' },
+				size: { type: 'number', default: 12, label: 'Size', min: 1, max: 100 }
+			},
+			init: function() {}
+		};
+		EnginePlugins.register(testDesc);
+		TestHarness.assert(EnginePlugins.isLoaded('__test_params_plugin__'), 'params plugin registered');
+
+		// getPluginParams returns defaults when no resolved data
+		var params = EnginePlugins.getPluginParams('__test_params_plugin__');
+		TestHarness.assertEqual(params.color, 'red', 'getPluginParams returns declared default for color');
+		TestHarness.assertEqual(params.size, 12, 'getPluginParams returns declared default for size');
+
+		// EngineConfig.getPluginParams delegates correctly
+		var cfgParams = EngineConfig.getPluginParams('__test_params_plugin__');
+		TestHarness.assertEqual(cfgParams.color, 'red', 'EngineConfig.getPluginParams delegates correctly');
+	})();
+
+	// Session override merges on top
+	(function() {
+		EngineConfig.set('plugins.__test_params_plugin__.params.color', 'blue');
+		var params = EnginePlugins.getPluginParams('__test_params_plugin__');
+		TestHarness.assertEqual(params.color, 'blue', 'session override merges on top of default');
+		TestHarness.assertEqual(params.size, 12, 'non-overridden param keeps default');
+		// Clean up
+		EngineConfig.set('plugins.__test_params_plugin__.params.color', undefined);
+	})();
+
+	// getResolvedData returns null when no resolved_plugins.json loaded
+	(function() {
+		var data = EnginePlugins.getResolvedData();
+		// In test environment, resolved_plugins.json is not loaded, so data may be null
+		// This is the expected fallback behavior
+		TestHarness.assert(data === null || typeof data === 'object', 'getResolvedData returns null or object');
+	})();
+
+	// buildSettingsPanel creates Plugins section
+	(function() {
+		var container = document.getElementById('player_settings');
+		if (!container) return;
+		var pluginSection = container.querySelector('details[data-plugin-section="__plugins__"]');
+		TestHarness.assert(pluginSection !== null, 'Plugins section exists in settings');
+		var summary = pluginSection.querySelector('summary');
+		TestHarness.assertEqual(summary.textContent, 'Plugins', 'Plugins section has correct title');
+	})();
+
 	// Cleanup
 	window.localStorage.removeItem('aao_engine_config');
 	EngineConfig._init();

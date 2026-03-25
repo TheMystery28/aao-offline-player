@@ -26,6 +26,7 @@ var EnginePlugins = (function() {
 	var registry = [];
 	var isReady = false;
 	var frozenApi = null;
+	var resolvedPluginData = null; // { active: [...], available: [...] } from resolved_plugins.json
 
 	// ============================================================
 	// SECTION: Plugin API Builder
@@ -243,6 +244,58 @@ var EnginePlugins = (function() {
 		}
 	}
 
+	function getResolvedParamsForPlugin(name) {
+		if (resolvedPluginData && Array.isArray(resolvedPluginData.active)) {
+			for (var i = 0; i < resolvedPluginData.active.length; i++) {
+				if (resolvedPluginData.active[i].script && resolvedPluginData.active[i].script.replace('.js', '') === name) {
+					return resolvedPluginData.active[i].params || {};
+				}
+				// Also match by filename directly
+				if (resolvedPluginData.active[i].script === name + '.js') {
+					return resolvedPluginData.active[i].params || {};
+				}
+			}
+		}
+		return {};
+	}
+
+	function getPluginParams(name) {
+		var result = {};
+		// 1. Plugin declared defaults
+		for (var i = 0; i < registry.length; i++) {
+			if (registry[i].name === name && registry[i].params) {
+				var keys = Object.keys(registry[i].params);
+				for (var k = 0; k < keys.length; k++) {
+					if (registry[i].params[keys[k]].default !== undefined) {
+						result[keys[k]] = registry[i].params[keys[k]].default;
+					}
+				}
+				break;
+			}
+		}
+		// 2. Resolved params from resolved_plugins.json (overrides defaults)
+		var resolved = getResolvedParamsForPlugin(name);
+		var rKeys = Object.keys(resolved);
+		for (var r = 0; r < rKeys.length; r++) {
+			result[rKeys[r]] = resolved[rKeys[r]];
+		}
+		// 3. Session overrides from EngineConfig (most specific)
+		for (var sk in result) {
+			var sessionVal = EngineConfig.get('plugins.' + name + '.params.' + sk);
+			if (sessionVal !== undefined && sessionVal !== null) {
+				result[sk] = sessionVal;
+			}
+		}
+		return result;
+	}
+
+	function reapplyPlugin(desc) {
+		if (desc._handle && typeof desc._handle.destroy === 'function') {
+			desc._handle.destroy();
+			initPlugin(desc);
+		}
+	}
+
 	function initAllPending() {
 		if (!frozenApi) {
 			frozenApi = Object.freeze(buildApi());
@@ -321,7 +374,109 @@ var EnginePlugins = (function() {
 					}
 					label.appendChild(document.createTextNode(text));
 					content.appendChild(label);
+
+					// --- Param editors ---
+					if (desc.params && typeof desc.params === 'object') {
+						var paramKeys = Object.keys(desc.params);
+						for (var pi = 0; pi < paramKeys.length; pi++) {
+							(function(paramKey, paramDef) {
+								var resolvedParams = getResolvedParamsForPlugin(desc.name);
+								var currentVal = resolvedParams[paramKey];
+								if (currentVal === undefined) currentVal = paramDef.default;
+								// Check session override
+								var sessionVal = EngineConfig.get('plugins.' + desc.name + '.params.' + paramKey);
+								if (sessionVal !== undefined && sessionVal !== null) currentVal = sessionVal;
+
+								var paramLabel = document.createElement('label');
+								paramLabel.className = 'regular_label';
+								paramLabel.style.paddingLeft = '20px';
+								paramLabel.style.fontSize = '11px';
+
+								var paramSpan = document.createElement('span');
+								paramSpan.textContent = (paramDef.label || paramKey) + ': ';
+								paramLabel.appendChild(paramSpan);
+
+								var input;
+								if (paramDef.type === 'checkbox') {
+									input = document.createElement('input');
+									input.type = 'checkbox';
+									input.checked = !!currentVal;
+									input.addEventListener('change', function() {
+										EngineConfig.set('plugins.' + desc.name + '.params.' + paramKey, input.checked);
+										reapplyPlugin(desc);
+									});
+								} else if (paramDef.type === 'number') {
+									input = document.createElement('input');
+									input.type = 'range';
+									input.min = String(paramDef.min || 0);
+									input.max = String(paramDef.max || 100);
+									input.step = String(paramDef.step || 1);
+									input.value = String(currentVal);
+									var valDisplay = document.createElement('span');
+									valDisplay.textContent = ' ' + currentVal;
+									valDisplay.style.fontSize = '10px';
+									input.addEventListener('input', function() {
+										valDisplay.textContent = ' ' + input.value;
+										EngineConfig.set('plugins.' + desc.name + '.params.' + paramKey, parseFloat(input.value));
+										reapplyPlugin(desc);
+									});
+									paramLabel.appendChild(input);
+									paramLabel.appendChild(valDisplay);
+									content.appendChild(paramLabel);
+									return; // already appended
+								} else if (paramDef.type === 'select') {
+									input = document.createElement('select');
+									var opts = paramDef.options || [];
+									for (var oi = 0; oi < opts.length; oi++) {
+										var opt = document.createElement('option');
+										if (typeof opts[oi] === 'object') {
+											opt.value = opts[oi].value;
+											opt.textContent = opts[oi].label;
+										} else {
+											opt.value = String(opts[oi]);
+											opt.textContent = String(opts[oi]);
+										}
+										input.appendChild(opt);
+									}
+									input.value = String(currentVal);
+									input.addEventListener('change', function() {
+										EngineConfig.set('plugins.' + desc.name + '.params.' + paramKey, input.value);
+										reapplyPlugin(desc);
+									});
+								} else {
+									// text
+									input = document.createElement('input');
+									input.type = 'text';
+									input.value = String(currentVal || '');
+									input.style.cssText = 'width:120px;font-size:11px;padding:1px 4px;background:rgba(0,0,0,0.3);color:#ddd;border:1px solid rgba(255,255,255,0.15);border-radius:2px;';
+									input.addEventListener('change', function() {
+										EngineConfig.set('plugins.' + desc.name + '.params.' + paramKey, input.value);
+										reapplyPlugin(desc);
+									});
+								}
+								paramLabel.appendChild(input);
+								content.appendChild(paramLabel);
+							})(paramKeys[pi], desc.params[paramKeys[pi]]);
+						}
+					}
 				})(registry[i]);
+			}
+		}
+
+		// --- Available (disabled) plugins from resolved_plugins.json ---
+		if (resolvedPluginData && Array.isArray(resolvedPluginData.available) && resolvedPluginData.available.length > 0) {
+			var availHeader = document.createElement('div');
+			availHeader.style.cssText = 'font-size:10px;color:#666;margin-top:8px;text-transform:uppercase;letter-spacing:0.04em;';
+			availHeader.textContent = 'Available (disabled)';
+			content.appendChild(availHeader);
+
+			for (var ai = 0; ai < resolvedPluginData.available.length; ai++) {
+				var avail = resolvedPluginData.available[ai];
+				var availDiv = document.createElement('div');
+				availDiv.style.cssText = 'font-size:11px;color:#555;opacity:0.6;padding:2px 0;';
+				availDiv.setAttribute('data-available-plugin', avail.script);
+				availDiv.textContent = avail.script + ' — ' + (avail.reason || 'not active for this case');
+				content.appendChild(availDiv);
 			}
 		}
 
@@ -375,7 +530,6 @@ var EnginePlugins = (function() {
 				detectedName.textContent = '';
 				attachArea.style.display = 'none';
 				attachToggle.textContent = 'Attach Code...';
-				// Rebuild the panel to show the new plugin
 				buildSettingsPanel(container, beforeElement);
 			} catch (e) {
 				detectedName.textContent = 'Error: ' + e.message;
@@ -407,6 +561,34 @@ var EnginePlugins = (function() {
 	// ============================================================
 
 	function loadGlobalPlugins() {
+		if (typeof trial_information === 'undefined' || !trial_information) return;
+
+		// Try resolved_plugins.json first (written by Rust at play time)
+		var resolvedUrl = 'case/' + trial_information.id + '/resolved_plugins.json';
+		try {
+			var rxhr = new XMLHttpRequest();
+			rxhr.open('GET', resolvedUrl, false);
+			rxhr.send();
+			if (rxhr.status === 200) {
+				var resolved = JSON.parse(rxhr.responseText);
+				resolvedPluginData = resolved;
+				var active = resolved.active || [];
+				for (var i = 0; i < active.length; i++) {
+					var scriptUrl = active[i].source;
+					if (!scriptUrl) continue;
+					var script = document.createElement('script');
+					script.src = scriptUrl;
+					script.async = false;
+					script.setAttribute('data-plugin-scope', 'global');
+					document.head.appendChild(script);
+				}
+				return; // resolved_plugins.json found — skip old fallback
+			}
+		} catch (e) {
+			// resolved_plugins.json not available — fall back
+		}
+
+		// Fallback: old plugins/manifest.json behavior
 		var manifestUrl = 'plugins/manifest.json';
 		try {
 			var xhr = new XMLHttpRequest();
@@ -418,17 +600,14 @@ var EnginePlugins = (function() {
 			if (!manifest || !Array.isArray(manifest.scripts)) return;
 
 			var disabledList = Array.isArray(manifest.disabled) ? manifest.disabled : [];
-			for (var i = 0; i < manifest.scripts.length; i++) {
-				if (disabledList.indexOf(manifest.scripts[i]) !== -1) {
-					console.log('[EnginePlugins] Skipping disabled global plugin: ' + manifest.scripts[i]);
-					continue;
-				}
-				var scriptUrl = 'plugins/' + manifest.scripts[i];
-				var script = document.createElement('script');
-				script.src = scriptUrl;
-				script.async = false;
-				script.setAttribute('data-plugin-scope', 'global');
-				document.head.appendChild(script);
+			for (var j = 0; j < manifest.scripts.length; j++) {
+				if (disabledList.indexOf(manifest.scripts[j]) !== -1) continue;
+				var sUrl = 'plugins/' + manifest.scripts[j];
+				var s = document.createElement('script');
+				s.src = sUrl;
+				s.async = false;
+				s.setAttribute('data-plugin-scope', 'global');
+				document.head.appendChild(s);
 			}
 		} catch (e) {
 			// No global plugins — that's fine
@@ -551,7 +730,13 @@ var EnginePlugins = (function() {
 		_buildApi: buildApi,
 
 		/** Build the plugin settings panel inside a container, before a reference element. */
-		buildSettingsPanel: buildSettingsPanel
+		buildSettingsPanel: buildSettingsPanel,
+
+		/** Get resolved params for a plugin (cascade + session overrides). */
+		getPluginParams: getPluginParams,
+
+		/** Get the resolved plugin data (active + available). */
+		getResolvedData: function() { return resolvedPluginData; }
 	};
 })();
 

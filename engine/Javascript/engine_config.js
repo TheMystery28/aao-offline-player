@@ -284,6 +284,17 @@ var EngineConfig = (function() {
 				value: null,
 				oldValue: null
 			});
+		},
+
+		/**
+		 * Get resolved plugin params (delegates to EnginePlugins.getPluginParams).
+		 * Convenience method so plugins can call config.getPluginParams(name).
+		 */
+		getPluginParams: function(name) {
+			if (typeof EnginePlugins !== 'undefined' && EnginePlugins.getPluginParams) {
+				return EnginePlugins.getPluginParams(name);
+			}
+			return {};
 		}
 	};
 })();
