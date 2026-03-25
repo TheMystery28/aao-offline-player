@@ -648,6 +648,11 @@ var SettingsPanel = (function() {
 
 		controlsDetails.appendChild(controlsContent);
 		container.appendChild(controlsDetails);
+
+		// --- Plugins section (inserted before Controls) ---
+		if (typeof EnginePlugins !== 'undefined' && EnginePlugins.buildSettingsPanel) {
+			EnginePlugins.buildSettingsPanel(container, controlsDetails);
+		}
 	}
 
 	return {

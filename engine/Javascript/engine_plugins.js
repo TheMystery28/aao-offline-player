@@ -259,15 +259,12 @@ var EnginePlugins = (function() {
 	// SECTION: Plugin Settings Panel
 	// ============================================================
 
-	function buildSettingsPanel() {
-		var container = document.getElementById('player-parametres');
-		if (!container) return;
+	function buildSettingsPanel(container, beforeElement) {
+		if (!container) return null;
 
 		// Remove existing plugin settings panel if any
 		var existing = container.querySelector('details[data-plugin-section="__plugins__"]');
 		if (existing) existing.parentNode.removeChild(existing);
-
-		if (registry.length === 0) return;
 
 		var details = document.createElement('details');
 		details.setAttribute('data-plugin-section', '__plugins__');
@@ -278,67 +275,131 @@ var EnginePlugins = (function() {
 		var content = document.createElement('div');
 		content.className = 'settings-section-content';
 
-		for (var i = 0; i < registry.length; i++) {
-			(function(desc) {
-				var label = document.createElement('label');
-				label.className = 'regular_label';
-				var cb = document.createElement('input');
-				cb.type = 'checkbox';
-				var configKey = 'plugins.' + desc.name + '.enabled';
-				var enabled = EngineConfig.get(configKey);
-				cb.checked = (enabled === undefined || enabled === null) ? !desc._disabled : !!enabled;
+		if (registry.length === 0) {
+			var emptyMsg = document.createElement('div');
+			emptyMsg.style.color = '#888';
+			emptyMsg.style.fontSize = '11px';
+			emptyMsg.style.padding = '4px 0';
+			emptyMsg.textContent = 'No plugins loaded.';
+			content.appendChild(emptyMsg);
+		} else {
+			for (var i = 0; i < registry.length; i++) {
+				(function(desc) {
+					var label = document.createElement('label');
+					label.className = 'regular_label';
+					var cb = document.createElement('input');
+					cb.type = 'checkbox';
+					var configKey = 'plugins.' + desc.name + '.enabled';
+					var enabled = EngineConfig.get(configKey);
+					cb.checked = (enabled === undefined || enabled === null) ? !desc._disabled : !!enabled;
 
-				cb.addEventListener('change', function() {
-					if (cb.checked) {
-						// Enable
-						EngineConfig.set(configKey, true);
-						if (desc._disabled && desc._handle && typeof desc._handle.destroy === 'function') {
-							// Re-init by calling init again
-							desc._disabled = false;
-							initPlugin(desc);
-						} else if (desc._disabled) {
-							desc._disabled = false;
-						}
-					} else {
-						// Disable
-						EngineConfig.set(configKey, false);
-						if (desc._handle && typeof desc._handle.destroy === 'function') {
-							desc._handle.destroy();
-							desc._disabled = true;
+					cb.addEventListener('change', function() {
+						if (cb.checked) {
+							EngineConfig.set(configKey, true);
+							if (desc._disabled && desc._handle && typeof desc._handle.destroy === 'function') {
+								desc._disabled = false;
+								initPlugin(desc);
+							} else if (desc._disabled) {
+								desc._disabled = false;
+							}
 						} else {
-							desc._disabled = true;
+							EngineConfig.set(configKey, false);
+							if (desc._handle && typeof desc._handle.destroy === 'function') {
+								desc._handle.destroy();
+								desc._disabled = true;
+							} else {
+								desc._disabled = true;
+							}
 						}
-					}
-				});
+					});
 
-				label.appendChild(cb);
-				var text = ' ' + (desc.name || 'unnamed');
-				if (desc.version) text += ' v' + desc.version;
-				if (!desc._handle || typeof desc._handle.destroy !== 'function') {
-					text += ' (reload to apply)';
-				}
-				label.appendChild(document.createTextNode(text));
-				content.appendChild(label);
-			})(registry[i]);
+					label.appendChild(cb);
+					var text = ' ' + (desc.name || 'unnamed');
+					if (desc.version) text += ' v' + desc.version;
+					if (!desc._handle || typeof desc._handle.destroy !== 'function') {
+						text += ' (reload to apply)';
+					}
+					label.appendChild(document.createTextNode(text));
+					content.appendChild(label);
+				})(registry[i]);
+			}
 		}
+
+		// --- Attach Code UI ---
+		var attachToggle = document.createElement('button');
+		attachToggle.textContent = 'Attach Code...';
+		attachToggle.style.cssText = 'margin-top:8px;padding:3px 10px;font-size:11px;cursor:pointer;background:rgba(255,255,255,0.08);color:#ccc;border:1px solid rgba(255,255,255,0.15);border-radius:3px;';
+
+		var attachArea = document.createElement('div');
+		attachArea.style.display = 'none';
+
+		var detectedName = document.createElement('div');
+		detectedName.style.cssText = 'font-size:10px;color:#888;margin-top:4px;min-height:14px;';
+
+		var textarea = document.createElement('textarea');
+		textarea.className = 'plugin-attach-textarea';
+		textarea.rows = 6;
+		textarea.placeholder = '// Paste plugin JS code here...\n// e.g. EnginePlugins.register({ name: "my_plugin", ... })';
+
+		var loadBtn = document.createElement('button');
+		loadBtn.textContent = 'Load Plugin';
+		loadBtn.style.cssText = 'margin-top:4px;padding:3px 12px;font-size:11px;cursor:pointer;background:rgba(80,140,200,0.3);color:#adf;border:1px solid rgba(80,140,200,0.4);border-radius:3px;';
+
+		attachToggle.addEventListener('click', function() {
+			var isOpen = attachArea.style.display !== 'none';
+			attachArea.style.display = isOpen ? 'none' : 'block';
+			attachToggle.textContent = isOpen ? 'Attach Code...' : 'Hide';
+		});
+
+		textarea.addEventListener('input', function() {
+			var match = textarea.value.match(/EnginePlugins\.register\s*\(\s*\{[^}]*name\s*:\s*['"]([^'"]+)['"]/);
+			if (match) {
+				detectedName.textContent = 'Detected: ' + match[1] + '.js';
+			} else {
+				detectedName.textContent = '';
+			}
+		});
+
+		loadBtn.addEventListener('click', function() {
+			var code = textarea.value.trim();
+			if (!code) return;
+			try {
+				var beforeCount = registry.length;
+				(new Function(code))();
+				var afterCount = registry.length;
+				if (afterCount > beforeCount) {
+					var newPlugin = registry[afterCount - 1];
+					console.log('[EnginePlugins] Loaded plugin from paste: ' + (newPlugin.name || 'unnamed'));
+				}
+				textarea.value = '';
+				detectedName.textContent = '';
+				attachArea.style.display = 'none';
+				attachToggle.textContent = 'Attach Code...';
+				// Rebuild the panel to show the new plugin
+				buildSettingsPanel(container, beforeElement);
+			} catch (e) {
+				detectedName.textContent = 'Error: ' + e.message;
+				detectedName.style.color = '#f88';
+				setTimeout(function() { detectedName.style.color = '#888'; }, 3000);
+			}
+		});
+
+		attachArea.appendChild(detectedName);
+		attachArea.appendChild(textarea);
+		attachArea.appendChild(loadBtn);
+
+		content.appendChild(attachToggle);
+		content.appendChild(attachArea);
 
 		details.appendChild(content);
 
-		// Insert before Controls section
-		var allDetails = container.querySelectorAll('details');
-		var controlsSection = null;
-		for (var j = 0; j < allDetails.length; j++) {
-			var summaryEl = allDetails[j].querySelector('summary');
-			if (summaryEl && summaryEl.textContent.indexOf('Controls') !== -1) {
-				controlsSection = allDetails[j];
-				break;
-			}
-		}
-		if (controlsSection) {
-			container.insertBefore(details, controlsSection);
+		if (beforeElement) {
+			container.insertBefore(details, beforeElement);
 		} else {
 			container.appendChild(details);
 		}
+
+		return details;
 	}
 
 	// ============================================================
@@ -434,8 +495,22 @@ var EnginePlugins = (function() {
 				loadGlobalPlugins();
 				loadCasePlugins();
 				initAllPending();
-				// Build settings panel after a short delay to let scripts load
-				setTimeout(buildSettingsPanel, 100);
+				// Rebuild the settings panel after plugins load (it was created empty by settings_panel.js)
+				setTimeout(function() {
+					var container = document.getElementById('player_settings');
+					if (!container) return;
+					// Find the Controls section as the insertBefore reference
+					var allDetails = container.querySelectorAll('details');
+					var controlsRef = null;
+					for (var k = 0; k < allDetails.length; k++) {
+						var s = allDetails[k].querySelector('summary');
+						if (s && s.textContent.indexOf('Controls') !== -1) {
+							controlsRef = allDetails[k];
+							break;
+						}
+					}
+					buildSettingsPanel(container, controlsRef);
+				}, 200);
 			}, 0, 'engine');
 		},
 
@@ -473,7 +548,10 @@ var EnginePlugins = (function() {
 		},
 
 		/** Build the API object (exposed for testing). */
-		_buildApi: buildApi
+		_buildApi: buildApi,
+
+		/** Build the plugin settings panel inside a container, before a reference element. */
+		buildSettingsPanel: buildSettingsPanel
 	};
 })();
 

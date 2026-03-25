@@ -1203,6 +1203,22 @@ a.courtrecord-switchview:active {
 	overflow-y: auto;
 }
 
+.plugin-attach-textarea {
+	width: 100%;
+	min-height: 100px;
+	font-family: monospace;
+	font-size: 11px;
+	background: rgba(0, 0, 0, 0.3);
+	color: #e0e0e0;
+	border: 1px solid rgba(255, 255, 255, 0.15);
+	border-radius: 4px;
+	padding: 5px 7px;
+	resize: vertical;
+	tab-size: 2;
+	margin-top: 4px;
+	box-sizing: border-box;
+}
+
 #player-parametres section {
 	margin-bottom: 10px;
 }
