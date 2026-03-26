@@ -1,6 +1,7 @@
 pub mod asset_downloader;
 pub mod asset_resolver;
 pub mod case_fetcher;
+pub mod dedup;
 pub mod manifest;
 
 use serde::{Deserialize, Serialize};

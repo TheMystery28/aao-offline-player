@@ -253,6 +253,14 @@ async fn download_sequence(
         }
         manifest.assets.total_downloaded = manifest.asset_map.len();
         downloader::manifest::write_manifest(&manifest, &case_dir)?;
+
+        // Post-download dedup for this case in the sequence
+        let (dedup_count, _) = downloader::dedup::dedup_case_assets(case_id, &data_dir)
+            .unwrap_or((0, 0));
+        if dedup_count > 0 {
+            manifest = downloader::manifest::read_manifest(&case_dir)?;
+        }
+
         manifests.push(manifest);
     }
 
@@ -477,6 +485,14 @@ async fn download_case(
     downloader::manifest::write_manifest(&manifest, &case_dir)?;
     debug_log!("Saved manifest.json to {} ({} assets incl. {} cached defaults)",
         case_dir.display(), manifest.asset_map.len(), cached_defaults.len());
+
+    // Post-download dedup: remove case assets that are identical to shared defaults
+    let (dedup_count, dedup_bytes) = downloader::dedup::dedup_case_assets(case_id, &data_dir)
+        .unwrap_or((0, 0));
+    if dedup_count > 0 {
+        debug_log!("Dedup: {} files deduplicated, {} bytes saved", dedup_count, dedup_bytes);
+        manifest = downloader::manifest::read_manifest(&case_dir)?;
+    }
 
     Ok(manifest)
 }

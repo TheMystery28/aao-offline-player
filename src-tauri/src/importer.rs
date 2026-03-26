@@ -742,6 +742,18 @@ fn import_multi_case_zip(
         if let Some(cb) = &on_progress { cb(progress_count, total_entries); }
     }
 
+    // Post-import dedup: run for each case now that defaults/ are all extracted
+    for &case_id in &case_ids {
+        let _ = crate::downloader::dedup::dedup_case_assets(case_id, engine_dir);
+    }
+    // Re-read first manifest if dedup modified it
+    if let Some(ref fm) = first_manifest {
+        let case_dir = engine_dir.join("case").join(fm.case_id.to_string());
+        if case_dir.join("manifest.json").exists() {
+            first_manifest = Some(read_manifest(&case_dir)?);
+        }
+    }
+
     first_manifest.ok_or_else(|| "No cases were imported from the multi-case ZIP".to_string())
 }
 
@@ -883,8 +895,19 @@ fn import_collection_zip(
         }
     }
 
+    // Post-import dedup for each case now that defaults/ are all extracted
+    for &case_id in &case_ids {
+        let _ = crate::downloader::dedup::dedup_case_assets(case_id, engine_dir);
+    }
+
     let manifest = first_manifest
         .ok_or_else(|| "No cases were imported from the collection ZIP".to_string())?;
+    // Re-read if dedup modified it
+    let manifest = if engine_dir.join("case").join(manifest.case_id.to_string()).join("manifest.json").exists() {
+        read_manifest(&engine_dir.join("case").join(manifest.case_id.to_string()))?
+    } else {
+        manifest
+    };
 
     // Build the Collection object
     let collection = crate::collections::Collection {
@@ -1169,6 +1192,14 @@ fn import_single_case_zip(
     manifest.has_plugins = has_plugins;
     manifest.has_case_config = has_case_config;
     write_manifest(&manifest, &case_dir)?;
+
+    // Post-import dedup: remove case assets identical to shared defaults
+    let (dedup_count, _) = crate::downloader::dedup::dedup_case_assets(case_id, engine_dir)
+        .unwrap_or((0, 0));
+    if dedup_count > 0 {
+        manifest = read_manifest(&case_dir)?;
+    }
+
     Ok(manifest)
 }
 
