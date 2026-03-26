@@ -130,8 +130,8 @@ mod tests {
     fn test_build_manifest_basic() {
         let info = test_case_info();
         let downloaded = vec![
-            DownloadedAsset { original_url: "http://a.com/1.png".into(), local_path: "assets/img-abc.png".into(), size: 1000 },
-            DownloadedAsset { original_url: "http://b.com/2.mp3".into(), local_path: "defaults/music/song.mp3".into(), size: 2000 },
+            DownloadedAsset { original_url: "http://a.com/1.png".into(), local_path: "assets/img-abc.png".into(), size: 1000, content_hash: 0 },
+            DownloadedAsset { original_url: "http://b.com/2.mp3".into(), local_path: "defaults/music/song.mp3".into(), size: 2000, content_hash: 0 },
         ];
         let manifest = build_manifest(&info, &downloaded, Vec::new(), 5, 3);
 
@@ -151,7 +151,7 @@ mod tests {
     fn test_manifest_write_read_roundtrip() {
         let info = test_case_info();
         let downloaded = vec![
-            DownloadedAsset { original_url: "http://x.com/bg.jpg".into(), local_path: "assets/bg-hash.jpg".into(), size: 500 },
+            DownloadedAsset { original_url: "http://x.com/bg.jpg".into(), local_path: "assets/bg-hash.jpg".into(), size: 500, content_hash: 0 },
         ];
         let failed = vec![FailedAsset {
             url: "http://dead.com/sound.mp3".into(),
@@ -220,7 +220,7 @@ mod tests {
     fn test_manifest_with_failed_assets_roundtrip() {
         let info = test_case_info();
         let downloaded = vec![
-            DownloadedAsset { original_url: "http://ok.com/1.png".into(), local_path: "assets/1-hash.png".into(), size: 100 },
+            DownloadedAsset { original_url: "http://ok.com/1.png".into(), local_path: "assets/1-hash.png".into(), size: 100, content_hash: 0 },
         ];
         let failed = vec![
             FailedAsset { url: "http://fail.com/a.mp3".into(), asset_type: "music".into(), local_path: "assets/a-hash.mp3".into(), error: "HTTP 404".into() },
@@ -249,6 +249,7 @@ mod tests {
                 original_url: format!("http://example.com/asset_{}.png", i),
                 local_path: format!("assets/asset_{}-hash.png", i),
                 size: i as u64 * 10,
+                content_hash: 0,
             });
         }
         let manifest = build_manifest(&info, &downloaded, Vec::new(), 100, 0);

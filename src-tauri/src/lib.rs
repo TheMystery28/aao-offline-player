@@ -254,6 +254,15 @@ async fn download_sequence(
         manifest.assets.total_downloaded = manifest.asset_map.len();
         downloader::manifest::write_manifest(&manifest, &case_dir)?;
 
+        // Register newly downloaded defaults in the persistent hash index
+        if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
+            for asset in &result.downloaded {
+                if asset.local_path.starts_with("defaults/") {
+                    let _ = index.register(&asset.local_path, asset.size, asset.content_hash);
+                }
+            }
+        }
+
         // Post-download dedup for this case in the sequence
         let (dedup_count, _) = downloader::dedup::dedup_case_assets(case_id, &data_dir)
             .unwrap_or((0, 0));
@@ -485,6 +494,15 @@ async fn download_case(
     downloader::manifest::write_manifest(&manifest, &case_dir)?;
     debug_log!("Saved manifest.json to {} ({} assets incl. {} cached defaults)",
         case_dir.display(), manifest.asset_map.len(), cached_defaults.len());
+
+    // Register newly downloaded defaults in the persistent hash index
+    if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
+        for asset in &downloaded {
+            if asset.local_path.starts_with("defaults/") {
+                let _ = index.register(&asset.local_path, asset.size, asset.content_hash);
+            }
+        }
+    }
 
     // Post-download dedup: remove case assets that are identical to shared defaults
     let (dedup_count, dedup_bytes) = downloader::dedup::dedup_case_assets(case_id, &data_dir)
@@ -771,6 +789,7 @@ async fn update_case(
             original_url: url.clone(),
             local_path: path.clone(),
             size: 0,
+            content_hash: 0,
         })
         .collect();
     downloader::asset_resolver::rewrite_external_urls(&mut data_value, case_id, &all_downloaded);

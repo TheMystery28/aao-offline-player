@@ -52,6 +52,8 @@ pub struct DownloadedAsset {
     pub original_url: String,
     pub local_path: String,
     pub size: u64,
+    /// xxh3_64 hash of the file content, computed at download time from bytes in memory.
+    pub content_hash: u64,
 }
 
 /// Result of a batch download operation.
@@ -258,6 +260,7 @@ pub async fn download_assets(
                         original_url: url,
                         local_path: relative_path,
                         size,
+                        content_hash: 0, // Already on disk, hash not needed
                     });
                 }
 
@@ -503,6 +506,8 @@ pub(crate) async fn download_single_asset(
         }
     }
 
+    let content_hash = xxhash_rust::xxh3::xxh3_64(&bytes);
+
     let file_path = base_dir.join(relative_path);
     log.log(&format!(
         "  SAVING {} bytes → {} (base={}, rel={})",
@@ -545,6 +550,7 @@ pub(crate) async fn download_single_asset(
         original_url: url.to_string(),
         local_path: relative_path.to_string(),
         size: bytes.len() as u64,
+        content_hash,
     })
 }
 

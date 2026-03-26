@@ -35,6 +35,7 @@ tauri-plugin-dialog = "2.6.0"
 zip = "2"
 url = "2"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+redb = "2"
 
 [dev-dependencies]
 tempfile = "3"

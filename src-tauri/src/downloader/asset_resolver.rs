@@ -1197,9 +1197,9 @@ mod tests {
             }]
         });
         let downloaded = vec![
-            DownloadedAsset { original_url: "http://i.imgur.com/icon.png".into(), local_path: "assets/icon-abc.png".into(), size: 100 },
-            DownloadedAsset { original_url: "http://i.imgur.com/talk.gif".into(), local_path: "assets/talk-def.gif".into(), size: 200 },
-            DownloadedAsset { original_url: "http://i.imgur.com/still.gif".into(), local_path: "assets/still-ghi.gif".into(), size: 300 },
+            DownloadedAsset { original_url: "http://i.imgur.com/icon.png".into(), local_path: "assets/icon-abc.png".into(), size: 100, content_hash: 0 },
+            DownloadedAsset { original_url: "http://i.imgur.com/talk.gif".into(), local_path: "assets/talk-def.gif".into(), size: 200, content_hash: 0 },
+            DownloadedAsset { original_url: "http://i.imgur.com/still.gif".into(), local_path: "assets/still-ghi.gif".into(), size: 300, content_hash: 0 },
         ];
         rewrite_external_urls(&mut data, 123, &downloaded);
         assert_eq!(data["profiles"][1]["icon"], "case/123/assets/icon-abc.png");
@@ -1218,8 +1218,8 @@ mod tests {
             }]
         });
         let downloaded = vec![
-            DownloadedAsset { original_url: "http://i.imgur.com/bg.png".into(), local_path: "assets/bg-abc.png".into(), size: 100 },
-            DownloadedAsset { original_url: "http://i.imgur.com/obj.gif".into(), local_path: "assets/obj-def.gif".into(), size: 200 },
+            DownloadedAsset { original_url: "http://i.imgur.com/bg.png".into(), local_path: "assets/bg-abc.png".into(), size: 100, content_hash: 0 },
+            DownloadedAsset { original_url: "http://i.imgur.com/obj.gif".into(), local_path: "assets/obj-def.gif".into(), size: 200, content_hash: 0 },
         ];
         rewrite_external_urls(&mut data, 42, &downloaded);
         assert_eq!(data["places"][1]["background"]["image"], "case/42/assets/bg-abc.png");
@@ -1249,9 +1249,9 @@ mod tests {
             "popups": [null, {"path": "http://example.com/popup.gif", "external": true}]
         });
         let downloaded = vec![
-            DownloadedAsset { original_url: "http://example.com/song.mp3".into(), local_path: "assets/song-a.mp3".into(), size: 100 },
-            DownloadedAsset { original_url: "http://example.com/sfx.mp3".into(), local_path: "assets/sfx-b.mp3".into(), size: 200 },
-            DownloadedAsset { original_url: "http://example.com/popup.gif".into(), local_path: "assets/popup-c.gif".into(), size: 300 },
+            DownloadedAsset { original_url: "http://example.com/song.mp3".into(), local_path: "assets/song-a.mp3".into(), size: 100, content_hash: 0 },
+            DownloadedAsset { original_url: "http://example.com/sfx.mp3".into(), local_path: "assets/sfx-b.mp3".into(), size: 200, content_hash: 0 },
+            DownloadedAsset { original_url: "http://example.com/popup.gif".into(), local_path: "assets/popup-c.gif".into(), size: 300, content_hash: 0 },
         ];
         rewrite_external_urls(&mut data, 99, &downloaded);
         assert_eq!(data["music"][1]["path"], "case/99/assets/song-a.mp3");
@@ -1272,8 +1272,8 @@ mod tests {
             }]
         });
         let downloaded = vec![
-            DownloadedAsset { original_url: "http://i.imgur.com/ev.png".into(), local_path: "assets/ev-a.png".into(), size: 100 },
-            DownloadedAsset { original_url: "http://i.imgur.com/check.png".into(), local_path: "assets/check-b.png".into(), size: 200 },
+            DownloadedAsset { original_url: "http://i.imgur.com/ev.png".into(), local_path: "assets/ev-a.png".into(), size: 100, content_hash: 0 },
+            DownloadedAsset { original_url: "http://i.imgur.com/check.png".into(), local_path: "assets/check-b.png".into(), size: 200, content_hash: 0 },
         ];
         rewrite_external_urls(&mut data, 5, &downloaded);
         assert_eq!(data["evidence"][1]["icon"], "case/5/assets/ev-a.png");
@@ -1293,6 +1293,7 @@ mod tests {
                 original_url: "https://aaonline.fr/Ressources/Musiques/Ace Attorney 1/Theme.mp3".into(),
                 local_path: "defaults/music/Ace Attorney 1/Theme.mp3".into(),
                 size: 500,
+                content_hash: 0,
             },
         ];
         rewrite_external_urls(&mut data, 1, &downloaded);
@@ -1360,7 +1361,7 @@ mod tests {
             }]
         });
         let downloaded = vec![
-            DownloadedAsset { original_url: "http://i.imgur.com/fg.gif".into(), local_path: "assets/fg-abc.gif".into(), size: 100 },
+            DownloadedAsset { original_url: "http://i.imgur.com/fg.gif".into(), local_path: "assets/fg-abc.gif".into(), size: 100, content_hash: 0 },
         ];
         rewrite_external_urls(&mut data, 7, &downloaded);
         assert_eq!(data["places"][1]["foreground_objects"][0]["image"], "case/7/assets/fg-abc.gif");
@@ -1417,11 +1418,13 @@ mod tests {
                 original_url: "http://i.imgur.com/ext.png".into(),
                 local_path: "assets/ext-hash.png".into(),
                 size: 100,
+                content_hash: 0,
             },
             DownloadedAsset {
                 original_url: "https://aaonline.fr/Ressources/Images/persos/Phoenix.png".into(),
                 local_path: "defaults/images/chars/Phoenix.png".into(),
                 size: 200,
+                content_hash: 0,
             },
         ];
 
@@ -1945,6 +1948,7 @@ var default_profiles_startup = {"Phoenix/3": 880};"#,
                 original_url: "http://example.com/sprite.gif".into(),
                 local_path: "defaults/images/chars/Olga/1.gif".into(),
                 size: 1000,
+                content_hash: 0,
             },
         ];
         rewrite_external_urls(&mut data, 99, &downloaded);

@@ -2,72 +2,115 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::fs;
 
+use redb::{Database, MultimapTableDefinition, ReadableMultimapTable, TableDefinition};
 use serde_json::Value;
 use xxhash_rust::xxh3::xxh3_64;
 
 use super::manifest::{read_manifest, write_manifest};
 
-/// Key for fast candidate lookup: (file_size, normalized_extension).
-type DedupKey = (u64, String);
+/// Primary index: relative_path → (file_size, xxh3_hash)
+const HASH_BY_PATH: TableDefinition<&str, (u64, u64)> =
+    TableDefinition::new("hash_by_path");
 
-/// Index mapping (size, ext) → vec of (xxh3_hash, relative_path).
-/// Multiple files can have the same (size, ext) but different hashes.
+/// Secondary lookup: "{size}:{normalized_ext}" → relative_path (multimap)
+const PATHS_BY_SIZE_EXT: MultimapTableDefinition<&str, &str> =
+    MultimapTableDefinition::new("paths_by_size_ext");
+
+/// Persistent dedup index backed by redb.
+/// Stores xxh3 hashes of default/shared assets for O(log n) duplicate lookups
+/// without re-reading files from disk.
 pub struct DedupIndex {
-    entries: HashMap<DedupKey, Vec<(u64, String)>>,
+    db: Database,
 }
 
 impl DedupIndex {
-    /// Build index from all files under `base_dir/prefix/` recursively.
-    pub fn build_from_dir(base_dir: &Path, prefix: &str) -> Self {
-        let mut entries: HashMap<DedupKey, Vec<(u64, String)>> = HashMap::new();
-        let dir = base_dir.join(prefix);
-        if !dir.is_dir() {
-            return DedupIndex { entries };
-        }
-        Self::walk_dir(&dir, base_dir, &mut entries);
-        DedupIndex { entries }
-    }
-
-    fn walk_dir(
-        dir: &Path,
-        base_dir: &Path,
-        entries: &mut HashMap<DedupKey, Vec<(u64, String)>>,
-    ) {
-        let read_dir = match fs::read_dir(dir) {
-            Ok(rd) => rd,
-            Err(_) => return,
-        };
-        for entry in read_dir.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                Self::walk_dir(&path, base_dir, entries);
-            } else if path.is_file() {
-                let size = match path.metadata() {
-                    Ok(m) => m.len(),
-                    Err(_) => continue,
-                };
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(normalize_ext)
-                    .unwrap_or_default();
-                let hash = match hash_file(&path) {
-                    Ok(h) => h,
-                    Err(_) => continue,
-                };
-                let relative = match path.strip_prefix(base_dir) {
-                    Ok(r) => r.to_string_lossy().replace('\\', "/"),
-                    Err(_) => continue,
-                };
-                let key = (size, ext);
-                entries.entry(key).or_default().push((hash, relative));
+    /// Open or create the index database at `data_dir/dedup_index.redb`.
+    /// If the db file is corrupt, deletes and recreates it.
+    pub fn open(data_dir: &Path) -> Result<Self, String> {
+        let db_path = data_dir.join("dedup_index.redb");
+        match Database::create(&db_path) {
+            Ok(db) => Ok(DedupIndex { db }),
+            Err(_) => {
+                // Corrupt db — delete and retry
+                let _ = fs::remove_file(&db_path);
+                let db = Database::create(&db_path)
+                    .map_err(|e| format!("Failed to create dedup index: {}", e))?;
+                Ok(DedupIndex { db })
             }
         }
     }
 
-    /// Look up a file: returns the matching default path if identical content found.
-    /// 1. Check (size, ext) — O(1) HashMap lookup
-    /// 2. If candidates exist, compute xxh3_64 of the file and compare
+    /// Register a file in the index.
+    /// Inserts into both hash_by_path and paths_by_size_ext in one transaction.
+    pub fn register(&self, relative_path: &str, size: u64, hash: u64) -> Result<(), String> {
+        let ext = Path::new(relative_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(normalize_ext)
+            .unwrap_or_default();
+        let size_ext_key = format!("{}:{}", size, ext);
+
+        let txn = self.db.begin_write()
+            .map_err(|e| format!("Failed to begin write: {}", e))?;
+        {
+            let mut hash_table = txn.open_table(HASH_BY_PATH)
+                .map_err(|e| format!("Failed to open hash table: {}", e))?;
+            hash_table.insert(relative_path, (size, hash))
+                .map_err(|e| format!("Failed to insert hash: {}", e))?;
+
+            let mut lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT)
+                .map_err(|e| format!("Failed to open lookup table: {}", e))?;
+            lookup_table.insert(&*size_ext_key, relative_path)
+                .map_err(|e| format!("Failed to insert lookup: {}", e))?;
+        }
+        txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
+        Ok(())
+    }
+
+    /// Remove a file from the index.
+    /// Reads old entry to reconstruct the size+ext key, then removes from both tables.
+    pub fn unregister(&self, relative_path: &str) -> Result<(), String> {
+        // Read old entry to get size for the secondary key
+        let old_entry = {
+            let txn = self.db.begin_read()
+                .map_err(|e| format!("Failed to begin read: {}", e))?;
+            match txn.open_table(HASH_BY_PATH) {
+                Ok(table) => table.get(relative_path)
+                    .map_err(|e| format!("Failed to read: {}", e))?
+                    .map(|v| v.value()),
+                Err(_) => None,
+            }
+        };
+
+        if let Some((size, _hash)) = old_entry {
+            let ext = Path::new(relative_path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(normalize_ext)
+                .unwrap_or_default();
+            let size_ext_key = format!("{}:{}", size, ext);
+
+            let txn = self.db.begin_write()
+                .map_err(|e| format!("Failed to begin write: {}", e))?;
+            {
+                let mut hash_table = txn.open_table(HASH_BY_PATH)
+                    .map_err(|e| format!("Failed to open hash table: {}", e))?;
+                let _ = hash_table.remove(relative_path);
+
+                let mut lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT)
+                    .map_err(|e| format!("Failed to open lookup table: {}", e))?;
+                let _ = lookup_table.remove(&*size_ext_key, relative_path);
+            }
+            txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
+        }
+        Ok(())
+    }
+
+    /// Find a duplicate in the index for the given file.
+    /// 1. Compute "{size}:{ext}" key from the candidate file
+    /// 2. Look up candidates in paths_by_size_ext (B-tree, O(log n))
+    /// 3. For each candidate, compare xxh3 hashes
+    /// Returns the matching default's relative path if identical content found.
     pub fn find_duplicate(&self, file_path: &Path, _base_dir: &Path) -> Option<String> {
         let size = file_path.metadata().ok()?.len();
         let ext = file_path
@@ -75,21 +118,109 @@ impl DedupIndex {
             .and_then(|e| e.to_str())
             .map(normalize_ext)
             .unwrap_or_default();
-        let key = (size, ext);
-        let candidates = self.entries.get(&key)?;
+        let size_ext_key = format!("{}:{}", size, ext);
+
+        let txn = self.db.begin_read().ok()?;
+        let lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT).ok()?;
+        let candidates = lookup_table.get(&*size_ext_key).ok()?;
+
+        let hash_table = txn.open_table(HASH_BY_PATH).ok()?;
         let file_hash = hash_file(file_path).ok()?;
-        for (candidate_hash, candidate_path) in candidates {
-            if *candidate_hash == file_hash {
-                return Some(candidate_path.clone());
+
+        for candidate in candidates.flatten() {
+            let candidate_path = candidate.value().to_string();
+            if let Ok(Some(entry)) = hash_table.get(&*candidate_path) {
+                let (_size, candidate_hash) = entry.value();
+                if candidate_hash == file_hash {
+                    return Some(candidate_path);
+                }
             }
         }
         None
     }
 
-    /// Add a new entry to the index.
-    pub fn insert(&mut self, size: u64, ext: &str, hash: u64, relative_path: String) {
-        let key = (size, normalize_ext(ext));
-        self.entries.entry(key).or_default().push((hash, relative_path));
+    /// Scan a directory and register all files not already in the db.
+    /// Used on first run or when the index is out of date.
+    /// Returns the count of newly registered files.
+    pub fn scan_and_register(&self, data_dir: &Path, prefix: &str) -> Result<usize, String> {
+        let dir = data_dir.join(prefix);
+        if !dir.is_dir() {
+            return Ok(0);
+        }
+        let mut count = 0;
+        Self::walk_and_register(&dir, data_dir, &self.db, &mut count)?;
+        Ok(count)
+    }
+
+    fn walk_and_register(
+        dir: &Path,
+        base_dir: &Path,
+        db: &Database,
+        count: &mut usize,
+    ) -> Result<(), String> {
+        let read_dir = match fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(_) => return Ok(()),
+        };
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                Self::walk_and_register(&path, base_dir, db, count)?;
+            } else if path.is_file() {
+                let relative = match path.strip_prefix(base_dir) {
+                    Ok(r) => r.to_string_lossy().replace('\\', "/"),
+                    Err(_) => continue,
+                };
+
+                // Check if already registered
+                let already_exists = {
+                    let txn = db.begin_read()
+                        .map_err(|e| format!("Failed to begin read: {}", e))?;
+                    match txn.open_table(HASH_BY_PATH) {
+                        Ok(table) => table.get(&*relative)
+                            .map_err(|e| format!("Failed to read: {}", e))?
+                            .is_some(),
+                        Err(_) => false,
+                    }
+                };
+
+                if already_exists {
+                    continue;
+                }
+
+                let size = match path.metadata() {
+                    Ok(m) => m.len(),
+                    Err(_) => continue,
+                };
+                let hash = match hash_file(&path) {
+                    Ok(h) => h,
+                    Err(_) => continue,
+                };
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(normalize_ext)
+                    .unwrap_or_default();
+                let size_ext_key = format!("{}:{}", size, ext);
+
+                let txn = db.begin_write()
+                    .map_err(|e| format!("Failed to begin write: {}", e))?;
+                {
+                    let mut hash_table = txn.open_table(HASH_BY_PATH)
+                        .map_err(|e| format!("Failed to open hash table: {}", e))?;
+                    hash_table.insert(&*relative, (size, hash))
+                        .map_err(|e| format!("Failed to insert: {}", e))?;
+
+                    let mut lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT)
+                        .map_err(|e| format!("Failed to open lookup table: {}", e))?;
+                    lookup_table.insert(&*size_ext_key, &*relative)
+                        .map_err(|e| format!("Failed to insert lookup: {}", e))?;
+                }
+                txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
+                *count += 1;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -140,12 +271,13 @@ pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), 
         return Ok((0, 0));
     }
 
-    // Build index from all defaults/ files
+    // Open persistent index and ensure defaults/ are registered
     let defaults_dir = data_dir.join("defaults");
     if !defaults_dir.is_dir() {
         return Ok((0, 0));
     }
-    let index = DedupIndex::build_from_dir(data_dir, "defaults");
+    let index = DedupIndex::open(data_dir)?;
+    index.scan_and_register(data_dir, "defaults")?;
 
     // Read manifest
     let mut manifest = read_manifest(&case_dir)?;
@@ -280,6 +412,9 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
         return Ok((0, 0));
     }
 
+    // Open index to unregister deleted files
+    let index = DedupIndex::open(data_dir).ok();
+
     let mut deleted_count = 0usize;
     let mut bytes_freed = 0u64;
 
@@ -287,6 +422,7 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
         dir: &std::path::Path,
         base_dir: &std::path::Path,
         used: &std::collections::HashSet<String>,
+        index: Option<&DedupIndex>,
         deleted: &mut usize,
         freed: &mut u64,
     ) {
@@ -297,7 +433,7 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                walk_and_clean(&path, base_dir, used, deleted, freed);
+                walk_and_clean(&path, base_dir, used, index, deleted, freed);
                 // Remove empty directories
                 let _ = fs::remove_dir(&path);
             } else if path.is_file() {
@@ -308,6 +444,10 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
                 if !used.contains(&relative) {
                     let size = path.metadata().map(|m| m.len()).unwrap_or(0);
                     if fs::remove_file(&path).is_ok() {
+                        // Unregister from persistent index
+                        if let Some(idx) = index {
+                            let _ = idx.unregister(&relative);
+                        }
                         *deleted += 1;
                         *freed += size;
                     }
@@ -316,7 +456,7 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
         }
     }
 
-    walk_and_clean(&defaults_dir, data_dir, &used_defaults, &mut deleted_count, &mut bytes_freed);
+    walk_and_clean(&defaults_dir, data_dir, &used_defaults, index.as_ref(), &mut deleted_count, &mut bytes_freed);
 
     Ok((deleted_count, bytes_freed))
 }
@@ -438,6 +578,11 @@ pub fn optimize_all_cases(
             }
             if !copied {
                 continue; // Could not create shared copy, skip this group
+            }
+
+            // Register the new shared asset in the persistent index
+            if let Ok(idx) = DedupIndex::open(data_dir) {
+                let _ = idx.register(&shared_relative, *size, *hash);
             }
         }
 
@@ -561,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dedup_index_build_and_lookup() {
+    fn test_dedup_index_scan_register_and_find() {
         let dir = tempfile::tempdir().unwrap();
 
         // Create defaults/ with a known file
@@ -569,8 +714,10 @@ mod tests {
         fs::create_dir_all(&defaults_dir).unwrap();
         fs::write(defaults_dir.join("sprite.gif"), b"sprite content").unwrap();
 
-        // Build index
-        let index = DedupIndex::build_from_dir(dir.path(), "defaults");
+        // Open index and scan
+        let index = DedupIndex::open(dir.path()).unwrap();
+        let count = index.scan_and_register(dir.path(), "defaults").unwrap();
+        assert_eq!(count, 1, "Should register 1 file");
 
         // Create a candidate file with same content
         let candidate = dir.path().join("candidate.gif");
@@ -598,9 +745,10 @@ mod tests {
         fs::create_dir_all(&defaults_dir).unwrap();
         fs::write(defaults_dir.join("small.gif"), b"small").unwrap();
 
-        let index = DedupIndex::build_from_dir(dir.path(), "defaults");
+        let index = DedupIndex::open(dir.path()).unwrap();
+        index.scan_and_register(dir.path(), "defaults").unwrap();
 
-        // Different size, same extension → no match (hash never computed for candidate)
+        // Different size, same extension → no match
         let candidate = dir.path().join("candidate.gif");
         fs::write(&candidate, b"this is a much larger file with different size").unwrap();
         let result = index.find_duplicate(&candidate, dir.path());
@@ -1101,5 +1249,154 @@ mod tests {
         let (deleted, bytes) = clear_unused_defaults(dir.path()).unwrap();
         assert_eq!(deleted, 0);
         assert_eq!(bytes, 0);
+    }
+
+    // --- Persistent index tests ---
+
+    #[test]
+    fn test_dedup_index_register_and_find() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        // Register a file
+        let hash = xxh3_64(b"test content");
+        index.register("defaults/images/test.gif", 12, hash).unwrap();
+
+        // Create a candidate with same content
+        let candidate = dir.path().join("candidate.gif");
+        fs::write(&candidate, b"test content").unwrap();
+        let result = index.find_duplicate(&candidate, dir.path());
+        assert!(result.is_some(), "Should find registered duplicate");
+        assert_eq!(result.unwrap(), "defaults/images/test.gif");
+
+        // Different content → no match
+        let different = dir.path().join("different.gif");
+        fs::write(&different, b"other content!").unwrap();
+        let result = index.find_duplicate(&different, dir.path());
+        assert!(result.is_none(), "Different content should not match");
+    }
+
+    #[test]
+    fn test_dedup_index_unregister() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        let hash = xxh3_64(b"removable");
+        index.register("defaults/sounds/test.mp3", 9, hash).unwrap();
+
+        // Verify it's findable
+        let candidate = dir.path().join("candidate.mp3");
+        fs::write(&candidate, b"removable").unwrap();
+        assert!(index.find_duplicate(&candidate, dir.path()).is_some());
+
+        // Unregister
+        index.unregister("defaults/sounds/test.mp3").unwrap();
+
+        // No longer findable
+        assert!(index.find_duplicate(&candidate, dir.path()).is_none());
+    }
+
+    #[test]
+    fn test_dedup_index_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Register in one instance
+        {
+            let index = DedupIndex::open(dir.path()).unwrap();
+            let hash = xxh3_64(b"persistent data");
+            index.register("defaults/music/song.mp3", 15, hash).unwrap();
+        }
+
+        // Re-open from same path — entries should survive
+        {
+            let index = DedupIndex::open(dir.path()).unwrap();
+            let candidate = dir.path().join("candidate.mp3");
+            fs::write(&candidate, b"persistent data").unwrap();
+            let result = index.find_duplicate(&candidate, dir.path());
+            assert!(result.is_some(), "Entries should persist across open/close");
+            assert_eq!(result.unwrap(), "defaults/music/song.mp3");
+        }
+    }
+
+    #[test]
+    fn test_dedup_index_scan_skips_existing() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create a file in defaults/
+        let defaults_dir = dir.path().join("defaults");
+        fs::create_dir_all(&defaults_dir).unwrap();
+        fs::write(defaults_dir.join("file.gif"), b"content").unwrap();
+
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        // First scan registers 1 file
+        let count1 = index.scan_and_register(dir.path(), "defaults").unwrap();
+        assert_eq!(count1, 1);
+
+        // Second scan skips it (already in db)
+        let count2 = index.scan_and_register(dir.path(), "defaults").unwrap();
+        assert_eq!(count2, 0, "Should not re-register existing files");
+    }
+
+    #[test]
+    fn test_content_hash_deterministic() {
+        // xxh3_64 is deterministic — same input always produces same hash
+        let content = b"known test content for hash verification";
+        let hash1 = xxh3_64(content);
+        let hash2 = xxh3_64(content);
+        assert_eq!(hash1, hash2, "Same content must produce same hash");
+        assert_ne!(hash1, 0, "Hash should not be zero for non-empty content");
+
+        // Different content → different hash
+        let other = b"different content";
+        let hash3 = xxh3_64(other);
+        assert_ne!(hash1, hash3, "Different content should produce different hash");
+    }
+
+    #[test]
+    fn test_dedup_index_populated_after_dedup() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create defaults/ with a file
+        let defaults_dir = data_dir.join("defaults").join("images");
+        fs::create_dir_all(&defaults_dir).unwrap();
+        fs::write(defaults_dir.join("sprite.gif"), b"sprite data").unwrap();
+
+        // Create a case with assets/ (no overlap, just to trigger dedup to run scan_and_register)
+        let case_dir = data_dir.join("case").join("42");
+        let assets_dir = case_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(assets_dir.join("unique.gif"), b"unique data").unwrap();
+
+        let mut asset_map = HashMap::new();
+        asset_map.insert("http://example.com/unique.gif".into(), "assets/unique.gif".into());
+        let manifest = super::super::manifest::CaseManifest {
+            case_id: 42,
+            title: "Test".into(), author: "A".into(), language: "en".into(),
+            download_date: "2025-01-01".into(), format: "v6".into(),
+            sequence: None,
+            assets: super::super::manifest::AssetSummary {
+                case_specific: 1, shared_defaults: 0,
+                total_downloaded: 1, total_size_bytes: 11,
+            },
+            asset_map,
+            failed_assets: vec![], has_plugins: false, has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        // Run dedup — this calls scan_and_register internally
+        let _ = dedup_case_assets(42, data_dir).unwrap();
+
+        // Open a FRESH index and verify the defaults/ file was registered
+        let fresh_index = DedupIndex::open(data_dir).unwrap();
+        let candidate = dir.path().join("candidate.gif");
+        fs::write(&candidate, b"sprite data").unwrap();
+        let result = fresh_index.find_duplicate(&candidate, data_dir);
+        assert!(result.is_some(), "Index should contain the defaults/ file after dedup ran");
+        assert!(
+            result.unwrap().contains("sprite.gif"),
+            "Should find the defaults/images/sprite.gif entry"
+        );
     }
 }
