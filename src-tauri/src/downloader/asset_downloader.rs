@@ -82,6 +82,16 @@ pub(crate) struct DownloadLog {
 
 impl DownloadLog {
     pub(crate) fn new(path: &std::path::Path) -> Result<Self, String> {
+        // Rotate log if > 1MB
+        if path.exists() {
+            if let Ok(meta) = std::fs::metadata(path) {
+                if meta.len() > 1_000_000 {
+                    let old = path.with_extension("old.txt");
+                    let _ = std::fs::rename(path, &old);
+                }
+            }
+        }
+
         #[cfg(debug_assertions)]
         {
             let file = std::fs::File::create(path)
@@ -383,11 +393,24 @@ pub(crate) async fn download_with_retry(
     Err(last_err)
 }
 
-/// Encode spaces (and other raw characters) in a URL path.
-/// Handles URLs from AAO trial data which may contain unencoded spaces.
+/// Encode URL-unsafe characters in a URL path.
+/// Handles URLs from AAO trial data which may contain unencoded spaces, brackets, etc.
+/// Preserves URL structure characters (: / ? & = #) and already-encoded %XX sequences.
 fn encode_url(raw_url: &str) -> String {
-    // Only encode spaces — other special chars are less common and reqwest handles most
-    raw_url.replace(' ', "%20")
+    // If it already has percent-encoded sequences, don't double-encode
+    if raw_url.contains("%20") || raw_url.contains("%5B") || raw_url.contains("%7C") {
+        return raw_url.to_string();
+    }
+    raw_url
+        .replace(' ', "%20")
+        .replace('[', "%5B")
+        .replace(']', "%5D")
+        .replace('{', "%7B")
+        .replace('}', "%7D")
+        .replace('|', "%7C")
+        .replace('\\', "%5C")
+        .replace('^', "%5E")
+        .replace('`', "%60")
 }
 
 pub(crate) async fn download_single_asset(
@@ -605,28 +628,35 @@ pub(crate) async fn do_request(
             }
         })?;
 
-    // If we got a 3xx response with a Location header, follow it manually
-    // (handles unencoded spaces in Location that reqwest can't parse).
-    if response.status().is_redirection() {
-        if let Some(location) = response.headers().get("location") {
-            let loc_str = location.to_str().unwrap_or("").to_string();
-            if !loc_str.is_empty() {
-                let encoded_loc = encode_url(&loc_str);
-                log.log(&format!(
-                    "  MANUAL_REDIRECT: {} → {} (encoded: {})",
-                    original_url, loc_str, encoded_loc
-                ));
-                return client
-                    .get(&encoded_loc)
-                    .header("User-Agent", "AAO-Offline-Player/0.1")
-                    .send()
-                    .await
-                    .map_err(|e| format!("Failed to follow redirect to {}: {}", encoded_loc, e));
-            }
+    // Follow redirect chain manually (up to 3 levels).
+    // Handles unencoded spaces in Location headers that reqwest can't parse.
+    let mut current_response = response;
+    for redirect_level in 0..3 {
+        if !current_response.status().is_redirection() {
+            return Ok(current_response);
         }
+        let location = current_response.headers().get("location")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        if location.is_empty() {
+            return Ok(current_response);
+        }
+        let encoded_loc = encode_url(&location);
+        log.log(&format!(
+            "  MANUAL_REDIRECT [{}]: {} → {}",
+            redirect_level + 1, original_url, encoded_loc
+        ));
+        current_response = client
+            .get(&encoded_loc)
+            .header("User-Agent", "AAO-Offline-Player/0.1")
+            .timeout(PER_ASSET_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to follow redirect to {}: {}", encoded_loc, e))?;
     }
 
-    Ok(response)
+    Ok(current_response)
 }
 
 #[cfg(test)]
@@ -1370,5 +1400,97 @@ mod tests {
 
         assert_eq!(result.downloaded.len(), 2, "2 should succeed");
         assert_eq!(result.failed.len(), 1, "1 should fail");
+    }
+
+    // --- encode_url improvements ---
+
+    #[test]
+    fn test_encode_url_brackets() {
+        let result = encode_url("http://example.com/file[1].png");
+        assert_eq!(result, "http://example.com/file%5B1%5D.png");
+    }
+
+    #[test]
+    fn test_encode_url_pipe() {
+        let result = encode_url("http://example.com/a|b.png");
+        assert_eq!(result, "http://example.com/a%7Cb.png");
+    }
+
+    #[test]
+    fn test_encode_url_already_encoded_unchanged() {
+        let result = encode_url("http://example.com/a%20b.png");
+        assert_eq!(result, "http://example.com/a%20b.png", "Should not double-encode");
+    }
+
+    #[test]
+    fn test_encode_url_multiple_unsafe_chars() {
+        let result = encode_url("http://example.com/a b[1]|c.png");
+        assert!(result.contains("%20"), "Space should be encoded");
+        assert!(result.contains("%5B"), "[ should be encoded");
+        assert!(result.contains("%7C"), "| should be encoded");
+    }
+
+    // --- Log rotation ---
+
+    #[test]
+    fn test_log_rotation_when_large() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("download_log.txt");
+        // Create a >1MB file
+        let big_data = vec![b'x'; 1_100_000];
+        std::fs::write(&log_path, &big_data).unwrap();
+        assert!(log_path.exists());
+
+        let _log = DownloadLog::new(&log_path).unwrap();
+        // Old file should exist
+        let old_path = dir.path().join("download_log.old.txt");
+        assert!(old_path.exists(), "Old log should have been created by rotation");
+        let old_size = std::fs::metadata(&old_path).unwrap().len();
+        assert!(old_size > 1_000_000, "Old log should contain the original data");
+    }
+
+    #[test]
+    fn test_no_log_rotation_when_small() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("download_log.txt");
+        std::fs::write(&log_path, "small content").unwrap();
+
+        let _log = DownloadLog::new(&log_path).unwrap();
+        let old_path = dir.path().join("download_log.old.txt");
+        assert!(!old_path.exists(), "Small log should not be rotated");
+    }
+
+    // --- Multi-level redirect ---
+
+    #[tokio::test]
+    async fn test_mock_redirect_chain_2_levels() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let log = test_log(dir.path());
+
+        // A → B → C (final)
+        Mock::given(method("GET")).and(path("/a"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .append_header("location", &format!("{}/b", mock_server.uri()))
+            )
+            .mount(&mock_server).await;
+        Mock::given(method("GET")).and(path("/b"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .append_header("location", &format!("{}/c", mock_server.uri()))
+            )
+            .mount(&mock_server).await;
+        Mock::given(method("GET")).and(path("/c"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![42]))
+            .mount(&mock_server).await;
+
+        let url = format!("{}/a", mock_server.uri());
+        let client = test_client();
+        let result = download_single_asset(
+            &client, &url, &dir.path().to_path_buf(), "test.bin", &log, "sprite"
+        ).await;
+        assert!(result.is_ok(), "Should follow 2-level redirect chain: {:?}", result.err());
+        assert_eq!(result.unwrap().size, 1);
     }
 }
