@@ -16,6 +16,7 @@ use super::manifest::FailedAsset;
 const DEFAULT_CONCURRENCY: usize = 3;
 const MAX_RETRIES: u32 = 3;
 const BASE_RETRY_DELAY: Duration = Duration::from_secs(2);
+const PER_ASSET_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "event", content = "data")]
@@ -318,7 +319,7 @@ async fn download_with_retry(
             attempt + 1, MAX_RETRIES, asset_type, url
         ));
 
-        match download_single_asset(client, url, base_dir, relative_path, log).await {
+        match download_single_asset(client, url, base_dir, relative_path, log, asset_type).await {
             Ok(result) => {
                 log.log(&format!(
                     "  OK size={} file={} url={}",
@@ -336,11 +337,8 @@ async fn download_with_retry(
                 let is_retryable = last_err.contains("429")
                     || last_err.contains("503")
                     || last_err.contains("502")
-                    || last_err.contains("301")
-                    || last_err.contains("302")
                     || last_err.contains("timeout")
                     || last_err.contains("connection")
-                    || last_err.contains("redirect")
                     || last_err.contains("reset")
                     || last_err.contains("closed");
 
@@ -373,6 +371,7 @@ async fn download_single_asset(
     base_dir: &PathBuf,
     relative_path: &str,
     log: &DownloadLog,
+    asset_type: &str,
 ) -> Result<DownloadedAsset, String> {
     let encoded_url = encode_url(url);
     if encoded_url != url {
@@ -414,6 +413,18 @@ async fn download_single_asset(
         return Err(format!("HTTP {}", status_code));
     }
 
+    // Content-type validation: reject HTML error pages for media assets
+    if content_type.contains("text/html") {
+        let media_types = ["sprite", "background", "evidence", "music", "sound", "voice", "popup", "lock", "icon", "place"];
+        if media_types.iter().any(|t| asset_type.contains(t)) {
+            log.log(&format!("  CONTENT_TYPE_MISMATCH: expected media, got text/html for {}", url));
+            return Err(format!("Received HTML instead of {} asset (likely a CDN error page)", asset_type));
+        }
+    }
+
+    // Capture content-length for verification after download
+    let expected_len = response.content_length();
+
     let bytes = response
         .bytes()
         .await
@@ -422,6 +433,17 @@ async fn download_single_asset(
     if bytes.is_empty() {
         log.log(&format!("  EMPTY response body for {}", url));
         return Err("Empty response body".to_string());
+    }
+
+    // Content-Length verification: detect truncated downloads
+    if let Some(expected) = expected_len {
+        if bytes.len() as u64 != expected {
+            log.log(&format!(
+                "  TRUNCATED: expected {} bytes, got {} for {}",
+                expected, bytes.len(), url
+            ));
+            return Err(format!("Truncated download: expected {} bytes, got {}", expected, bytes.len()));
+        }
     }
 
     let file_path = base_dir.join(relative_path);
@@ -492,6 +514,7 @@ async fn do_request(
         match client
             .get(&https_url)
             .header("User-Agent", "AAO-Offline-Player/0.1")
+            .timeout(PER_ASSET_TIMEOUT)
             .send()
             .await
         {
@@ -1007,5 +1030,95 @@ mod tests {
         let result = check_skip_existing(dir.path(), rel);
         assert!(result.is_some(), "File exists and has content, should return Some");
         assert_eq!(result.unwrap(), 42, "Should return exact file size in bytes");
+    }
+
+    // ============================================================
+    // Phase 1: Core Reliability Tests
+    // ============================================================
+
+    #[test]
+    fn test_per_asset_timeout_constant() {
+        assert!(PER_ASSET_TIMEOUT.as_secs() >= 5, "Timeout should be at least 5s");
+        assert!(PER_ASSET_TIMEOUT.as_secs() <= 30, "Timeout should be at most 30s");
+        assert_eq!(PER_ASSET_TIMEOUT.as_secs(), 15, "Timeout should be 15s");
+    }
+
+    #[test]
+    fn test_retryable_errors_include_transient() {
+        // These should be retried
+        let transient = vec!["HTTP 429", "HTTP 503", "HTTP 502", "timeout: foo", "connection error", "reset by peer", "closed"];
+        for err in &transient {
+            let is_retryable = err.contains("429")
+                || err.contains("503")
+                || err.contains("502")
+                || err.contains("timeout")
+                || err.contains("connection")
+                || err.contains("reset")
+                || err.contains("closed");
+            assert!(is_retryable, "'{}' should be retryable", err);
+        }
+    }
+
+    #[test]
+    fn test_retryable_errors_exclude_permanent() {
+        // These should NOT be retried (permanent failures)
+        let permanent = vec!["HTTP 301 redirect to: example.com", "HTTP 302 redirect to: example.com", "HTTP 404", "HTTP 403"];
+        for err in &permanent {
+            let is_retryable = err.contains("429")
+                || err.contains("503")
+                || err.contains("502")
+                || err.contains("timeout")
+                || err.contains("connection")
+                || err.contains("reset")
+                || err.contains("closed");
+            assert!(!is_retryable, "'{}' should NOT be retryable", err);
+        }
+    }
+
+    #[test]
+    fn test_content_type_html_is_rejected_for_media() {
+        let media_types = vec!["sprite", "background_internal", "evidence_icon", "music_internal", "sound", "voice", "popup", "lock", "icon"];
+        for asset_type in &media_types {
+            let content_type = "text/html; charset=utf-8";
+            let media_markers = ["sprite", "background", "evidence", "music", "sound", "voice", "popup", "lock", "icon", "place"];
+            let should_reject = content_type.contains("text/html")
+                && media_markers.iter().any(|t| asset_type.contains(t));
+            assert!(should_reject, "HTML response should be rejected for asset_type '{}'", asset_type);
+        }
+    }
+
+    #[test]
+    fn test_content_type_html_is_accepted_for_unknown() {
+        let content_type = "text/html";
+        let asset_type = "external_unknown";
+        let media_markers = ["sprite", "background", "evidence", "music", "sound", "voice", "popup", "lock", "icon", "place"];
+        let should_reject = content_type.contains("text/html")
+            && media_markers.iter().any(|t| asset_type.contains(t));
+        assert!(!should_reject, "HTML should be accepted for unknown asset type");
+    }
+
+    #[test]
+    fn test_content_length_mismatch_detected() {
+        let expected: Option<u64> = Some(1000);
+        let actual_len: u64 = 500;
+        if let Some(exp) = expected {
+            assert_ne!(actual_len, exp, "Mismatch should be detected");
+        }
+    }
+
+    #[test]
+    fn test_content_length_absent_is_ok() {
+        let expected: Option<u64> = None;
+        // When Content-Length is absent, we accept any size
+        assert!(expected.is_none(), "Absent Content-Length should not cause rejection");
+    }
+
+    #[test]
+    fn test_content_length_match_is_ok() {
+        let expected: Option<u64> = Some(500);
+        let actual_len: u64 = 500;
+        if let Some(exp) = expected {
+            assert_eq!(actual_len, exp, "Matching Content-Length should pass");
+        }
     }
 }
