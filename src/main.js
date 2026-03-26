@@ -38,10 +38,19 @@ window.addEventListener("DOMContentLoaded", function () {
   var progressPhase = document.getElementById("progress-phase");
   var progressBarInner = document.getElementById("progress-bar-inner");
   var progressText = document.getElementById("progress-text");
+  var cancelDownloadBtn = document.getElementById("cancel-download-btn");
 
   // Track known case IDs for duplicate detection
   var knownCaseIds = [];
   var downloadInProgress = false;
+
+  // Cancel button handler
+  cancelDownloadBtn.addEventListener("click", function () {
+    invoke("cancel_download").then(function () {
+      progressPhase.textContent = "Cancelling...";
+      cancelDownloadBtn.classList.add("hidden");
+    });
+  });
 
   // --- Player ---
 
@@ -3213,6 +3222,7 @@ window.addEventListener("DOMContentLoaded", function () {
         downloadInProgress = false;
         downloadBtn.disabled = false;
         caseIdInput.disabled = false;
+        cancelDownloadBtn.classList.add("hidden");
         if (onDone) {
           onDone();
         } else {
@@ -3340,6 +3350,7 @@ window.addEventListener("DOMContentLoaded", function () {
     downloadResult.className = "";
 
     progressContainer.classList.remove("hidden");
+    cancelDownloadBtn.classList.remove("hidden");
     progressPhase.textContent = 'Downloading "' + sequenceTitle + '" (' + caseIds.length + " parts)...";
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
@@ -3400,6 +3411,7 @@ window.addEventListener("DOMContentLoaded", function () {
         downloadInProgress = false;
         downloadBtn.disabled = false;
         caseIdInput.disabled = false;
+        cancelDownloadBtn.classList.add("hidden");
         setTimeout(function () {
           progressContainer.classList.add("hidden");
         }, 4000);
@@ -3420,6 +3432,7 @@ window.addEventListener("DOMContentLoaded", function () {
 
     // Show progress
     progressContainer.classList.remove("hidden");
+    cancelDownloadBtn.classList.remove("hidden");
     progressPhase.textContent = "Fetching case info...";
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
@@ -3496,6 +3509,7 @@ window.addEventListener("DOMContentLoaded", function () {
         downloadInProgress = false;
         downloadBtn.disabled = false;
         caseIdInput.disabled = false;
+        cancelDownloadBtn.classList.add("hidden");
         setTimeout(function () {
           progressContainer.classList.add("hidden");
         }, 4000);

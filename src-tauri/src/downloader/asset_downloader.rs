@@ -153,6 +153,7 @@ pub async fn download_assets(
     engine_dir: &PathBuf,
     on_event: &Channel<DownloadEvent>,
     concurrency: usize,
+    cancel_flag: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<DownloadResult, String> {
     let total = assets.len();
     let concurrency = if concurrency == 0 { DEFAULT_CONCURRENCY } else { concurrency };
@@ -197,8 +198,21 @@ pub async fn download_assets(
             let url = asset.url.clone();
             let asset_type = asset.asset_type.clone();
             let local_path = asset.local_path.clone();
+            let cancel_flag = cancel_flag.clone();
 
             async move {
+                // Check cancel before each asset
+                if cancel_flag.load(Ordering::Relaxed) {
+                    let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                    on_event.send(DownloadEvent::Progress {
+                        completed: done, total, current_url: url.clone(),
+                    }).ok();
+                    return Err(FailedAsset {
+                        url, asset_type, local_path: String::new(),
+                        error: "Cancelled".to_string(),
+                    });
+                }
+
                 // Determine save path
                 let (save_dir, relative_path) = if local_path.is_empty() {
                     // External asset → case_dir/assets/{hash} (save_dir=case_dir, rel=assets/{hash})

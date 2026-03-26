@@ -8,6 +8,8 @@ pub mod utils;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 use downloader::asset_downloader::DownloadEvent;
@@ -35,6 +37,8 @@ struct AppState {
     /// On desktop this equals engine_dir. On Android/iOS it's the app's private data dir.
     data_dir: PathBuf,
     config: config::AppConfig,
+    /// Cancel flag for in-progress downloads. Checked per-asset in the download loop.
+    cancel_flag: Arc<AtomicBool>,
 }
 
 /// Returns the localhost URL for playing a specific case, including language preference.
@@ -54,6 +58,15 @@ fn open_game(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<String, 
 fn get_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
     let state = state.lock().map_err(|e| e.to_string())?;
     Ok(format!("http://localhost:{}", state.server_port))
+}
+
+/// Cancel the current in-progress download.
+#[tauri::command]
+fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    let s = state.lock().map_err(|e| e.to_string())?;
+    s.cancel_flag.store(true, Ordering::Relaxed);
+    debug_log!("Download cancellation requested");
+    Ok(())
 }
 
 /// Lightweight command: fetch case metadata (including sequence info) without downloading assets.
@@ -81,10 +94,11 @@ async fn download_sequence(
     case_ids: Vec<u32>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<Vec<downloader::manifest::CaseManifest>, String> {
-    let (engine_dir, data_dir, concurrency) = {
+    let (engine_dir, data_dir, concurrency, cancel_flag) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads)
+        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone())
     };
+    cancel_flag.store(false, Ordering::Relaxed);
 
     let total_parts = case_ids.len();
     let mut manifests = Vec::new();
@@ -202,6 +216,7 @@ async fn download_sequence(
             &data_dir,
             &on_event,
             concurrency,
+            cancel_flag.clone(),
         )
         .await?;
 
@@ -255,10 +270,11 @@ async fn download_case(
     case_id: u32,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, String> {
-    let (engine_dir, data_dir, concurrency) = {
+    let (engine_dir, data_dir, concurrency, cancel_flag) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads)
+        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone())
     };
+    cancel_flag.store(false, Ordering::Relaxed);
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -398,6 +414,7 @@ async fn download_case(
         &data_dir,
         &on_event,
         concurrency,
+        cancel_flag.clone(),
     )
     .await?;
 
@@ -457,10 +474,11 @@ async fn retry_failed_assets(
     case_id: u32,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, String> {
-    let (data_dir, concurrency) = {
+    let (data_dir, concurrency, cancel_flag) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        (s.data_dir.clone(), s.config.concurrent_downloads)
+        (s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone())
     };
+    cancel_flag.store(false, Ordering::Relaxed);
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
@@ -516,6 +534,7 @@ async fn retry_failed_assets(
         &data_dir,
         &on_event,
         concurrency,
+        cancel_flag.clone(),
     )
     .await?;
 
@@ -575,10 +594,11 @@ async fn update_case(
     redownload_assets: bool,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, String> {
-    let (engine_dir, data_dir, concurrency) = {
+    let (engine_dir, data_dir, concurrency, cancel_flag) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads)
+        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone())
     };
+    cancel_flag.store(false, Ordering::Relaxed);
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
@@ -686,6 +706,7 @@ async fn update_case(
         &data_dir,
         &on_event,
         concurrency,
+        cancel_flag.clone(),
     )
     .await?;
 
@@ -1919,6 +1940,7 @@ pub fn run() {
                 engine_dir,
                 data_dir,
                 config: app_config,
+                cancel_flag: Arc::new(AtomicBool::new(false)),
             }));
 
             Ok(())
@@ -1966,6 +1988,7 @@ pub fn run() {
             set_global_plugin_params,
             promote_plugin_to_global,
             export_case_plugins,
+            cancel_download,
             pick_export_plugin_file,
             export_save,
             import_save,
