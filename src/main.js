@@ -647,53 +647,70 @@ window.addEventListener("DOMContentLoaded", function () {
                 }
               };
 
-              function doSeqExport(withSaves) {
-                var savesPromise = withSaves
-                  ? invoke("read_saves_for_export", { caseIds: ids })
-                  : Promise.resolve(null);
-
-                savesPromise.then(function (saves) {
-                  invoke("export_sequence", {
-                    caseIds: ids,
-                    sequenceTitle: title,
-                    sequenceList: list,
-                    destPath: destPath,
-                    saves: saves,
-                    onEvent: onEvent
-                  }).then(function (size) {
-                    var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
-                    if (saves) msg += " with saves";
-                    statusMsg.textContent = msg;
-                  }).catch(function (e) {
-                    console.error("[MAIN] export sequence error:", e);
-                    statusMsg.textContent = "Export error: " + e;
-                    progressContainer.classList.add("hidden");
-                  });
+              function doSeqExport(saves, includePlugins) {
+                invoke("export_sequence", {
+                  caseIds: ids,
+                  sequenceTitle: title,
+                  sequenceList: list,
+                  destPath: destPath,
+                  saves: saves,
+                  includePlugins: includePlugins,
+                  onEvent: onEvent
+                }).then(function (size) {
+                  var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
+                  if (saves) msg += " with saves";
+                  statusMsg.textContent = msg;
+                }).catch(function (e) {
+                  console.error("[MAIN] export sequence error:", e);
+                  statusMsg.textContent = "Export error: " + e;
+                  progressContainer.classList.add("hidden");
                 });
               }
 
-              showConfirmModal(
-                "Include game saves in the export?",
-                "Include Saves",
-                function () { doSeqExport(true); },
-                function () { doSeqExport(false); }
-              );
+              // Smart prompts
+              var seqHasPlugins = false;
+              for (var sp = 0; sp < downloadedCases.length; sp++) {
+                if (downloadedCases[sp].has_plugins) { seqHasPlugins = true; break; }
+              }
+
+              invoke("read_saves_for_export", { caseIds: ids }).then(function (saves) {
+                var hasSaves = saves !== null;
+                if (!hasSaves && !seqHasPlugins) {
+                  doSeqExport(null, true);
+                } else if (hasSaves && !seqHasPlugins) {
+                  showConfirmModal("Include saves?", "Include Saves",
+                    function () { doSeqExport(saves, true); },
+                    function () { doSeqExport(null, true); });
+                } else if (!hasSaves && seqHasPlugins) {
+                  showConfirmModal("Include plugins?", "Include Plugins",
+                    function () { doSeqExport(null, true); },
+                    function () { doSeqExport(null, false); });
+                } else {
+                  showExportOptionsModal(function (incSaves, incPlugins) {
+                    doSeqExport(incSaves ? saves : null, incPlugins);
+                  });
+                }
+              });
             });
         };
       })(downloadedIds, sequenceTitle, sequenceList));
       footer.appendChild(exportSeqBtn);
     }
 
-    // Export Save button for entire sequence
+    // Saves & Plugins button for entire sequence
     if (downloadedCases.length > 0) {
-      var exportSaveBtn = document.createElement("button");
-      exportSaveBtn.className = "save-btn";
-      exportSaveBtn.textContent = "Export Save";
-      exportSaveBtn.title = "Export saves for all parts";
-      exportSaveBtn.addEventListener("click", (function (ids, title) {
-        return function () { exportSave(ids, title); };
-      })(downloadedIds, sequenceTitle));
-      footer.appendChild(exportSaveBtn);
+      var anyHasPlugins = false;
+      for (var hp = 0; hp < downloadedCases.length; hp++) {
+        if (downloadedCases[hp].has_plugins) { anyHasPlugins = true; break; }
+      }
+      var seqSavesBtn = document.createElement("button");
+      seqSavesBtn.className = "save-btn";
+      seqSavesBtn.textContent = "Saves";
+      seqSavesBtn.title = "Saves & plugins for all parts";
+      seqSavesBtn.addEventListener("click", (function (ids, title, hasPlug) {
+        return function () { showSavesPluginsModal(ids, title, hasPlug); };
+      })(downloadedIds, sequenceTitle, anyHasPlugins));
+      footer.appendChild(seqSavesBtn);
     }
 
     // Delete all button
@@ -785,16 +802,16 @@ window.addEventListener("DOMContentLoaded", function () {
       exportBtn.className = "export-btn";
       exportBtn.textContent = "Export";
       exportBtn.addEventListener("click", (function (c) {
-        return function () { exportCase(c.case_id, c.title); };
+        return function () { exportCase(c.case_id, c.title, c.has_plugins); };
       })(manifest));
       actions.appendChild(exportBtn);
 
       var saveBtn = document.createElement("button");
       saveBtn.className = "save-btn";
-      saveBtn.textContent = "Save";
-      saveBtn.title = "Export saves";
+      saveBtn.textContent = "Saves";
+      saveBtn.title = "Saves & plugins";
       saveBtn.addEventListener("click", (function (c) {
-        return function () { exportSave(c.case_id, c.title); };
+        return function () { showSavesPluginsModal([c.case_id], c.title, c.has_plugins); };
       })(manifest));
       actions.appendChild(saveBtn);
 
@@ -857,7 +874,7 @@ window.addEventListener("DOMContentLoaded", function () {
         (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
         '<button class="link-btn" title="Copy AAO link">Link</button>' +
         '<button class="export-btn">Export</button>' +
-        '<button class="save-btn" title="Export saves">Save</button>' +
+        '<button class="save-btn" title="Saves &amp; plugins">Saves</button>' +
         '<button class="plugin-btn" title="Manage plugins">Plugins</button>' +
         '<button class="delete-btn">Delete</button>' +
       "</div>";
@@ -909,11 +926,11 @@ window.addEventListener("DOMContentLoaded", function () {
     });
 
     card.querySelector(".export-btn").addEventListener("click", function () {
-      exportCase(c.case_id, c.title);
+      exportCase(c.case_id, c.title, c.has_plugins);
     });
 
     card.querySelector(".save-btn").addEventListener("click", function () {
-      exportSave(c.case_id, c.title);
+      showSavesPluginsModal([c.case_id], c.title, c.has_plugins);
     });
 
     card.querySelector(".plugin-btn").addEventListener("click", function () {
@@ -1050,9 +1067,15 @@ window.addEventListener("DOMContentLoaded", function () {
     var exportColBtn = document.createElement("button");
     exportColBtn.className = "export-btn";
     exportColBtn.textContent = "Export Collection";
-    exportColBtn.addEventListener("click", (function (col, caseIds) {
-      return function () { exportCollection(col, caseIds); };
-    })(collection, allCollectionCaseIds));
+    var collHasPlugins = false;
+    for (var chp = 0; chp < allCollectionCaseIds.length; chp++) {
+      if (allCases[allCollectionCaseIds[chp]] && allCases[allCollectionCaseIds[chp]].has_plugins) {
+        collHasPlugins = true; break;
+      }
+    }
+    exportColBtn.addEventListener("click", (function (col, caseIds, hasPlug) {
+      return function () { exportCollection(col, caseIds, hasPlug); };
+    })(collection, allCollectionCaseIds, collHasPlugins));
     footer.appendChild(exportColBtn);
 
     // Delete button
@@ -1258,7 +1281,7 @@ window.addEventListener("DOMContentLoaded", function () {
         (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
         '<button class="link-btn" title="Copy AAO link">Link</button>' +
         '<button class="export-btn">Export</button>' +
-        '<button class="save-btn" title="Export saves">Save</button>' +
+        '<button class="save-btn" title="Saves &amp; plugins">Saves</button>' +
         '<button class="plugin-btn" title="Manage plugins">Plugins</button>' +
         '<button class="delete-btn">Delete</button>' +
       "</div>";
@@ -1304,10 +1327,10 @@ window.addEventListener("DOMContentLoaded", function () {
       copyTrialLink(c.case_id);
     });
     card.querySelector(".export-btn").addEventListener("click", function () {
-      exportCase(c.case_id, c.title);
+      exportCase(c.case_id, c.title, c.has_plugins);
     });
     card.querySelector(".save-btn").addEventListener("click", function () {
-      exportSave(c.case_id, c.title);
+      showSavesPluginsModal([c.case_id], c.title, c.has_plugins);
     });
     card.querySelector(".plugin-btn").addEventListener("click", function () {
       showPluginManagerModal(c.case_id, c.title);
@@ -1354,7 +1377,7 @@ window.addEventListener("DOMContentLoaded", function () {
     return ids;
   }
 
-  function exportCollection(collection, caseIds) {
+  function exportCollection(collection, caseIds, anyHasPlugins) {
     var safeName = collection.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
     var defaultName = safeName + ".aaocase";
     statusMsg.textContent = "Choosing export location...";
@@ -1383,35 +1406,43 @@ window.addEventListener("DOMContentLoaded", function () {
           }
         };
 
-        function doCollExport(withSaves) {
-          var savesPromise = withSaves
-            ? invoke("read_saves_for_export", { caseIds: caseIds })
-            : Promise.resolve(null);
-
-          savesPromise.then(function (saves) {
-            invoke("export_collection", {
-              collectionId: collection.id,
-              destPath: destPath,
-              saves: saves,
-              onEvent: onEvent
-            }).then(function (size) {
-              var msg = 'Exported collection "' + collection.title + '" (' + formatBytes(size) + ")";
-              if (saves) msg += " with saves";
-              statusMsg.textContent = msg;
-            }).catch(function (e) {
-              console.error("[MAIN] export collection error:", e);
-              statusMsg.textContent = "Export error: " + e;
-              progressContainer.classList.add("hidden");
-            });
+        function doCollExport(saves, includePlugins) {
+          invoke("export_collection", {
+            collectionId: collection.id,
+            destPath: destPath,
+            saves: saves,
+            includePlugins: includePlugins,
+            onEvent: onEvent
+          }).then(function (size) {
+            var msg = 'Exported collection "' + collection.title + '" (' + formatBytes(size) + ")";
+            if (saves) msg += " with saves";
+            statusMsg.textContent = msg;
+          }).catch(function (e) {
+            console.error("[MAIN] export collection error:", e);
+            statusMsg.textContent = "Export error: " + e;
+            progressContainer.classList.add("hidden");
           });
         }
 
-        showConfirmModal(
-          "Include game saves in the export?",
-          "Include Saves",
-          function () { doCollExport(true); },
-          function () { doCollExport(false); }
-        );
+        // Smart prompts
+        invoke("read_saves_for_export", { caseIds: caseIds }).then(function (saves) {
+          var hasSaves = saves !== null;
+          if (!hasSaves && !anyHasPlugins) {
+            doCollExport(null, true);
+          } else if (hasSaves && !anyHasPlugins) {
+            showConfirmModal("Include saves?", "Include Saves",
+              function () { doCollExport(saves, true); },
+              function () { doCollExport(null, true); });
+          } else if (!hasSaves && anyHasPlugins) {
+            showConfirmModal("Include plugins?", "Include Plugins",
+              function () { doCollExport(null, true); },
+              function () { doCollExport(null, false); });
+          } else {
+            showExportOptionsModal(function (incSaves, incPlugins) {
+              doCollExport(incSaves ? saves : null, incPlugins);
+            });
+          }
+        });
       })
       .catch(function (e) {
         console.error("[MAIN] export collection error:", e);
@@ -1996,18 +2027,15 @@ window.addEventListener("DOMContentLoaded", function () {
     );
   }
 
-  function exportCase(caseId, title) {
+  function exportCase(caseId, title, hasPlugins) {
     console.log("[EXPORT] exportCase called, caseId=" + caseId + " title=" + title);
     var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
     var defaultName = safeName + ".aaocase";
     statusMsg.textContent = "Choosing export location...";
     invoke("pick_export_file", { defaultName: defaultName })
       .then(function (destPath) {
-        console.log("[EXPORT] pick_export_file returned:", destPath);
-        if (!destPath) {
-          statusMsg.textContent = "";
-          return;
-        }
+        if (!destPath) { statusMsg.textContent = ""; return; }
+
         progressContainer.classList.remove("hidden");
         progressPhase.textContent = "Exporting...";
         progressBarInner.style.width = "0%";
@@ -2018,8 +2046,7 @@ window.addEventListener("DOMContentLoaded", function () {
           if (msg.event === "progress") {
             var pct = Math.round((msg.data.completed / msg.data.total) * 100);
             progressBarInner.style.width = pct + "%";
-            progressText.textContent =
-              msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
+            progressText.textContent = msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
           } else if (msg.event === "finished") {
             progressBarInner.style.width = "100%";
             progressPhase.textContent = "Export complete!";
@@ -2027,35 +2054,43 @@ window.addEventListener("DOMContentLoaded", function () {
           }
         };
 
-        function doExportCase(withSaves) {
-          var savesPromise = withSaves
-            ? invoke("read_saves_for_export", { caseIds: [caseId] })
-            : Promise.resolve(null);
-
-          savesPromise.then(function (saves) {
-            invoke("export_case", {
-              caseId: caseId,
-              destPath: destPath,
-              saves: saves,
-              onEvent: onEvent
-            }).then(function (size) {
-              var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
-              if (saves) msg += " with saves";
-              statusMsg.textContent = msg;
-            }).catch(function (e) {
-              console.error("[MAIN] export error:", e);
-              statusMsg.textContent = "Export error: " + e;
-              progressContainer.classList.add("hidden");
-            });
+        function doExport(saves, includePlugins) {
+          invoke("export_case", {
+            caseId: caseId,
+            destPath: destPath,
+            saves: saves,
+            includePlugins: includePlugins,
+            onEvent: onEvent
+          }).then(function (size) {
+            var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
+            if (saves) msg += " with saves";
+            statusMsg.textContent = msg;
+          }).catch(function (e) {
+            console.error("[MAIN] export error:", e);
+            statusMsg.textContent = "Export error: " + e;
+            progressContainer.classList.add("hidden");
           });
         }
 
-        showConfirmModal(
-          "Include game saves in the export?",
-          "Include Saves",
-          function () { doExportCase(true); },
-          function () { doExportCase(false); }
-        );
+        // Smart prompts: only ask about what exists
+        invoke("read_saves_for_export", { caseIds: [caseId] }).then(function (saves) {
+          var hasSaves = saves !== null;
+          if (!hasSaves && !hasPlugins) {
+            doExport(null, true);
+          } else if (hasSaves && !hasPlugins) {
+            showConfirmModal("Include game saves?", "Include Saves",
+              function () { doExport(saves, true); },
+              function () { doExport(null, true); });
+          } else if (!hasSaves && hasPlugins) {
+            showConfirmModal("Include plugins?", "Include Plugins",
+              function () { doExport(null, true); },
+              function () { doExport(null, false); });
+          } else {
+            showExportOptionsModal(function (incSaves, incPlugins) {
+              doExport(incSaves ? saves : null, incPlugins);
+            });
+          }
+        });
       })
       .catch(function (e) {
         console.error("[MAIN] export error:", e);
@@ -2731,6 +2766,158 @@ window.addEventListener("DOMContentLoaded", function () {
     document.body.appendChild(overlay);
 
     textarea.focus();
+  }
+
+  function showSavesPluginsModal(caseIds, title, hasPlugins) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog";
+
+    var titleEl = document.createElement("p");
+    titleEl.className = "modal-message";
+    titleEl.innerHTML = "<strong>Saves &amp; Plugins &mdash; " + escapeHtml(title) + "</strong>";
+
+    var buttons = document.createElement("div");
+    buttons.className = "modal-buttons";
+
+    function close() { document.body.removeChild(overlay); }
+
+    // Saves section label
+    var savesLabel = document.createElement("div");
+    savesLabel.style.cssText = "font-size:0.75rem;color:#999;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.35rem;";
+    savesLabel.textContent = "Saves";
+
+    var exportSavesBtn = document.createElement("button");
+    exportSavesBtn.className = "modal-btn modal-btn-primary";
+    exportSavesBtn.textContent = "Export Saves";
+    exportSavesBtn.addEventListener("click", function () { close(); exportSave(caseIds, title); });
+
+    var importSavesBtn = document.createElement("button");
+    importSavesBtn.className = "modal-btn modal-btn-secondary";
+    importSavesBtn.textContent = "Import Saves";
+    importSavesBtn.addEventListener("click", function () {
+      close();
+      invoke("pick_import_file").then(function (selected) {
+        if (!selected) return;
+        if (selected.toLowerCase().endsWith(".aaosave")) {
+          doImportSave(selected);
+        } else {
+          statusMsg.textContent = "Please select a .aaosave file.";
+        }
+      });
+    });
+
+    var pasteSaveBtn = document.createElement("button");
+    pasteSaveBtn.className = "modal-btn";
+    pasteSaveBtn.textContent = "Paste Save Link/Code";
+    pasteSaveBtn.addEventListener("click", function () { close(); showPasteSaveModal(); });
+
+    buttons.appendChild(exportSavesBtn);
+    buttons.appendChild(importSavesBtn);
+    buttons.appendChild(pasteSaveBtn);
+
+    // Plugins section (only if has plugins)
+    if (hasPlugins) {
+      var pluginsLabel = document.createElement("div");
+      pluginsLabel.style.cssText = "font-size:0.75rem;color:#999;text-transform:uppercase;letter-spacing:0.04em;margin-top:0.75rem;margin-bottom:0.35rem;";
+      pluginsLabel.textContent = "Plugins";
+
+      var exportPluginsBtn = document.createElement("button");
+      exportPluginsBtn.className = "modal-btn";
+      exportPluginsBtn.textContent = "Export Plugins";
+      exportPluginsBtn.addEventListener("click", function () {
+        close();
+        var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+        invoke("pick_export_plugin_file", { defaultName: safeName + ".aaoplug" }).then(function (destPath) {
+          if (!destPath) return;
+          statusMsg.textContent = "Exporting plugins...";
+          var caseId = Array.isArray(caseIds) ? caseIds[0] : caseIds;
+          invoke("export_case_plugins", { caseId: caseId, destPath: destPath }).then(function (size) {
+            statusMsg.textContent = "Exported plugins (" + formatBytes(size) + ")";
+          }).catch(function (e) {
+            statusMsg.textContent = "Export error: " + e;
+          });
+        });
+      });
+
+      buttons.appendChild(pluginsLabel);
+      buttons.appendChild(exportPluginsBtn);
+    }
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", close);
+
+    buttons.appendChild(cancelBtn);
+
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+
+    modal.appendChild(titleEl);
+    modal.appendChild(savesLabel);
+    modal.appendChild(buttons);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  }
+
+  function showExportOptionsModal(onConfirm) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog";
+
+    var msg = document.createElement("p");
+    msg.className = "modal-message";
+    msg.textContent = "What to include in the export?";
+
+    var savesLabel = document.createElement("label");
+    savesLabel.className = "regular_label";
+    savesLabel.style.cssText = "display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;cursor:pointer;color:#ccc;font-size:0.9rem;";
+    var savesCb = document.createElement("input");
+    savesCb.type = "checkbox";
+    savesCb.checked = true;
+    savesLabel.appendChild(savesCb);
+    savesLabel.appendChild(document.createTextNode(" Include saves"));
+
+    var pluginsLabel = document.createElement("label");
+    pluginsLabel.className = "regular_label";
+    pluginsLabel.style.cssText = "display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;cursor:pointer;color:#ccc;font-size:0.9rem;";
+    var pluginsCb = document.createElement("input");
+    pluginsCb.type = "checkbox";
+    pluginsCb.checked = true;
+    pluginsLabel.appendChild(pluginsCb);
+    pluginsLabel.appendChild(document.createTextNode(" Include plugins"));
+
+    var buttons = document.createElement("div");
+    buttons.className = "modal-row-buttons";
+
+    var exportBtn = document.createElement("button");
+    exportBtn.className = "modal-btn modal-btn-primary";
+    exportBtn.textContent = "Export";
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+
+    function close() { document.body.removeChild(overlay); }
+
+    exportBtn.addEventListener("click", function () {
+      close();
+      onConfirm(savesCb.checked, pluginsCb.checked);
+    });
+    cancelBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+
+    buttons.appendChild(exportBtn);
+    buttons.appendChild(cancelBtn);
+
+    modal.appendChild(msg);
+    modal.appendChild(savesLabel);
+    modal.appendChild(pluginsLabel);
+    modal.appendChild(buttons);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
   }
 
   function exportSave(caseIds, title) {
