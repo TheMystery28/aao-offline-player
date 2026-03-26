@@ -399,6 +399,7 @@ pub fn export_aaocase(
     dest_path: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
     saves: Option<&Value>,
+    include_plugins: bool,
 ) -> Result<u64, String> {
     let case_dir = engine_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
@@ -497,9 +498,9 @@ pub fn export_aaocase(
         }
     }
 
-    // Add plugins directory if present
+    // Add plugins directory if present and requested
     let plugins_dir = case_dir.join("plugins");
-    if plugins_dir.is_dir() {
+    if include_plugins && plugins_dir.is_dir() {
         fn add_dir_to_zip(
             zip: &mut zip::ZipWriter<fs::File>,
             dir: &Path,
@@ -526,9 +527,9 @@ pub fn export_aaocase(
         let _ = add_dir_to_zip(&mut zip, &plugins_dir, "plugins", options);
     }
 
-    // Add case_config.json if present
+    // Add case_config.json if present and plugins included
     let case_config_path = case_dir.join("case_config.json");
-    if case_config_path.is_file() {
+    if include_plugins && case_config_path.is_file() {
         let data = fs::read(&case_config_path)
             .map_err(|e| format!("Failed to read case_config.json: {}", e))?;
         zip.start_file("case_config.json", options)
@@ -917,6 +918,7 @@ pub fn export_collection(
     dest_path: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
     saves: Option<&Value>,
+    include_plugins: bool,
 ) -> Result<u64, String> {
     // Gather ALL case IDs from collection items (both standalone cases and sequence members).
     // For sequence items, scan the case/ directory to find cases whose manifest has a matching
@@ -1934,6 +1936,29 @@ pub fn set_global_plugin_params(
     Ok(())
 }
 
+/// Export a case's plugins as a .aaoplug ZIP file.
+pub fn export_case_plugins(case_id: u32, dest_path: &Path, data_dir: &Path) -> Result<u64, String> {
+    let plugins_dir = data_dir.join("case").join(case_id.to_string()).join("plugins");
+    if !plugins_dir.is_dir() {
+        return Err(format!("Case {} has no plugins", case_id));
+    }
+
+    let file = fs::File::create(dest_path)
+        .map_err(|e| format!("Failed to create .aaoplug file: {}", e))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    add_dir_to_zip_recursive(&mut zip, &plugins_dir, "", options)?;
+
+    zip.finish()
+        .map_err(|e| format!("Failed to finalize .aaoplug ZIP: {}", e))?;
+
+    let meta = fs::metadata(dest_path)
+        .map_err(|e| format!("Failed to get file size: {}", e))?;
+    Ok(meta.len())
+}
+
 /// Promote a case plugin to global.
 pub fn promote_plugin_to_global(
     case_id: u32,
@@ -2243,6 +2268,7 @@ pub fn export_sequence(
     dest_path: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
     saves: Option<&Value>,
+    include_plugins: bool,
 ) -> Result<u64, String> {
     let file = fs::File::create(dest_path)
         .map_err(|e| format!("Failed to create ZIP file: {}", e))?;
@@ -3349,7 +3375,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         // Now export it
         let export_path = source.path().join("test.aaocase");
-        let size = export_aaocase(44444, engine.path(), &export_path, None, None).unwrap();
+        let size = export_aaocase(44444, engine.path(), &export_path, None, None, true).unwrap();
         assert!(size > 0, "ZIP file should have non-zero size");
         assert!(export_path.exists(), "ZIP file should exist on disk");
 
@@ -3370,7 +3396,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
     fn test_export_aaocase_missing_case() {
         let engine = tempfile::tempdir().unwrap();
         let export_path = engine.path().join("missing.aaocase");
-        let result = export_aaocase(99999, engine.path(), &export_path, None, None);
+        let result = export_aaocase(99999, engine.path(), &export_path, None, None, true);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
@@ -3443,6 +3469,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             &export_path,
             None,
             None,
+            true,
         ).unwrap();
 
         assert!(size > 0);
@@ -3514,6 +3541,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             &export_path,
             None,
             None,
+            true,
         ).unwrap();
 
         // Import into fresh engine dir
@@ -3563,7 +3591,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
         // Export sequence
         let seq_list = serde_json::json!([{"id": 69063, "title": "P1"}, {"id": 69064, "title": "P2"}]);
         let export_path = tmp.path().join("seq.aaocase");
-        export_sequence(&[69063, 69064], "Seq", &seq_list, engine_export.path(), &export_path, None, None).unwrap();
+        export_sequence(&[69063, 69064], "Seq", &seq_list, engine_export.path(), &export_path, None, None, true).unwrap();
 
         // Pre-install case 69063 in import engine
         let pre_case_dir = engine_import.path().join("case/69063");
@@ -3605,7 +3633,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         // Export
         let export_path = tmp.path().join("roundtrip.aaocase");
-        export_aaocase(66666, engine1.path(), &export_path, None, None).unwrap();
+        export_aaocase(66666, engine1.path(), &export_path, None, None, true).unwrap();
 
         // Reimport into fresh dir
         let engine2 = tempfile::tempdir().unwrap();
@@ -3666,6 +3694,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             &export_path,
             None,
             None,
+            true,
         );
         assert!(result.is_err(), "Should fail when a case in the sequence doesn't exist");
         assert!(
@@ -3690,6 +3719,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             &export_path,
             None,
             None,
+            true,
         ).unwrap();
 
         assert!(size > 0, "ZIP file should have non-zero size");
@@ -3961,7 +3991,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
             let export_path = tmp.path().join("test.aaocase");
             let size = export_sequence(
                 &ids, title, &Value::Array(seq_list),
-                engine_export.path(), &export_path, None, None,
+                engine_export.path(), &export_path, None, None, true,
             ).unwrap();
             assert!(size > 0, "{} export should have non-zero size", folder);
 
@@ -4012,7 +4042,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
         fs::write(case_dir.join("assets/test.png"), "fake").unwrap();
 
         let export_path = tmp.path().join("no_saves.aaocase");
-        export_aaocase(77001, engine.path(), &export_path, None, None).unwrap();
+        export_aaocase(77001, engine.path(), &export_path, None, None, true).unwrap();
 
         // Verify ZIP does NOT contain saves.json
         let file = fs::File::open(&export_path).unwrap();
@@ -4060,7 +4090,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         let seq_list = serde_json::json!([{"id": 77002, "title": "P1"}, {"id": 77003, "title": "P2"}]);
         let export_path = tmp.path().join("no_saves_seq.aaocase");
-        export_sequence(&[77002, 77003], "No Saves Seq", &seq_list, engine.path(), &export_path, None, None).unwrap();
+        export_sequence(&[77002, 77003], "No Saves Seq", &seq_list, engine.path(), &export_path, None, None, true).unwrap();
 
         // Verify ZIP does NOT contain saves.json
         let file = fs::File::open(&export_path).unwrap();
@@ -4120,7 +4150,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         // Export
         let zip_path = tmp.path().join("roundtrip.aaocase");
-        export_aaocase(77005, engine1.path(), &zip_path, None, None).unwrap();
+        export_aaocase(77005, engine1.path(), &zip_path, None, None, true).unwrap();
 
         // Import into fresh engine
         let imported = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap().manifest;
@@ -4168,7 +4198,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         let seq_list = serde_json::json!([{"id": 77006, "title": "P1"}, {"id": 77007, "title": "P2"}]);
         let zip_path = tmp.path().join("seq_roundtrip.aaocase");
-        export_sequence(&[77006, 77007], "Seq Test", &seq_list, engine1.path(), &zip_path, None, None).unwrap();
+        export_sequence(&[77006, 77007], "Seq Test", &seq_list, engine1.path(), &zip_path, None, None, true).unwrap();
 
         let manifest = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap().manifest;
         assert_eq!(manifest.case_id, 77006);
@@ -4219,7 +4249,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
         });
 
         let export_path = tmp.path().join("with_saves.aaocase");
-        export_aaocase(78001, engine.path(), &export_path, None, Some(&saves)).unwrap();
+        export_aaocase(78001, engine.path(), &export_path, None, Some(&saves), true).unwrap();
 
         // Verify ZIP contains saves.json
         let file = fs::File::open(&export_path).unwrap();
@@ -4347,7 +4377,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         // Export with saves
         let zip_path = tmp.path().join("saves_roundtrip.aaocase");
-        export_aaocase(78004, engine1.path(), &zip_path, None, Some(&saves)).unwrap();
+        export_aaocase(78004, engine1.path(), &zip_path, None, Some(&saves), true).unwrap();
 
         // Import
         let result = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap();
@@ -4396,7 +4426,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         let seq_list = serde_json::json!([{"id": 78005, "title": "P1"}, {"id": 78006, "title": "P2"}]);
         let zip_path = tmp.path().join("seq_saves.aaocase");
-        export_sequence(&[78005, 78006], "Seq Saves", &seq_list, engine.path(), &zip_path, None, Some(&saves)).unwrap();
+        export_sequence(&[78005, 78006], "Seq Saves", &seq_list, engine.path(), &zip_path, None, Some(&saves), true).unwrap();
 
         // Verify ZIP contains saves.json
         let file = fs::File::open(&zip_path).unwrap();
@@ -4451,7 +4481,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         let seq_list = serde_json::json!([{"id": 78007, "title": "P1"}, {"id": 78008, "title": "P2"}]);
         let zip_path = tmp.path().join("seq_saves_rt.aaocase");
-        export_sequence(&[78007, 78008], "Seq Saves RT", &seq_list, engine1.path(), &zip_path, None, Some(&saves)).unwrap();
+        export_sequence(&[78007, 78008], "Seq Saves RT", &seq_list, engine1.path(), &zip_path, None, Some(&saves), true).unwrap();
 
         // Import
         let result = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap();
@@ -4491,7 +4521,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
         // Export with None saves (backward compatible)
         let zip_path = tmp.path().join("none_saves.aaocase");
-        export_aaocase(78009, engine.path(), &zip_path, None, None).unwrap();
+        export_aaocase(78009, engine.path(), &zip_path, None, None, true).unwrap();
 
         let file = fs::File::open(&zip_path).unwrap();
         let mut archive = zip::ZipArchive::new(file).unwrap();

@@ -1484,6 +1484,45 @@ fn promote_plugin_to_global(
     importer::promote_plugin_to_global(case_id, &filename, &scope, &data_dir)
 }
 
+/// Export a case's plugins as a .aaoplug file.
+#[tauri::command]
+fn export_case_plugins(
+    state: State<'_, Mutex<AppState>>,
+    case_id: u32,
+    dest_path: String,
+) -> Result<u64, String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let path = std::path::PathBuf::from(&dest_path);
+    importer::export_case_plugins(case_id, &path, &data_dir)
+}
+
+/// Open a native "Save As" dialog for exporting a .aaoplug file.
+#[tauri::command]
+async fn pick_export_plugin_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut builder = app
+        .dialog()
+        .file()
+        .set_title("Export plugins as .aaoplug")
+        .set_file_name(&default_name);
+
+    if !cfg!(target_os = "android") {
+        builder = builder.add_filter("AAO Plugin", &["aaoplug"]);
+    }
+
+    let result = builder.blocking_save_file();
+    match result {
+        Some(file_path) => {
+            if let Some(path) = file_path.as_path() {
+                Ok(Some(path.to_string_lossy().to_string()))
+            } else {
+                Ok(Some(file_path.to_string()))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
 /// Export saves as a .aaosave file.
 #[tauri::command]
 fn export_save(
@@ -1584,6 +1623,7 @@ fn export_sequence(
     sequence_list: serde_json::Value,
     dest_path: String,
     saves: Option<serde_json::Value>,
+    include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, String> {
     let data_dir = {
@@ -1608,6 +1648,7 @@ fn export_sequence(
         });
     };
 
+    let include_plugins_flag = include_plugins.unwrap_or(true);
     let size = importer::export_sequence(
         &case_ids,
         &sequence_title,
@@ -1616,6 +1657,7 @@ fn export_sequence(
         &export_path,
         Some(&progress_cb),
         saves.as_ref(),
+        include_plugins_flag,
     )?;
 
     if let Some(uri) = content_uri {
@@ -1650,6 +1692,7 @@ fn export_collection(
     collection_id: String,
     dest_path: String,
     saves: Option<serde_json::Value>,
+    include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, String> {
     let data_dir = {
@@ -1671,7 +1714,8 @@ fn export_collection(
         });
     };
 
-    let size = importer::export_collection(&collection, &data_dir, &export_path, Some(&progress_cb), saves.as_ref())?;
+    let include_plugins_flag = include_plugins.unwrap_or(true);
+    let size = importer::export_collection(&collection, &data_dir, &export_path, Some(&progress_cb), saves.as_ref(), include_plugins_flag)?;
 
     let _ = on_event.send(DownloadEvent::Finished {
         downloaded: 0,
@@ -1692,6 +1736,7 @@ fn export_case(
     case_id: u32,
     dest_path: String,
     saves: Option<serde_json::Value>,
+    include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, String> {
     let data_dir = {
@@ -1717,7 +1762,8 @@ fn export_case(
         });
     };
 
-    let size = importer::export_aaocase(case_id, &data_dir, &export_path, Some(&progress_cb), saves.as_ref())?;
+    let include_plugins_flag = include_plugins.unwrap_or(true);
+    let size = importer::export_aaocase(case_id, &data_dir, &export_path, Some(&progress_cb), saves.as_ref(), include_plugins_flag)?;
 
     // Copy temp file to content URI on Android
     if let Some(uri) = content_uri {
@@ -1919,6 +1965,8 @@ pub fn run() {
             set_global_plugin_scope,
             set_global_plugin_params,
             promote_plugin_to_global,
+            export_case_plugins,
+            pick_export_plugin_file,
             export_save,
             import_save,
             pick_export_save_file,
