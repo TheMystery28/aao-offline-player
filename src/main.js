@@ -43,6 +43,18 @@ window.addEventListener("DOMContentLoaded", function () {
   // Track known case IDs for duplicate detection
   var knownCaseIds = [];
   var downloadInProgress = false;
+  var downloadQueue = [];
+
+  function processQueue() {
+    if (downloadInProgress || downloadQueue.length === 0) return;
+    var next = downloadQueue.shift();
+    statusMsg.textContent = "Starting queued download...";
+    if (next.type === "single") {
+      startDownload(next.caseId);
+    } else if (next.type === "sequence") {
+      startSequenceDownload(next.caseIds, next.sequenceTitle);
+    }
+  }
 
   // Cancel button handler
   cancelDownloadBtn.addEventListener("click", function () {
@@ -3238,6 +3250,7 @@ window.addEventListener("DOMContentLoaded", function () {
             progressContainer.classList.add("hidden");
           }, 4000);
         }
+        processQueue();
       });
   }
 
@@ -3353,11 +3366,17 @@ window.addEventListener("DOMContentLoaded", function () {
         setTimeout(function () {
           progressContainer.classList.add("hidden");
         }, 4000);
+        processQueue();
       });
     });
   }
 
   function startSequenceDownload(caseIds, sequenceTitle) {
+    if (downloadInProgress) {
+      downloadQueue.push({ type: "sequence", caseIds: caseIds, sequenceTitle: sequenceTitle });
+      statusMsg.textContent = "Queued for download (" + downloadQueue.length + " in queue).";
+      return;
+    }
     console.log("[DOWNLOAD] startSequenceDownload ids=" + JSON.stringify(caseIds) + " title=" + sequenceTitle);
     downloadInProgress = true;
     downloadBtn.disabled = true;
@@ -3439,12 +3458,14 @@ window.addEventListener("DOMContentLoaded", function () {
         setTimeout(function () {
           progressContainer.classList.add("hidden");
         }, 4000);
+        processQueue();
       });
   }
 
   function startDownload(caseId) {
     if (downloadInProgress) {
-      statusMsg.textContent = "A download is already in progress.";
+      downloadQueue.push({ type: "single", caseId: caseId });
+      statusMsg.textContent = "Queued for download (" + downloadQueue.length + " in queue).";
       return;
     }
     console.log("[DOWNLOAD] startDownload caseId=" + caseId);
@@ -3545,6 +3566,7 @@ window.addEventListener("DOMContentLoaded", function () {
         setTimeout(function () {
           progressContainer.classList.add("hidden");
         }, 4000);
+        processQueue();
       });
   }
 
