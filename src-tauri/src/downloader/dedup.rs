@@ -249,6 +249,207 @@ pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), 
     Ok((deduped_count, bytes_saved))
 }
 
+/// List all case directories under `data_dir/case/` with parseable numeric IDs.
+pub fn list_case_dirs(data_dir: &Path) -> Result<Vec<(u32, std::path::PathBuf)>, String> {
+    let cases_dir = data_dir.join("case");
+    if !cases_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut result = Vec::new();
+    let entries = fs::read_dir(&cases_dir)
+        .map_err(|e| format!("Failed to read case directory: {}", e))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if let Ok(id) = name.parse::<u32>() {
+                result.push((id, path));
+            }
+        }
+    }
+    result.sort_by_key(|(id, _)| *id);
+    Ok(result)
+}
+
+/// Global optimization: find assets shared across multiple cases, promote to defaults/shared/.
+/// Then run single-case dedup for each case against the full defaults pool.
+/// Returns total files deduplicated and bytes saved.
+pub fn optimize_all_cases(
+    data_dir: &Path,
+    on_progress: Option<&dyn Fn(usize, usize)>,
+) -> Result<(usize, u64), String> {
+    let case_dirs = list_case_dirs(data_dir)?;
+    if case_dirs.is_empty() {
+        return Ok((0, 0));
+    }
+
+    let total_phases = case_dirs.len() * 2; // scan + dedup for each case
+    let mut progress = 0usize;
+
+    // Phase 1: Build content map of ALL case assets across ALL cases
+    //   (size, normalized_ext, hash) → [(case_id, filename)]
+    type ContentKey = (u64, String, u64);
+    let mut content_map: HashMap<ContentKey, Vec<(u32, String)>> = HashMap::new();
+
+    for (case_id, case_dir) in &case_dirs {
+        let assets_dir = case_dir.join("assets");
+        if assets_dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(&assets_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_file() {
+                        continue;
+                    }
+                    let size = match path.metadata() {
+                        Ok(m) => m.len(),
+                        Err(_) => continue,
+                    };
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(normalize_ext)
+                        .unwrap_or_default();
+                    let hash = match hash_file(&path) {
+                        Ok(h) => h,
+                        Err(_) => continue,
+                    };
+                    let filename = match path.file_name().and_then(|n| n.to_str()) {
+                        Some(n) => n.to_string(),
+                        None => continue,
+                    };
+                    let key = (size, ext, hash);
+                    content_map.entry(key).or_default().push((*case_id, filename));
+                }
+            }
+        }
+        progress += 1;
+        if let Some(cb) = &on_progress {
+            cb(progress, total_phases);
+        }
+    }
+
+    let mut total_deduped = 0usize;
+    let mut total_saved = 0u64;
+
+    // Phase 2: Promote entries with 2+ occurrences to defaults/shared/
+    let shared_dir = data_dir.join("defaults").join("shared");
+    for ((size, ext, hash), entries) in &content_map {
+        if entries.len() < 2 {
+            continue;
+        }
+
+        // Determine shared path
+        let shared_relative = format!("defaults/shared/{:016x}.{}", hash, ext);
+        let shared_full = data_dir.join(&shared_relative);
+
+        // Copy first available source to shared location (if not already there)
+        let already_shared = shared_full.is_file();
+        if !already_shared {
+            let mut copied = false;
+            for (case_id, filename) in entries {
+                let src = data_dir
+                    .join("case")
+                    .join(case_id.to_string())
+                    .join("assets")
+                    .join(filename);
+                if src.is_file() {
+                    if let Err(_) = fs::create_dir_all(&shared_dir) {
+                        continue;
+                    }
+                    if fs::copy(&src, &shared_full).is_ok() {
+                        copied = true;
+                        break;
+                    }
+                }
+            }
+            if !copied {
+                continue; // Could not create shared copy, skip this group
+            }
+        }
+
+        // Track how many copies we delete for this group
+        let mut group_deleted = 0u32;
+
+        // Update all cases referencing this content
+        for (case_id, filename) in entries {
+            let case_dir = data_dir.join("case").join(case_id.to_string());
+            let asset_path = case_dir.join("assets").join(filename);
+            if !asset_path.is_file() {
+                continue; // Already removed by a previous pass
+            }
+
+            let old_local_path = format!("assets/{}", filename);
+
+            // Update manifest
+            if let Ok(mut manifest) = read_manifest(&case_dir) {
+                let urls_to_update: Vec<String> = manifest
+                    .asset_map
+                    .iter()
+                    .filter(|(_, v)| **v == old_local_path)
+                    .map(|(k, _)| k.clone())
+                    .collect();
+
+                if urls_to_update.is_empty() {
+                    continue;
+                }
+
+                for url in &urls_to_update {
+                    manifest
+                        .asset_map
+                        .insert(url.clone(), shared_relative.clone());
+                }
+                manifest.assets.total_downloaded = manifest.asset_map.len();
+                let _ = write_manifest(&manifest, &case_dir);
+            }
+
+            // Rewrite trial_data
+            let trial_data_path = case_dir.join("trial_data.json");
+            if trial_data_path.exists() {
+                if let Ok(text) = fs::read_to_string(&trial_data_path) {
+                    if let Ok(mut td) = serde_json::from_str::<Value>(&text) {
+                        let old_server_path =
+                            format!("case/{}/{}", case_id, old_local_path);
+                        rewrite_value_recursive(&mut td, &old_server_path, &shared_relative);
+                        if let Ok(json) = serde_json::to_string_pretty(&td) {
+                            let _ = fs::write(&trial_data_path, json);
+                        }
+                    }
+                }
+            }
+
+            // Delete the case-specific copy
+            if fs::remove_file(&asset_path).is_ok() {
+                total_deduped += 1;
+                group_deleted += 1;
+            }
+        }
+
+        // Net savings: we deleted N copies but created 1 shared copy (if it didn't already exist).
+        // So net bytes saved = (deleted * size) - (size if we created the shared copy).
+        if group_deleted > 0 {
+            let created_cost = if already_shared { 0 } else { *size };
+            total_saved += (group_deleted as u64) * size - created_cost;
+        }
+    }
+
+    // Phase 3: Run single-case dedup for each case against the full defaults pool
+    // (catches assets matching existing defaults that weren't cross-case duplicates)
+    for (case_id, _) in &case_dirs {
+        let (n, b) = dedup_case_assets(*case_id, data_dir).unwrap_or((0, 0));
+        total_deduped += n;
+        total_saved += b;
+
+        progress += 1;
+        if let Some(cb) = &on_progress {
+            cb(progress, total_phases);
+        }
+    }
+
+    Ok((total_deduped, total_saved))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -527,5 +728,236 @@ mod tests {
 
         let (count, _) = dedup_case_assets(2, dir.path()).unwrap();
         assert_eq!(count, 0, "No assets dir → no dedup");
+    }
+
+    // --- optimize_all_cases ---
+
+    fn make_case_with_asset(data_dir: &Path, case_id: u32, filename: &str, content: &[u8]) {
+        let case_dir = data_dir.join("case").join(case_id.to_string());
+        let assets_dir = case_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(assets_dir.join(filename), content).unwrap();
+
+        let mut asset_map = HashMap::new();
+        asset_map.insert(
+            format!("http://example.com/{}", filename),
+            format!("assets/{}", filename),
+        );
+        let manifest = super::super::manifest::CaseManifest {
+            case_id,
+            title: format!("Case {}", case_id),
+            author: "Author".to_string(),
+            language: "en".to_string(),
+            download_date: "2025-01-01".to_string(),
+            format: "v6".to_string(),
+            sequence: None,
+            assets: super::super::manifest::AssetSummary {
+                case_specific: 1,
+                shared_defaults: 0,
+                total_downloaded: 1,
+                total_size_bytes: content.len() as u64,
+            },
+            asset_map,
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        let trial_data = serde_json::json!({
+            "profiles": [null, {
+                "custom_sprites": [{
+                    "talking": format!("case/{}/assets/{}", case_id, filename),
+                    "still": "",
+                    "startup": ""
+                }]
+            }]
+        });
+        fs::write(
+            case_dir.join("trial_data.json"),
+            serde_json::to_string_pretty(&trial_data).unwrap(),
+        ).unwrap();
+    }
+
+    #[test]
+    fn test_optimize_all_cases_promotes_shared() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+        let content = b"shared sprite data for testing";
+
+        // Two cases with identical assets (different filenames)
+        make_case_with_asset(data_dir, 100, "bg-aaa.jpg", content);
+        make_case_with_asset(data_dir, 200, "bg-bbb.jpg", content);
+
+        let (count, bytes) = optimize_all_cases(data_dir, None).unwrap();
+        assert!(count >= 2, "Should dedup at least 2 files, got {}", count);
+        // Net savings: deleted 2 case copies, created 1 shared copy → net = 1x file size
+        assert_eq!(bytes, content.len() as u64, "Net savings should be 1x file size (2 deleted - 1 created)");
+
+        // Verify shared file exists in defaults/shared/
+        let shared_dir = data_dir.join("defaults").join("shared");
+        assert!(shared_dir.is_dir(), "defaults/shared/ should exist");
+        let shared_files: Vec<_> = fs::read_dir(&shared_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .collect();
+        assert_eq!(shared_files.len(), 1, "Should have exactly 1 shared file");
+
+        // Verify original assets/ files deleted
+        assert!(!data_dir.join("case/100/assets/bg-aaa.jpg").exists());
+        assert!(!data_dir.join("case/200/assets/bg-bbb.jpg").exists());
+
+        // Verify manifests updated to shared path
+        let m100 = read_manifest(&data_dir.join("case/100")).unwrap();
+        let path100 = &m100.asset_map["http://example.com/bg-aaa.jpg"];
+        assert!(path100.starts_with("defaults/shared/"), "Manifest should point to shared, got: {}", path100);
+
+        let m200 = read_manifest(&data_dir.join("case/200")).unwrap();
+        let path200 = &m200.asset_map["http://example.com/bg-bbb.jpg"];
+        assert!(path200.starts_with("defaults/shared/"), "Manifest should point to shared, got: {}", path200);
+    }
+
+    #[test]
+    fn test_optimize_all_cases_skips_singletons() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // One case with unique asset (no duplicate anywhere)
+        make_case_with_asset(data_dir, 300, "unique-xyz.gif", b"unique content");
+
+        let (count, _) = optimize_all_cases(data_dir, None).unwrap();
+        assert_eq!(count, 0, "Singleton should not be promoted or deduped");
+        assert!(data_dir.join("case/300/assets/unique-xyz.gif").exists(), "File should still exist");
+    }
+
+    #[test]
+    fn test_optimize_all_cases_empty_no_crash() {
+        let dir = tempfile::tempdir().unwrap();
+        // No case/ dir at all
+        let (count, bytes) = optimize_all_cases(dir.path(), None).unwrap();
+        assert_eq!(count, 0);
+        assert_eq!(bytes, 0);
+    }
+
+    #[test]
+    fn test_optimize_all_cases_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        make_case_with_asset(data_dir, 400, "sprite-a.gif", b"identical content");
+        make_case_with_asset(data_dir, 500, "sprite-b.gif", b"identical content");
+
+        let (count1, _) = optimize_all_cases(data_dir, None).unwrap();
+        assert!(count1 >= 2);
+
+        // Run again — should do nothing
+        let (count2, bytes2) = optimize_all_cases(data_dir, None).unwrap();
+        assert_eq!(count2, 0, "Second run should find nothing to dedup");
+        assert_eq!(bytes2, 0);
+    }
+
+    #[test]
+    fn test_export_after_dedup_includes_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create defaults/ with a known file
+        let defaults_chars = data_dir.join("defaults").join("images").join("chars").join("Olga");
+        fs::create_dir_all(&defaults_chars).unwrap();
+        fs::write(defaults_chars.join("1.gif"), b"olga sprite content").unwrap();
+
+        // Create case with identical asset in assets/
+        let case_dir = data_dir.join("case").join("77");
+        let assets_dir = case_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(assets_dir.join("sprite-olga.gif"), b"olga sprite content").unwrap();
+
+        // Create manifest and trial_data
+        let mut asset_map = HashMap::new();
+        asset_map.insert(
+            "http://example.com/olga.gif".to_string(),
+            "assets/sprite-olga.gif".to_string(),
+        );
+        let manifest = super::super::manifest::CaseManifest {
+            case_id: 77,
+            title: "Export Dedup Test".to_string(),
+            author: "Author".to_string(),
+            language: "en".to_string(),
+            download_date: "2025-01-01".to_string(),
+            format: "v6".to_string(),
+            sequence: None,
+            assets: super::super::manifest::AssetSummary {
+                case_specific: 1, shared_defaults: 0,
+                total_downloaded: 1, total_size_bytes: 19,
+            },
+            asset_map,
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        let trial_data = serde_json::json!({
+            "profiles": [null, {
+                "custom_sprites": [{
+                    "talking": "case/77/assets/sprite-olga.gif",
+                    "still": "", "startup": ""
+                }]
+            }]
+        });
+        fs::write(
+            case_dir.join("trial_data.json"),
+            serde_json::to_string_pretty(&trial_data).unwrap(),
+        ).unwrap();
+
+        // Run dedup — asset should be deduped to default path
+        let (count, _) = dedup_case_assets(77, data_dir).unwrap();
+        assert_eq!(count, 1, "Should dedup 1 file");
+        assert!(!assets_dir.join("sprite-olga.gif").exists(), "Original should be deleted");
+
+        // Verify manifest points to defaults/
+        let updated_manifest = read_manifest(&case_dir).unwrap();
+        let path = &updated_manifest.asset_map["http://example.com/olga.gif"];
+        assert!(path.starts_with("defaults/"), "Manifest should point to defaults/, got: {}", path);
+
+        // Export the case
+        let export_path = dir.path().join("test.aaocase");
+        crate::importer::export_aaocase(77, data_dir, &export_path, None, None, true).unwrap();
+        assert!(export_path.exists(), "ZIP should exist");
+
+        // Verify the ZIP contains the defaults/ file
+        let file = fs::File::open(&export_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut found_default = false;
+        let mut found_manifest = false;
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).unwrap();
+            let name = entry.name().to_string();
+            if name.contains("defaults/images/chars/Olga/1.gif") {
+                found_default = true;
+            }
+            if name == "manifest.json" {
+                found_manifest = true;
+            }
+        }
+        assert!(found_default, "ZIP should contain the defaults/ sprite file");
+        assert!(found_manifest, "ZIP should contain manifest.json");
+
+        // Verify the exported manifest has the correct path
+        let manifest_text = {
+            let mut entry = archive.by_name("manifest.json").unwrap();
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut entry, &mut s).unwrap();
+            s
+        };
+        let exported_manifest: super::super::manifest::CaseManifest =
+            serde_json::from_str(&manifest_text).unwrap();
+        let exported_path = &exported_manifest.asset_map["http://example.com/olga.gif"];
+        assert!(
+            exported_path.starts_with("defaults/"),
+            "Exported manifest should point to defaults/, got: {}",
+            exported_path
+        );
     }
 }

@@ -1132,31 +1132,34 @@ fn get_storage_info(state: State<'_, Mutex<AppState>>) -> Result<config::Storage
     Ok(config::compute_storage_info(&data_dir))
 }
 
-/// Delete all default asset cache files. Returns bytes actually freed.
+/// Optimize storage by deduplicating assets across all cases.
+/// Promotes shared assets to defaults/shared/ and removes duplicate case copies.
 #[tauri::command]
-fn clear_default_cache(state: State<'_, Mutex<AppState>>) -> Result<u64, String> {
+async fn optimize_storage(
+    state: State<'_, Mutex<AppState>>,
+    on_event: Channel<DownloadEvent>,
+) -> Result<serde_json::Value, String> {
     let data_dir = {
         let s = state.lock().map_err(|e| e.to_string())?;
         s.data_dir.clone()
     };
-    let defaults_dir = data_dir.join("defaults");
-    let size_before = config::dir_size(&defaults_dir);
-    if defaults_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&defaults_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let _ = fs::remove_dir_all(&path);
-                } else {
-                    let _ = fs::remove_file(&path);
-                }
-            }
-        }
-    }
-    let size_after = config::dir_size(&defaults_dir);
-    let freed = size_before.saturating_sub(size_after);
-    debug_log!("Cleared default asset cache ({} bytes freed, {} remaining)", freed, size_after);
-    Ok(freed)
+    let (deduped, bytes_saved) = downloader::dedup::optimize_all_cases(
+        &data_dir,
+        Some(&|completed, total| {
+            let _ = on_event.send(DownloadEvent::Progress {
+                completed,
+                total,
+                current_url: String::new(),
+                bytes_downloaded: 0,
+                elapsed_ms: 0,
+            });
+        }),
+    )?;
+    debug_log!("Optimize storage: {} files deduplicated, {} bytes saved", deduped, bytes_saved);
+    Ok(serde_json::json!({
+        "deduped": deduped,
+        "bytes_saved": bytes_saved
+    }))
 }
 
 /// Open the data directory in the system file explorer.
@@ -1270,7 +1273,7 @@ async fn pick_import_file(app: tauri::AppHandle) -> Result<Option<String>, Strin
 ///
 /// Returns `ImportResult` containing the manifest and optionally any game saves.
 #[tauri::command]
-fn import_case(
+async fn import_case(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
     source_path: String,
@@ -2012,7 +2015,7 @@ pub fn run() {
             get_settings,
             save_settings,
             get_storage_info,
-            clear_default_cache,
+            optimize_storage,
             open_data_dir,
             pick_folder,
             pick_import_file,

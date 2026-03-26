@@ -4063,7 +4063,7 @@ window.addEventListener("DOMContentLoaded", function () {
   var dataDirPath = document.getElementById("data-dir-path");
   var openDataDirBtn = document.getElementById("open-data-dir-btn");
   var storageText = document.getElementById("storage-text");
-  var clearCacheBtn = document.getElementById("clear-cache-btn");
+  var optimizeStorageBtn = document.getElementById("optimize-storage-btn");
 
   var settingsSaveTimeout = null;
 
@@ -4139,26 +4139,40 @@ window.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  clearCacheBtn.addEventListener("click", function () {
-    showConfirmModal(
-      "Clear the default assets cache?\n\nThis will remove downloaded default sprites, backgrounds, sounds, etc. They will be re-downloaded when you next download a case.",
-      "Clear Cache",
-      function () {
-        clearCacheBtn.disabled = true;
-        clearCacheBtn.textContent = "Clearing...";
-        invoke("clear_default_cache").then(function (bytesFreed) {
-          clearCacheBtn.textContent = "Clear Cache";
-          clearCacheBtn.disabled = false;
-          statusMsg.textContent = "Cache cleared (" + formatBytes(bytesFreed) + " freed).";
-          loadStorageInfo();
-        }).catch(function (e) {
-          clearCacheBtn.textContent = "Clear Cache";
-          clearCacheBtn.disabled = false;
-          console.error("[SETTINGS] Failed to clear cache:", e);
-          statusMsg.textContent = "Error clearing cache: " + e;
-        });
+  optimizeStorageBtn.addEventListener("click", function () {
+    optimizeStorageBtn.disabled = true;
+    optimizeStorageBtn.textContent = "Optimizing...";
+    progressContainer.classList.remove("hidden");
+    progressPhase.textContent = "Optimizing storage...";
+    progressBarInner.style.width = "0%";
+    progressText.textContent = "Scanning cases...";
+
+    var onEvent = new Channel();
+    onEvent.onmessage = function (msg) {
+      if (msg.event === "progress") {
+        var pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
+        progressBarInner.style.width = pct + "%";
+        progressText.textContent = msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
       }
-    );
+    };
+
+    invoke("optimize_storage", { onEvent: onEvent }).then(function (result) {
+      optimizeStorageBtn.textContent = "Optimize Storage";
+      optimizeStorageBtn.disabled = false;
+      progressContainer.classList.add("hidden");
+      if (result.deduped > 0) {
+        statusMsg.textContent = "Optimized: " + result.deduped + " files deduplicated, " + formatBytes(result.bytes_saved) + " saved.";
+      } else {
+        statusMsg.textContent = "Storage is already optimized. No duplicates found.";
+      }
+      loadStorageInfo();
+    }).catch(function (e) {
+      optimizeStorageBtn.textContent = "Optimize Storage";
+      optimizeStorageBtn.disabled = false;
+      progressContainer.classList.add("hidden");
+      console.error("[SETTINGS] Failed to optimize storage:", e);
+      statusMsg.textContent = "Error optimizing storage: " + e;
+    });
   });
 
   // --- Import ---
