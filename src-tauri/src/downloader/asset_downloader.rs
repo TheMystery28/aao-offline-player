@@ -75,13 +75,13 @@ pub fn check_skip_existing(save_dir: &std::path::Path, relative_path: &str) -> O
 }
 
 /// Debug-only log writer.
-struct DownloadLog {
+pub(crate) struct DownloadLog {
     #[cfg(debug_assertions)]
     file: std::sync::Mutex<std::fs::File>,
 }
 
 impl DownloadLog {
-    fn new(path: &std::path::Path) -> Result<Self, String> {
+    pub(crate) fn new(path: &std::path::Path) -> Result<Self, String> {
         #[cfg(debug_assertions)]
         {
             let file = std::fs::File::create(path)
@@ -98,7 +98,7 @@ impl DownloadLog {
     }
 
     #[allow(unused_variables)]
-    fn log(&self, msg: &str) {
+    pub(crate) fn log(&self, msg: &str) {
         #[cfg(debug_assertions)]
         {
             use std::io::Write;
@@ -328,7 +328,7 @@ pub async fn download_assets(
     })
 }
 
-async fn download_with_retry(
+pub(crate) async fn download_with_retry(
     client: &Client,
     url: &str,
     base_dir: &PathBuf,
@@ -390,7 +390,7 @@ fn encode_url(raw_url: &str) -> String {
     raw_url.replace(' ', "%20")
 }
 
-async fn download_single_asset(
+pub(crate) async fn download_single_asset(
     client: &Client,
     url: &str,
     base_dir: &PathBuf,
@@ -521,7 +521,7 @@ async fn download_single_asset(
 ///   fall back to HTTP only if HTTPS fails.
 /// - Handles redirect errors (malformed Location headers) by retrying with HTTPS.
 /// - Manually follows 3xx redirects with unencoded spaces in Location header.
-async fn do_request(
+pub(crate) async fn do_request(
     client: &Client,
     request_url: &str,
     original_url: &str,
@@ -1149,5 +1149,226 @@ mod tests {
         if let Some(exp) = expected {
             assert_eq!(actual_len, exp, "Matching Content-Length should pass");
         }
+    }
+
+    // ============================================================
+    // Wiremock integration tests
+    // ============================================================
+
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path};
+
+    fn test_client() -> Client {
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap()
+    }
+
+    fn test_log(dir: &std::path::Path) -> DownloadLog {
+        DownloadLog::new(&dir.join("test_log.txt")).unwrap()
+    }
+
+    // --- Retry logic ---
+
+    #[tokio::test]
+    async fn test_mock_retry_on_503_succeeds() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let log = test_log(dir.path());
+
+        // First request: 503
+        Mock::given(method("GET")).and(path("/asset.png"))
+            .respond_with(ResponseTemplate::new(503))
+            .up_to_n_times(1)
+            .mount(&mock_server).await;
+        // Second request: 200
+        Mock::given(method("GET")).and(path("/asset.png"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![1, 2, 3]))
+            .mount(&mock_server).await;
+
+        let url = format!("{}/asset.png", mock_server.uri());
+        let client = test_client();
+        let result = download_with_retry(
+            &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
+        ).await;
+        assert!(result.is_ok(), "Should succeed after retry: {:?}", result.err());
+        assert_eq!(result.unwrap().size, 3);
+    }
+
+    #[tokio::test]
+    async fn test_mock_no_retry_on_404() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let log = test_log(dir.path());
+
+        Mock::given(method("GET")).and(path("/missing.png"))
+            .respond_with(ResponseTemplate::new(404))
+            .expect(1)
+            .mount(&mock_server).await;
+
+        let url = format!("{}/missing.png", mock_server.uri());
+        let client = test_client();
+        let result = download_with_retry(
+            &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("404"));
+    }
+
+    #[tokio::test]
+    async fn test_mock_retry_exhausted_returns_error() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let log = test_log(dir.path());
+
+        // All 3 retries fail with 503
+        Mock::given(method("GET")).and(path("/always_fail.png"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&mock_server).await;
+
+        let url = format!("{}/always_fail.png", mock_server.uri());
+        let client = test_client();
+        let result = download_with_retry(
+            &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
+        ).await;
+        assert!(result.is_err(), "Should fail after all retries");
+        assert!(result.unwrap_err().contains("503"));
+    }
+
+    // --- Content validation ---
+
+    #[tokio::test]
+    async fn test_mock_html_rejected_for_sprite() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let log = test_log(dir.path());
+
+        Mock::given(method("GET")).and(path("/sprite.png"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(b"<html>File not found</html>".to_vec())
+                    .append_header("content-type", "text/html; charset=utf-8")
+            )
+            .mount(&mock_server).await;
+
+        let url = format!("{}/sprite.png", mock_server.uri());
+        let client = test_client();
+        let result = download_single_asset(
+            &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("HTML"));
+    }
+
+    #[tokio::test]
+    async fn test_mock_image_accepted() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let log = test_log(dir.path());
+
+        Mock::given(method("GET")).and(path("/img.png"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "image/png")
+                    .set_body_bytes(vec![0x89, 0x50, 0x4E, 0x47]) // PNG magic
+            )
+            .mount(&mock_server).await;
+
+        let url = format!("{}/img.png", mock_server.uri());
+        let client = test_client();
+        let result = download_single_asset(
+            &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
+        ).await;
+        assert!(result.is_ok(), "PNG should be accepted: {:?}", result.err());
+    }
+
+    #[tokio::test]
+    async fn test_mock_empty_body_rejected() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let log = test_log(dir.path());
+
+        Mock::given(method("GET")).and(path("/empty.png"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![]))
+            .mount(&mock_server).await;
+
+        let url = format!("{}/empty.png", mock_server.uri());
+        let client = test_client();
+        let result = download_single_asset(
+            &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Empty"));
+    }
+
+    // --- Concurrent downloads ---
+
+    #[tokio::test]
+    async fn test_mock_concurrent_all_succeed() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+
+        for i in 0..5 {
+            Mock::given(method("GET")).and(path(format!("/a{}.png", i)))
+                .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![i as u8; 10]))
+                .mount(&mock_server).await;
+        }
+
+        let assets: Vec<AssetRef> = (0..5).map(|i| AssetRef {
+            url: format!("{}/a{}.png", mock_server.uri(), i),
+            asset_type: "sprite".to_string(),
+            is_default: false,
+            local_path: String::new(),
+        }).collect();
+
+        let client = test_client();
+        let tx = tauri::ipc::Channel::new(|_| Ok(()));
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = download_assets(
+            &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
+            &tx, 3, cancel,
+        ).await.unwrap();
+
+        assert_eq!(result.downloaded.len(), 5);
+        assert_eq!(result.failed.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_mock_concurrent_mixed_results() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+
+        Mock::given(method("GET")).and(path("/ok1.png"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![1, 2]))
+            .mount(&mock_server).await;
+        Mock::given(method("GET")).and(path("/fail.png"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server).await;
+        Mock::given(method("GET")).and(path("/ok2.png"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![3, 4]))
+            .mount(&mock_server).await;
+
+        let assets = vec![
+            AssetRef { url: format!("{}/ok1.png", mock_server.uri()), asset_type: "sprite".into(), is_default: false, local_path: String::new() },
+            AssetRef { url: format!("{}/fail.png", mock_server.uri()), asset_type: "sprite".into(), is_default: false, local_path: String::new() },
+            AssetRef { url: format!("{}/ok2.png", mock_server.uri()), asset_type: "sprite".into(), is_default: false, local_path: String::new() },
+        ];
+
+        let client = test_client();
+        let tx = tauri::ipc::Channel::new(|_| Ok(()));
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = download_assets(
+            &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
+            &tx, 3, cancel,
+        ).await.unwrap();
+
+        assert_eq!(result.downloaded.len(), 2, "2 should succeed");
+        assert_eq!(result.failed.len(), 1, "1 should fail");
     }
 }
