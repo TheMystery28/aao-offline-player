@@ -222,6 +222,168 @@ impl DedupIndex {
         }
         Ok(())
     }
+
+    /// Scan all case asset directories and register files not already indexed.
+    /// Keys: `case/{id}/assets/{filename}`. Used for migrating pre-existing downloads.
+    pub fn scan_and_register_cases(&self, data_dir: &Path) -> Result<usize, String> {
+        let cases_dir = data_dir.join("case");
+        if !cases_dir.is_dir() {
+            return Ok(0);
+        }
+        let mut count = 0;
+        let entries = fs::read_dir(&cases_dir)
+            .map_err(|e| format!("Failed to read case directory: {}", e))?;
+        for entry in entries.flatten() {
+            let case_dir = entry.path();
+            if !case_dir.is_dir() {
+                continue;
+            }
+            let case_id = match case_dir.file_name().and_then(|n| n.to_str()) {
+                Some(name) => match name.parse::<u32>() {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                },
+                None => continue,
+            };
+            let assets_dir = case_dir.join("assets");
+            if !assets_dir.is_dir() {
+                continue;
+            }
+            let files = match fs::read_dir(&assets_dir) {
+                Ok(rd) => rd,
+                Err(_) => continue,
+            };
+            for file_entry in files.flatten() {
+                let path = file_entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let filename = match path.file_name().and_then(|n| n.to_str()) {
+                    Some(n) => n.to_string(),
+                    None => continue,
+                };
+                let reg_key = format!("case/{}/assets/{}", case_id, filename);
+
+                // Check if already registered
+                let already_exists = {
+                    let txn = self.db.begin_read()
+                        .map_err(|e| format!("Failed to begin read: {}", e))?;
+                    match txn.open_table(HASH_BY_PATH) {
+                        Ok(table) => table.get(&*reg_key)
+                            .map_err(|e| format!("Failed to read: {}", e))?
+                            .is_some(),
+                        Err(_) => false,
+                    }
+                };
+                if already_exists {
+                    continue;
+                }
+
+                let size = match path.metadata() {
+                    Ok(m) => m.len(),
+                    Err(_) => continue,
+                };
+                let hash = match hash_file(&path) {
+                    Ok(h) => h,
+                    Err(_) => continue,
+                };
+                self.register(&reg_key, size, hash)?;
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    /// Remove all entries whose path starts with the given prefix.
+    /// Uses B-tree sorted range scan. Returns count of removed entries.
+    pub fn unregister_prefix(&self, prefix: &str) -> Result<usize, String> {
+        // Collect entries to remove (read transaction)
+        let to_remove: Vec<(String, u64, String)> = {
+            let txn = self.db.begin_read()
+                .map_err(|e| format!("Failed to begin read: {}", e))?;
+            let table = match txn.open_table(HASH_BY_PATH) {
+                Ok(t) => t,
+                Err(_) => return Ok(0),
+            };
+            let mut entries = Vec::new();
+            if let Ok(range) = table.range::<&str>(prefix..) {
+                for item in range.flatten() {
+                    let path = item.0.value().to_string();
+                    if !path.starts_with(prefix) {
+                        break; // Sorted, no more matches
+                    }
+                    let (size, _hash) = item.1.value();
+                    let ext = Path::new(&path)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(normalize_ext)
+                        .unwrap_or_default();
+                    entries.push((path, size, ext));
+                }
+            }
+            entries
+        };
+
+        if to_remove.is_empty() {
+            return Ok(0);
+        }
+
+        // Remove in a write transaction
+        let txn = self.db.begin_write()
+            .map_err(|e| format!("Failed to begin write: {}", e))?;
+        {
+            let mut hash_table = txn.open_table(HASH_BY_PATH)
+                .map_err(|e| format!("Failed to open hash table: {}", e))?;
+            let mut lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT)
+                .map_err(|e| format!("Failed to open lookup table: {}", e))?;
+            for (path, size, ext) in &to_remove {
+                let _ = hash_table.remove(&**path);
+                let size_ext_key = format!("{}:{}", size, ext);
+                let _ = lookup_table.remove(&*size_ext_key, &**path);
+            }
+        }
+        txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
+        Ok(to_remove.len())
+    }
+
+    /// Query all case asset entries from the index.
+    /// Returns `(path, case_id, filename, size, hash)` for all `case/*/assets/*` entries.
+    pub fn query_case_assets(&self) -> Result<Vec<(u32, String, u64, String, u64)>, String> {
+        let txn = self.db.begin_read()
+            .map_err(|e| format!("Failed to begin read: {}", e))?;
+        let table = match txn.open_table(HASH_BY_PATH) {
+            Ok(t) => t,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let mut result = Vec::new();
+        if let Ok(range) = table.range::<&str>("case/"..) {
+            for item in range.flatten() {
+                let path = item.0.value().to_string();
+                if !path.starts_with("case/") {
+                    break;
+                }
+                // Parse "case/{id}/assets/{filename}"
+                let parts: Vec<&str> = path.splitn(4, '/').collect();
+                if parts.len() < 4 || parts[2] != "assets" {
+                    continue;
+                }
+                let case_id = match parts[1].parse::<u32>() {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                };
+                let filename = parts[3].to_string();
+                let (size, hash) = item.1.value();
+                let ext = Path::new(&filename)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(normalize_ext)
+                    .unwrap_or_default();
+                result.push((case_id, filename, size, ext, hash));
+            }
+        }
+        Ok(result)
+    }
 }
 
 /// Compute xxh3_64 hash of a file's contents.
@@ -356,6 +518,9 @@ pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), 
 
             // Delete the duplicate file
             if fs::remove_file(&file_path).is_ok() {
+                // Unregister case asset from the persistent index
+                let reg_key = format!("case/{}/assets/{}", case_id, asset_filename);
+                let _ = index.unregister(&reg_key);
                 deduped_count += 1;
                 bytes_saved += file_size;
             }
@@ -497,49 +662,28 @@ pub fn optimize_all_cases(
         return Ok((0, 0));
     }
 
-    let total_phases = case_dirs.len() * 2; // scan + dedup for each case
+    let total_phases = case_dirs.len() + 1; // index query + dedup per case
     let mut progress = 0usize;
 
-    // Phase 1: Build content map of ALL case assets across ALL cases
-    //   (size, normalized_ext, hash) → [(case_id, filename)]
+    // Phase 1: Build content map from the persistent index (no file I/O)
+    // Ensure index is populated for pre-existing downloads (migration)
+    let index = DedupIndex::open(data_dir)?;
+    index.scan_and_register(data_dir, "defaults")?;
+    index.scan_and_register_cases(data_dir)?;
+
     type ContentKey = (u64, String, u64);
     let mut content_map: HashMap<ContentKey, Vec<(u32, String)>> = HashMap::new();
 
-    for (case_id, case_dir) in &case_dirs {
-        let assets_dir = case_dir.join("assets");
-        if assets_dir.is_dir() {
-            if let Ok(entries) = fs::read_dir(&assets_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if !path.is_file() {
-                        continue;
-                    }
-                    let size = match path.metadata() {
-                        Ok(m) => m.len(),
-                        Err(_) => continue,
-                    };
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .map(normalize_ext)
-                        .unwrap_or_default();
-                    let hash = match hash_file(&path) {
-                        Ok(h) => h,
-                        Err(_) => continue,
-                    };
-                    let filename = match path.file_name().and_then(|n| n.to_str()) {
-                        Some(n) => n.to_string(),
-                        None => continue,
-                    };
-                    let key = (size, ext, hash);
-                    content_map.entry(key).or_default().push((*case_id, filename));
-                }
-            }
-        }
-        progress += 1;
-        if let Some(cb) = &on_progress {
-            cb(progress, total_phases);
-        }
+    // Query all case asset entries from the index
+    let case_assets = index.query_case_assets()?;
+    for (case_id, filename, size, ext, hash) in case_assets {
+        let key = (size, ext, hash);
+        content_map.entry(key).or_default().push((case_id, filename));
+    }
+
+    progress += 1;
+    if let Some(cb) = &on_progress {
+        cb(progress, total_phases);
     }
 
     let mut total_deduped = 0usize;
@@ -581,9 +725,7 @@ pub fn optimize_all_cases(
             }
 
             // Register the new shared asset in the persistent index
-            if let Ok(idx) = DedupIndex::open(data_dir) {
-                let _ = idx.register(&shared_relative, *size, *hash);
-            }
+            let _ = index.register(&shared_relative, *size, *hash);
         }
 
         // Track how many copies we delete for this group
@@ -638,6 +780,9 @@ pub fn optimize_all_cases(
 
             // Delete the case-specific copy
             if fs::remove_file(&asset_path).is_ok() {
+                // Unregister from the persistent index
+                let reg_key = format!("case/{}/assets/{}", case_id, filename);
+                let _ = index.unregister(&reg_key);
                 total_deduped += 1;
                 group_deleted += 1;
             }
@@ -1398,5 +1543,388 @@ mod tests {
             result.unwrap().contains("sprite.gif"),
             "Should find the defaults/images/sprite.gif entry"
         );
+    }
+
+    // --- Full index: case assets ---
+
+    #[test]
+    fn test_scan_and_register_cases() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create case asset files
+        let a_dir = data_dir.join("case").join("10").join("assets");
+        fs::create_dir_all(&a_dir).unwrap();
+        fs::write(a_dir.join("a.gif"), b"content a").unwrap();
+
+        let b_dir = data_dir.join("case").join("20").join("assets");
+        fs::create_dir_all(&b_dir).unwrap();
+        fs::write(b_dir.join("b.gif"), b"content b").unwrap();
+
+        let index = DedupIndex::open(data_dir).unwrap();
+        let count = index.scan_and_register_cases(data_dir).unwrap();
+        assert_eq!(count, 2, "Should register 2 case asset files");
+
+        // Verify idempotent
+        let count2 = index.scan_and_register_cases(data_dir).unwrap();
+        assert_eq!(count2, 0, "Second scan should register 0 (already indexed)");
+
+        // Verify findable
+        let candidate = dir.path().join("match.gif");
+        fs::write(&candidate, b"content a").unwrap();
+        let result = index.find_duplicate(&candidate, data_dir);
+        assert!(result.is_some(), "Should find case asset duplicate");
+        assert!(result.unwrap().contains("case/10/assets/a.gif"));
+    }
+
+    #[test]
+    fn test_unregister_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        // Register entries under case/99/ and case/100/
+        let h1 = xxh3_64(b"data1");
+        let h2 = xxh3_64(b"data2");
+        let h3 = xxh3_64(b"data3");
+        index.register("case/99/assets/a.gif", 5, h1).unwrap();
+        index.register("case/99/assets/b.gif", 5, h2).unwrap();
+        index.register("case/100/assets/c.gif", 5, h3).unwrap();
+
+        // Unregister case/99/
+        let removed = index.unregister_prefix("case/99/").unwrap();
+        assert_eq!(removed, 2, "Should remove 2 entries under case/99/");
+
+        // Verify case/99/ entries are gone
+        let candidate99 = dir.path().join("match99.gif");
+        fs::write(&candidate99, b"data1").unwrap();
+        assert!(index.find_duplicate(&candidate99, dir.path()).is_none(),
+            "case/99 entries should be gone");
+
+        // Verify case/100/ entries are still present
+        let candidate100 = dir.path().join("match100.gif");
+        fs::write(&candidate100, b"data3").unwrap();
+        let result = index.find_duplicate(&candidate100, dir.path());
+        assert!(result.is_some(), "case/100 entries should still exist");
+        assert!(result.unwrap().contains("case/100/"));
+    }
+
+    #[test]
+    fn test_register_case_asset_and_find() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        let hash = xxh3_64(b"case sprite data");
+        index.register("case/99/assets/sprite.gif", 16, hash).unwrap();
+
+        // Matching file
+        let candidate = dir.path().join("match.gif");
+        fs::write(&candidate, b"case sprite data").unwrap();
+        let result = index.find_duplicate(&candidate, dir.path());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "case/99/assets/sprite.gif");
+
+        // Non-matching
+        let diff = dir.path().join("diff.gif");
+        fs::write(&diff, b"different data!!").unwrap();
+        assert!(index.find_duplicate(&diff, dir.path()).is_none());
+    }
+
+    #[test]
+    fn test_optimize_reads_from_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+        let content = b"shared asset across cases";
+
+        // Create two cases with identical assets
+        make_case_with_asset(data_dir, 600, "img-aaa.jpg", content);
+        make_case_with_asset(data_dir, 700, "img-bbb.jpg", content);
+
+        // Populate the index from disk (migration path)
+        let index = DedupIndex::open(data_dir).unwrap();
+        let scan_count = index.scan_and_register_cases(data_dir).unwrap();
+        assert_eq!(scan_count, 2, "Should index 2 case assets");
+
+        // Verify query_case_assets returns them
+        let assets = index.query_case_assets().unwrap();
+        assert_eq!(assets.len(), 2, "Should have 2 entries in index");
+
+        // Run optimize — should read from index, not disk
+        let (count, _) = optimize_all_cases(data_dir, None).unwrap();
+        assert!(count >= 2, "Should dedup at least 2 files, got {}", count);
+
+        // Verify shared file created
+        let shared_dir = data_dir.join("defaults").join("shared");
+        assert!(shared_dir.is_dir(), "defaults/shared/ should exist");
+
+        // Verify case assets deleted
+        assert!(!data_dir.join("case/600/assets/img-aaa.jpg").exists());
+        assert!(!data_dir.join("case/700/assets/img-bbb.jpg").exists());
+    }
+
+    // --- Edge case tests ---
+
+    #[test]
+    fn test_dedup_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create a 0-byte default and a 0-byte case asset
+        let defaults_dir = data_dir.join("defaults").join("images");
+        fs::create_dir_all(&defaults_dir).unwrap();
+        fs::write(defaults_dir.join("empty.gif"), b"").unwrap();
+
+        let case_dir = data_dir.join("case").join("1");
+        let assets_dir = case_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(assets_dir.join("empty-abc.gif"), b"").unwrap();
+
+        let mut asset_map = HashMap::new();
+        asset_map.insert("http://x.com/e.gif".into(), "assets/empty-abc.gif".into());
+        let manifest = super::super::manifest::CaseManifest {
+            case_id: 1,
+            title: "Empty".into(), author: "A".into(), language: "en".into(),
+            download_date: "2025-01-01".into(), format: "v6".into(), sequence: None,
+            assets: super::super::manifest::AssetSummary {
+                case_specific: 1, shared_defaults: 0, total_downloaded: 1, total_size_bytes: 0,
+            },
+            asset_map, failed_assets: vec![], has_plugins: false, has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        let (count, _) = dedup_case_assets(1, data_dir).unwrap();
+        assert_eq!(count, 1, "Empty files with same hash should dedup");
+        assert!(!assets_dir.join("empty-abc.gif").exists(), "Empty case file should be deleted");
+    }
+
+    #[test]
+    fn test_dedup_same_size_different_extension_no_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        // Register a .gif file
+        let hash = xxh3_64(b"five!");
+        index.register("defaults/images/sprite.gif", 5, hash).unwrap();
+
+        // Create a .png file with same content (same size, same hash, different ext)
+        let candidate = dir.path().join("candidate.png");
+        fs::write(&candidate, b"five!").unwrap();
+
+        // Different extension → different (size, ext) key → no match in lookup
+        let result = index.find_duplicate(&candidate, dir.path());
+        assert!(result.is_none(), "Same content but different extension should NOT match");
+    }
+
+    #[test]
+    fn test_dedup_same_size_same_ext_different_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        // Register a file
+        let hash = xxh3_64(b"AAAAA");
+        index.register("defaults/images/a.gif", 5, hash).unwrap();
+
+        // Same size (5 bytes), same extension (.gif), but different content
+        let candidate = dir.path().join("b.gif");
+        fs::write(&candidate, b"BBBBB").unwrap();
+        let result = index.find_duplicate(&candidate, dir.path());
+        assert!(result.is_none(), "Same size+ext but different content should NOT match");
+    }
+
+    #[test]
+    fn test_dedup_index_corrupt_db_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("dedup_index.redb");
+
+        // Write garbage to the db file
+        fs::write(&db_path, b"this is not a valid redb file").unwrap();
+
+        // open() should recover by deleting and recreating
+        let index = DedupIndex::open(dir.path());
+        assert!(index.is_ok(), "Should recover from corrupt db");
+
+        // Should work normally after recovery
+        let index = index.unwrap();
+        let hash = xxh3_64(b"test");
+        index.register("defaults/test.gif", 4, hash).unwrap();
+        let candidate = dir.path().join("test.gif");
+        fs::write(&candidate, b"test").unwrap();
+        assert!(index.find_duplicate(&candidate, dir.path()).is_some());
+    }
+
+    #[test]
+    fn test_dedup_stale_index_entry_file_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create defaults/ with a file and index it
+        let defaults_dir = data_dir.join("defaults");
+        fs::create_dir_all(&defaults_dir).unwrap();
+        let file_path = defaults_dir.join("sprite.gif");
+        fs::write(&file_path, b"sprite data").unwrap();
+
+        let index = DedupIndex::open(data_dir).unwrap();
+        index.scan_and_register(data_dir, "defaults").unwrap();
+
+        // Now delete the file from disk (stale entry in index)
+        fs::remove_file(&file_path).unwrap();
+
+        // dedup_case_assets should handle this gracefully:
+        // find_duplicate may return a match but dedup checks disk before deleting
+        let case_dir = data_dir.join("case").join("5");
+        let assets_dir = case_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(assets_dir.join("sprite-x.gif"), b"sprite data").unwrap();
+
+        let mut asset_map = HashMap::new();
+        asset_map.insert("http://x.com/s.gif".into(), "assets/sprite-x.gif".into());
+        let manifest = super::super::manifest::CaseManifest {
+            case_id: 5,
+            title: "Test".into(), author: "A".into(), language: "en".into(),
+            download_date: "2025-01-01".into(), format: "v6".into(), sequence: None,
+            assets: super::super::manifest::AssetSummary {
+                case_specific: 1, shared_defaults: 0, total_downloaded: 1, total_size_bytes: 11,
+            },
+            asset_map, failed_assets: vec![], has_plugins: false, has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        // Should NOT dedup because the default file doesn't exist on disk
+        let (count, _) = dedup_case_assets(5, data_dir).unwrap();
+        assert_eq!(count, 0, "Should not dedup against stale index entry (file missing on disk)");
+        assert!(assets_dir.join("sprite-x.gif").exists(), "Case file should still exist");
+    }
+
+    #[test]
+    fn test_clear_unused_defaults_updates_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create defaults/ with 2 files, index them
+        let defaults_dir = data_dir.join("defaults");
+        fs::create_dir_all(&defaults_dir).unwrap();
+        fs::write(defaults_dir.join("used.gif"), b"used content").unwrap();
+        fs::write(defaults_dir.join("unused.gif"), b"unused content").unwrap();
+
+        {
+            let index = DedupIndex::open(data_dir).unwrap();
+            index.scan_and_register(data_dir, "defaults").unwrap();
+        } // Drop index before clear_unused_defaults opens its own
+
+        // Create a case that references only "used.gif"
+        let case_dir = data_dir.join("case").join("8");
+        fs::create_dir_all(&case_dir).unwrap();
+        let mut asset_map = HashMap::new();
+        asset_map.insert("http://x.com/u.gif".into(), "defaults/used.gif".into());
+        let manifest = super::super::manifest::CaseManifest {
+            case_id: 8,
+            title: "Test".into(), author: "A".into(), language: "en".into(),
+            download_date: "2025-01-01".into(), format: "v6".into(), sequence: None,
+            assets: super::super::manifest::AssetSummary {
+                case_specific: 0, shared_defaults: 1, total_downloaded: 1, total_size_bytes: 12,
+            },
+            asset_map, failed_assets: vec![], has_plugins: false, has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        // Clear unused
+        let (deleted, _) = clear_unused_defaults(data_dir).unwrap();
+        assert_eq!(deleted, 1, "Should delete 1 unused file");
+
+        // Verify the used file still exists on disk
+        assert!(defaults_dir.join("used.gif").exists(), "Used file should still exist on disk");
+
+        // Verify the index was updated: unused entry should be gone
+        let fresh_index = DedupIndex::open(data_dir).unwrap();
+        let candidate_unused = dir.path().join("match_unused.gif");
+        fs::write(&candidate_unused, b"unused content").unwrap();
+        assert!(
+            fresh_index.find_duplicate(&candidate_unused, data_dir).is_none(),
+            "Unused entry should be removed from index after clear"
+        );
+
+        // Used entry should still be in the index
+        let candidate_used = dir.path().join("match_used.gif");
+        fs::write(&candidate_used, b"used content").unwrap();
+        assert!(
+            fresh_index.find_duplicate(&candidate_used, data_dir).is_some(),
+            "Used entry should remain in index after clear"
+        );
+    }
+
+    #[test]
+    fn test_optimize_multiple_cases_share_same_promoted_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+        let content = b"widely shared background image";
+
+        // Create 3 cases with identical asset
+        make_case_with_asset(data_dir, 800, "bg-aaa.jpg", content);
+        make_case_with_asset(data_dir, 900, "bg-bbb.jpg", content);
+        make_case_with_asset(data_dir, 1000, "bg-ccc.jpg", content);
+
+        let (count, _) = optimize_all_cases(data_dir, None).unwrap();
+        assert!(count >= 3, "Should dedup 3 files, got {}", count);
+
+        // Verify all 3 manifests point to the same shared path
+        let m800 = read_manifest(&data_dir.join("case/800")).unwrap();
+        let m900 = read_manifest(&data_dir.join("case/900")).unwrap();
+        let m1000 = read_manifest(&data_dir.join("case/1000")).unwrap();
+
+        let p800 = &m800.asset_map["http://example.com/bg-aaa.jpg"];
+        let p900 = &m900.asset_map["http://example.com/bg-bbb.jpg"];
+        let p1000 = &m1000.asset_map["http://example.com/bg-ccc.jpg"];
+
+        assert!(p800.starts_with("defaults/shared/"), "Case 800: {}", p800);
+        assert!(p900.starts_with("defaults/shared/"), "Case 900: {}", p900);
+        assert!(p1000.starts_with("defaults/shared/"), "Case 1000: {}", p1000);
+
+        // All 3 should point to the SAME shared file
+        assert_eq!(p800, p900, "All cases should point to same shared path");
+        assert_eq!(p900, p1000, "All cases should point to same shared path");
+
+        // The shared file should exist on disk
+        assert!(data_dir.join(p800).is_file(), "Shared file should exist on disk");
+    }
+
+    #[test]
+    fn test_unregister_prefix_no_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        let hash = xxh3_64(b"data");
+        index.register("defaults/test.gif", 4, hash).unwrap();
+
+        // Unregister a prefix that doesn't exist
+        let removed = index.unregister_prefix("case/999/").unwrap();
+        assert_eq!(removed, 0, "No entries to remove");
+
+        // Original entry should still be there
+        let candidate = dir.path().join("test.gif");
+        fs::write(&candidate, b"data").unwrap();
+        assert!(index.find_duplicate(&candidate, dir.path()).is_some());
+    }
+
+    #[test]
+    fn test_query_case_assets_empty_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+        let assets = index.query_case_assets().unwrap();
+        assert!(assets.is_empty(), "Empty index should return empty vec");
+    }
+
+    #[test]
+    fn test_query_case_assets_ignores_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = DedupIndex::open(dir.path()).unwrap();
+
+        let h1 = xxh3_64(b"default");
+        let h2 = xxh3_64(b"case");
+        index.register("defaults/images/sprite.gif", 7, h1).unwrap();
+        index.register("case/1/assets/custom.gif", 4, h2).unwrap();
+
+        let assets = index.query_case_assets().unwrap();
+        assert_eq!(assets.len(), 1, "Should only return case assets, not defaults");
+        assert_eq!(assets[0].0, 1); // case_id
+        assert_eq!(assets[0].1, "custom.gif"); // filename
     }
 }

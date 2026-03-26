@@ -254,11 +254,16 @@ async fn download_sequence(
         manifest.assets.total_downloaded = manifest.asset_map.len();
         downloader::manifest::write_manifest(&manifest, &case_dir)?;
 
-        // Register newly downloaded defaults in the persistent hash index
+        // Register ALL downloaded assets in the persistent hash index
         if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
             for asset in &result.downloaded {
-                if asset.local_path.starts_with("defaults/") {
-                    let _ = index.register(&asset.local_path, asset.size, asset.content_hash);
+                if !asset.local_path.is_empty() {
+                    let reg_path = if asset.local_path.starts_with("defaults/") {
+                        asset.local_path.clone()
+                    } else {
+                        format!("case/{}/{}", case_id, asset.local_path)
+                    };
+                    let _ = index.register(&reg_path, asset.size, asset.content_hash);
                 }
             }
         }
@@ -495,11 +500,16 @@ async fn download_case(
     debug_log!("Saved manifest.json to {} ({} assets incl. {} cached defaults)",
         case_dir.display(), manifest.asset_map.len(), cached_defaults.len());
 
-    // Register newly downloaded defaults in the persistent hash index
+    // Register ALL downloaded assets in the persistent hash index
     if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
         for asset in &downloaded {
-            if asset.local_path.starts_with("defaults/") {
-                let _ = index.register(&asset.local_path, asset.size, asset.content_hash);
+            if !asset.local_path.is_empty() {
+                let reg_path = if asset.local_path.starts_with("defaults/") {
+                    asset.local_path.clone()
+                } else {
+                    format!("case/{}/{}", case_id, asset.local_path)
+                };
+                let _ = index.register(&reg_path, asset.size, asset.content_hash);
             }
         }
     }
@@ -892,6 +902,11 @@ fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<(), St
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
         return Err(format!("Case {} not found", case_id));
+    }
+
+    // Remove case entries from the persistent hash index before deleting files
+    if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
+        let _ = index.unregister_prefix(&format!("case/{}/", case_id));
     }
 
     fs::remove_dir_all(&case_dir)

@@ -713,7 +713,7 @@ fn import_multi_case_zip(
     }
 
     // Extract shared default assets (defaults/ entries) to engine_dir
-    let mut extracted_defaults: Vec<String> = Vec::new();
+    let mut extracted_files: Vec<(String, std::path::PathBuf)> = Vec::new();
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -739,22 +739,22 @@ fn import_multi_case_zip(
             .map_err(|e| format!("Failed to create {}: {}", entry_name, e))?;
         io::copy(&mut entry, &mut outfile)
             .map_err(|e| format!("Failed to write {}: {}", entry_name, e))?;
-        extracted_defaults.push(entry_name);
+        extracted_files.push((entry_name, dest_path));
         progress_count += 1;
         if let Some(cb) = &on_progress { cb(progress_count, total_entries); }
     }
 
-    // Register extracted defaults in the persistent hash index
-    if !extracted_defaults.is_empty() {
-        if let Ok(index) = crate::downloader::dedup::DedupIndex::open(engine_dir) {
-            for default_path in &extracted_defaults {
-                let full = engine_dir.join(default_path);
-                if let Ok(hash) = crate::downloader::dedup::hash_file(&full) {
-                    let size = full.metadata().map(|m| m.len()).unwrap_or(0);
-                    let _ = index.register(default_path, size, hash);
-                }
+    // Register ALL extracted files in the persistent hash index
+    // (defaults from above + case assets via scan_and_register_cases)
+    if let Ok(index) = crate::downloader::dedup::DedupIndex::open(engine_dir) {
+        for (index_key, disk_path) in &extracted_files {
+            if let Ok(hash) = crate::downloader::dedup::hash_file(disk_path) {
+                let size = disk_path.metadata().map(|m| m.len()).unwrap_or(0);
+                let _ = index.register(index_key, size, hash);
             }
         }
+        // Also register case assets that were extracted earlier
+        let _ = index.scan_and_register_cases(engine_dir);
     }
 
     // Post-import dedup: run for each case now that defaults/ are all extracted
@@ -879,7 +879,7 @@ fn import_collection_zip(
     }
 
     // Extract shared default assets (defaults/ entries) to engine_dir
-    let mut extracted_defaults: Vec<String> = Vec::new();
+    let mut extracted_files: Vec<(String, std::path::PathBuf)> = Vec::new();
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -905,24 +905,22 @@ fn import_collection_zip(
             .map_err(|e| format!("Failed to create {}: {}", entry_name, e))?;
         io::copy(&mut entry, &mut outfile)
             .map_err(|e| format!("Failed to write {}: {}", entry_name, e))?;
-        extracted_defaults.push(entry_name);
+        extracted_files.push((entry_name, dest_path));
         progress_count += 1;
         if let Some(cb) = &on_progress {
             cb(progress_count, total_entries);
         }
     }
 
-    // Register extracted defaults in the persistent hash index
-    if !extracted_defaults.is_empty() {
-        if let Ok(index) = crate::downloader::dedup::DedupIndex::open(engine_dir) {
-            for default_path in &extracted_defaults {
-                let full = engine_dir.join(default_path);
-                if let Ok(hash) = crate::downloader::dedup::hash_file(&full) {
-                    let size = full.metadata().map(|m| m.len()).unwrap_or(0);
-                    let _ = index.register(default_path, size, hash);
-                }
+    // Register ALL extracted files in the persistent hash index
+    if let Ok(index) = crate::downloader::dedup::DedupIndex::open(engine_dir) {
+        for (index_key, disk_path) in &extracted_files {
+            if let Ok(hash) = crate::downloader::dedup::hash_file(disk_path) {
+                let size = disk_path.metadata().map(|m| m.len()).unwrap_or(0);
+                let _ = index.register(index_key, size, hash);
             }
         }
+        let _ = index.scan_and_register_cases(engine_dir);
     }
 
     // Post-import dedup for each case now that defaults/ are all extracted
@@ -1175,7 +1173,7 @@ fn import_single_case_zip(
     //    - defaults/* entries go to engine_dir/defaults/* (shared across cases)
     //    - everything else goes to case_dir/ (case-specific)
     let total = archive.len();
-    let mut extracted_defaults: Vec<String> = Vec::new();
+    let mut extracted_files: Vec<(String, std::path::PathBuf)> = Vec::new(); // (index_key, disk_path)
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -1208,20 +1206,24 @@ fn import_single_case_zip(
         io::copy(&mut entry, &mut outfile)
             .map_err(|e| format!("Failed to write {}: {}", entry_name, e))?;
 
-        if is_default {
-            extracted_defaults.push(entry_name.clone());
-        }
+        // Track for index registration
+        let index_key = if is_default {
+            entry_name.clone()
+        } else {
+            format!("case/{}/{}", case_id, entry_name)
+        };
+        extracted_files.push((index_key, dest_path.clone()));
+
         if let Some(cb) = &on_progress { cb(i + 1, total); }
     }
 
-    // Register extracted defaults in the persistent hash index
-    if !extracted_defaults.is_empty() {
+    // Register ALL extracted files in the persistent hash index
+    if !extracted_files.is_empty() {
         if let Ok(index) = crate::downloader::dedup::DedupIndex::open(engine_dir) {
-            for default_path in &extracted_defaults {
-                let full = engine_dir.join(default_path);
-                if let Ok(hash) = crate::downloader::dedup::hash_file(&full) {
-                    let size = full.metadata().map(|m| m.len()).unwrap_or(0);
-                    let _ = index.register(default_path, size, hash);
+            for (index_key, disk_path) in &extracted_files {
+                if let Ok(hash) = crate::downloader::dedup::hash_file(disk_path) {
+                    let size = disk_path.metadata().map(|m| m.len()).unwrap_or(0);
+                    let _ = index.register(index_key, size, hash);
                 }
             }
         }
