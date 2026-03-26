@@ -441,7 +441,8 @@ fn extract_sprites_from_frames(
     };
     let profiles = data["profiles"].as_array();
 
-    // Load startup animation lookup to avoid downloading non-existent sprites
+    // Load sprite count and startup animation lookup to avoid downloading non-existent sprites
+    let profiles_nb = parse_default_profiles_nb(engine_dir);
     let profiles_startup = parse_default_profiles_startup(engine_dir);
 
     let mut used_sprites: HashSet<(i64, i64)> = HashSet::new();
@@ -482,7 +483,18 @@ fn extract_sprites_from_frames(
             continue;
         }
 
-        let sprite_num = (-sprite_id).to_string();
+        let sprite_num_val = (-sprite_id) as u32;
+
+        // Skip sprites beyond the known count for this character
+        // (matches AAO online preloader: j <= default_profiles_nb[profile.base])
+        if !profiles_nb.is_empty() {
+            match profiles_nb.get(base) {
+                Some(&max) if sprite_num_val <= max => {} // in range, proceed
+                _ => continue, // out of range or unknown base, skip
+            }
+        }
+
+        let sprite_num = sprite_num_val.to_string();
 
         // Talking
         let server_path = format!("{}{}/{}.gif", paths.talking_path(), base, sprite_num);
@@ -1755,5 +1767,76 @@ var default_profiles_startup = {"Phoenix/3": 880};"#,
 
         let has_benches = assets.iter().any(|a| a.local_path.contains("pw_courtroom_benches.gif"));
         assert!(has_benches, "Should include pw_courtroom_benches.gif foreground object");
+    }
+
+    // --- Phantom sprite bounds checking ---
+
+    /// Helper: create a temp engine dir with given default_profiles_nb and default_profiles_startup.
+    fn temp_engine_dir(profiles_nb_json: &str, profiles_startup_json: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let js_dir = dir.path().join("Javascript");
+        std::fs::create_dir_all(&js_dir).unwrap();
+        std::fs::write(
+            js_dir.join("default_data.js"),
+            format!(
+                "var default_profiles_nb = {};\nvar default_profiles_startup = {};",
+                profiles_nb_json, profiles_startup_json
+            ),
+        ).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_extract_sprites_skips_out_of_range_default_sprite() {
+        let engine = temp_engine_dir(r#"{"TestChar": 5}"#, "{}");
+        let data = json!({
+            "profiles": [null, {"base": "TestChar", "icon": "", "custom_sprites": []}],
+            "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -8}]}]
+        });
+        let assets = extract_asset_urls(&data, &test_site_paths(), engine.path());
+        let talking: Vec<_> = assets.iter()
+            .filter(|a| a.asset_type == "default_sprite_talking")
+            .collect();
+        let still: Vec<_> = assets.iter()
+            .filter(|a| a.asset_type == "default_sprite_still")
+            .collect();
+        assert_eq!(talking.len(), 0, "Sprite -8 exceeds TestChar max of 5, should be skipped");
+        assert_eq!(still.len(), 0, "Sprite -8 exceeds TestChar max of 5, should be skipped");
+    }
+
+    #[test]
+    fn test_extract_sprites_includes_in_range_default_sprite() {
+        let engine = temp_engine_dir(r#"{"TestChar": 5}"#, "{}");
+        let data = json!({
+            "profiles": [null, {"base": "TestChar", "icon": "", "custom_sprites": []}],
+            "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -3}]}]
+        });
+        let assets = extract_asset_urls(&data, &test_site_paths(), engine.path());
+        let talking: Vec<_> = assets.iter()
+            .filter(|a| a.asset_type == "default_sprite_talking")
+            .collect();
+        let still: Vec<_> = assets.iter()
+            .filter(|a| a.asset_type == "default_sprite_still")
+            .collect();
+        assert_eq!(talking.len(), 1, "Sprite -3 is within TestChar max of 5, should be included");
+        assert_eq!(still.len(), 1, "Sprite -3 is within TestChar max of 5, should be included");
+    }
+
+    #[test]
+    fn test_extract_sprites_skips_unknown_base_not_in_profiles_nb() {
+        let engine = temp_engine_dir(r#"{"OtherChar": 10}"#, "{}");
+        let data = json!({
+            "profiles": [null, {"base": "UnknownChar", "icon": "", "custom_sprites": []}],
+            "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -1}]}]
+        });
+        let assets = extract_asset_urls(&data, &test_site_paths(), engine.path());
+        let default_sprites: Vec<_> = assets.iter()
+            .filter(|a| a.asset_type.starts_with("default_sprite"))
+            .collect();
+        assert!(
+            default_sprites.is_empty(),
+            "Base 'UnknownChar' not in profiles_nb should produce no default sprites, got {}",
+            default_sprites.len()
+        );
     }
 }
