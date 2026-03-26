@@ -394,23 +394,32 @@ pub(crate) async fn download_with_retry(
 }
 
 /// Encode URL-unsafe characters in a URL path.
-/// Handles URLs from AAO trial data which may contain unencoded spaces, brackets, etc.
-/// Preserves URL structure characters (: / ? & = #) and already-encoded %XX sequences.
+/// Uses url::Url::parse as the primary validation — if the URL is already valid, return as-is.
+/// Falls back to manual encoding for URLs that fail to parse (unencoded spaces, brackets, etc.).
 fn encode_url(raw_url: &str) -> String {
-    // If it already has percent-encoded sequences, don't double-encode
-    if raw_url.contains("%20") || raw_url.contains("%5B") || raw_url.contains("%7C") {
-        return raw_url.to_string();
+    // Try to parse with url crate for normalization (encodes spaces, Unicode, etc.)
+    let base = if let Ok(parsed) = url::Url::parse(raw_url) {
+        parsed.to_string()
+    } else {
+        raw_url.to_string()
+    };
+    // Url::parse doesn't encode all chars that HTTP clients need encoded (brackets, pipes, etc.)
+    // Apply additional encoding for chars that are valid in URLs but problematic in practice
+    if base.contains('[') || base.contains(']') || base.contains('|')
+        || base.contains('{') || base.contains('}') || base.contains('^')
+        || base.contains('`') || base.contains('\\')
+    {
+        return base
+            .replace('[', "%5B")
+            .replace(']', "%5D")
+            .replace('{', "%7B")
+            .replace('}', "%7D")
+            .replace('|', "%7C")
+            .replace('\\', "%5C")
+            .replace('^', "%5E")
+            .replace('`', "%60");
     }
-    raw_url
-        .replace(' ', "%20")
-        .replace('[', "%5B")
-        .replace(']', "%5D")
-        .replace('{', "%7B")
-        .replace('}', "%7D")
-        .replace('|', "%7C")
-        .replace('\\', "%5C")
-        .replace('^', "%5E")
-        .replace('`', "%60")
+    base
 }
 
 pub(crate) async fn download_single_asset(
@@ -642,18 +651,30 @@ pub(crate) async fn do_request(
         if location.is_empty() {
             return Ok(current_response);
         }
-        let encoded_loc = encode_url(&location);
+        // Resolve the redirect URL — handle both absolute and relative Location headers
+        let resolved_url = if location.starts_with("http://") || location.starts_with("https://") {
+            encode_url(&location)
+        } else {
+            // Relative redirect — resolve against the current request URL
+            match url::Url::parse(request_url) {
+                Ok(base) => match base.join(&location) {
+                    Ok(u) => u.to_string(),
+                    Err(_) => encode_url(&location),
+                },
+                Err(_) => encode_url(&location),
+            }
+        };
         log.log(&format!(
             "  MANUAL_REDIRECT [{}]: {} → {}",
-            redirect_level + 1, original_url, encoded_loc
+            redirect_level + 1, original_url, resolved_url
         ));
         current_response = client
-            .get(&encoded_loc)
+            .get(&resolved_url)
             .header("User-Agent", "AAO-Offline-Player/0.1")
             .timeout(PER_ASSET_TIMEOUT)
             .send()
             .await
-            .map_err(|e| format!("Failed to follow redirect to {}: {}", encoded_loc, e))?;
+            .map_err(|e| format!("Failed to follow redirect to {}: {}", resolved_url, e))?;
     }
 
     Ok(current_response)
@@ -1492,5 +1513,49 @@ mod tests {
         ).await;
         assert!(result.is_ok(), "Should follow 2-level redirect chain: {:?}", result.err());
         assert_eq!(result.unwrap().size, 1);
+    }
+
+    // --- URL crate integration tests ---
+
+    #[test]
+    fn test_encode_url_valid_url_passes_through() {
+        let url = "https://example.com/path/to/file.png?q=1&r=2";
+        assert_eq!(encode_url(url), url, "Valid URL should pass through unchanged");
+    }
+
+    #[test]
+    fn test_encode_url_already_percent_encoded_passes() {
+        let url = "https://example.com/path%20with%20spaces/file%5B1%5D.png";
+        assert_eq!(encode_url(url), url, "Already-encoded URL should pass through");
+    }
+
+    #[test]
+    fn test_encode_url_preserves_query_string() {
+        // URL with spaces in path but valid query string
+        let raw = "http://example.com/my file.png?type=bg&id=1";
+        let result = encode_url(raw);
+        assert!(result.contains("%20"), "Space in path should be encoded");
+        assert!(result.contains("?type=bg&id=1"), "Query string should be preserved");
+    }
+
+    #[test]
+    fn test_url_parse_detects_valid_aao_url() {
+        // Real AAO URL format
+        let url = "https://aaonline.fr/sprites/00000.png";
+        assert!(url::Url::parse(url).is_ok(), "Standard AAO URL should parse");
+    }
+
+    #[test]
+    fn test_url_join_resolves_relative_path() {
+        let base = url::Url::parse("https://example.com/old/path").unwrap();
+        let resolved = base.join("/new-path").unwrap();
+        assert_eq!(resolved.as_str(), "https://example.com/new-path");
+    }
+
+    #[test]
+    fn test_url_join_resolves_relative_file() {
+        let base = url::Url::parse("https://example.com/dir/").unwrap();
+        let resolved = base.join("file.png").unwrap();
+        assert_eq!(resolved.as_str(), "https://example.com/dir/file.png");
     }
 }

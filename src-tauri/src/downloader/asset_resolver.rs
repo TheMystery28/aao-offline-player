@@ -24,7 +24,22 @@ impl LocalPaths {
 }
 
 fn build_url(path: &str) -> String {
-    format!("{}/{}", AAONLINE_BASE, path)
+    // Use url::Url::join for proper path joining and percent-encoding
+    match url::Url::parse(AAONLINE_BASE) {
+        Ok(base) => {
+            // Ensure base has trailing slash for proper joining
+            let base_str = if base.as_str().ends_with('/') {
+                base.to_string()
+            } else {
+                format!("{}/", base)
+            };
+            match url::Url::parse(&base_str).and_then(|b| b.join(path)) {
+                Ok(u) => u.to_string(),
+                Err(_) => format!("{}/{}", AAONLINE_BASE, path),
+            }
+        }
+        Err(_) => format!("{}/{}", AAONLINE_BASE, path),
+    }
 }
 
 /// Sanitize a path for Windows by replacing illegal characters.
@@ -1339,8 +1354,8 @@ mod tests {
             music[0].local_path,
             "defaults/music/Ace Attorney Investigations _ Miles Edgeworth 2/117 Lamenting People.mp3"
         );
-        // URL keeps the original colon (server encodes it)
-        assert!(music[0].url.contains("Investigations : Miles"));
+        // URL keeps the colon (valid in path segments) but spaces are %20-encoded
+        assert!(music[0].url.contains("Investigations%20:%20Miles"));
     }
 
     // --- Regression: default sprite paths ---
