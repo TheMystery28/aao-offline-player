@@ -173,7 +173,14 @@ async fn download_sequence(
         let existing_urls: std::collections::HashSet<String> =
             assets.iter().map(|a| a.url.clone()).collect();
         for sprite in default_sprites {
-            if !existing_urls.contains(&sprite.url) {
+            if existing_urls.contains(&sprite.url) {
+                if !sprite.local_path.is_empty() {
+                    if let Some(existing) = assets.iter_mut().find(|a| a.url == sprite.url && a.local_path.is_empty()) {
+                        existing.local_path = sprite.local_path.clone();
+                        existing.is_default = true;
+                    }
+                }
+            } else {
                 assets.push(sprite);
             }
         }
@@ -331,11 +338,19 @@ async fn download_case(
     );
     debug_log!("Extracted {} default place assets", default_places.len());
 
-    // Deduplicate: some assets may already be in the list
+    // Deduplicate: some assets may already be in the list.
+    // Upgrade external entries (empty local_path) when a default sprite provides a proper path.
     let existing_urls: std::collections::HashSet<String> = assets.iter().map(|a| a.url.clone()).collect();
     let new_count = default_sprites.iter().filter(|s| !existing_urls.contains(&s.url)).count();
     for sprite in default_sprites {
-        if !existing_urls.contains(&sprite.url) {
+        if existing_urls.contains(&sprite.url) {
+            if !sprite.local_path.is_empty() {
+                if let Some(existing) = assets.iter_mut().find(|a| a.url == sprite.url && a.local_path.is_empty()) {
+                    existing.local_path = sprite.local_path.clone();
+                    existing.is_default = true;
+                }
+            }
+        } else {
             assets.push(sprite);
         }
     }
@@ -642,7 +657,14 @@ async fn update_case(
     );
     let existing_urls: std::collections::HashSet<String> = assets.iter().map(|a| a.url.clone()).collect();
     for sprite in default_sprites {
-        if !existing_urls.contains(&sprite.url) {
+        if existing_urls.contains(&sprite.url) {
+            if !sprite.local_path.is_empty() {
+                if let Some(existing) = assets.iter_mut().find(|a| a.url == sprite.url && a.local_path.is_empty()) {
+                    existing.local_path = sprite.local_path.clone();
+                    existing.is_default = true;
+                }
+            }
+        } else {
             assets.push(sprite);
         }
     }

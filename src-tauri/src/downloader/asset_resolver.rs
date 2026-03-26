@@ -62,7 +62,19 @@ fn add_asset(
     is_default: bool,
     local_path: String,
 ) {
-    if url.is_empty() || seen.contains(&url) {
+    if url.is_empty() {
+        return;
+    }
+    if seen.contains(&url) {
+        // Upgrade: if existing entry is external (no local_path) but this one has a default path,
+        // update the existing entry so the file gets saved to the correct default location.
+        // Same URL = same bytes, so using the default path avoids file duplication.
+        if !local_path.is_empty() {
+            if let Some(existing) = assets.iter_mut().find(|a| a.url == url && a.local_path.is_empty()) {
+                existing.local_path = local_path;
+                existing.is_default = is_default;
+            }
+        }
         return;
     }
     seen.insert(url.clone());
@@ -596,6 +608,9 @@ pub fn rewrite_external_urls(
             // External asset — build a path the local server can resolve
             let server_path = format!("case/{}/{}", case_id, asset.local_path);
             url_map.insert(asset.original_url.clone(), server_path);
+        } else if asset.local_path.starts_with("defaults/") {
+            // Custom sprite URL was upgraded to default path — rewrite to use default path directly
+            url_map.insert(asset.original_url.clone(), asset.local_path.clone());
         }
     }
 
@@ -1837,6 +1852,106 @@ var default_profiles_startup = {"Phoenix/3": 880};"#,
             default_sprites.is_empty(),
             "Base 'UnknownChar' not in profiles_nb should produce no default sprites, got {}",
             default_sprites.len()
+        );
+    }
+
+    // --- Custom sprite shadowing default sprite (same URL) ---
+
+    #[test]
+    fn test_add_asset_upgrades_empty_local_path() {
+        let mut assets: Vec<AssetRef> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        let url = "http://example.com/sprite.gif".to_string();
+
+        // First add: external (empty local_path)
+        add_asset(&mut assets, &mut seen, url.clone(), "custom_sprite_talking", false, String::new());
+        assert_eq!(assets.len(), 1);
+        assert!(assets[0].local_path.is_empty());
+        assert!(!assets[0].is_default);
+
+        // Second add: default with proper local_path → should upgrade
+        add_asset(&mut assets, &mut seen, url.clone(), "default_sprite_talking", true, "defaults/images/chars/Test/1.gif".to_string());
+        assert_eq!(assets.len(), 1, "Should still be 1 entry, not 2");
+        assert_eq!(assets[0].local_path, "defaults/images/chars/Test/1.gif");
+        assert!(assets[0].is_default);
+    }
+
+    #[test]
+    fn test_add_asset_no_upgrade_when_existing_has_path() {
+        let mut assets: Vec<AssetRef> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        let url = "http://example.com/sprite.gif".to_string();
+
+        // First add: has a local_path
+        add_asset(&mut assets, &mut seen, url.clone(), "bg", false, "some/existing/path.gif".to_string());
+        assert_eq!(assets[0].local_path, "some/existing/path.gif");
+
+        // Second add: different local_path → should NOT overwrite
+        add_asset(&mut assets, &mut seen, url.clone(), "default_sprite_talking", true, "defaults/other.gif".to_string());
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].local_path, "some/existing/path.gif", "Original local_path should be preserved");
+    }
+
+    #[test]
+    fn test_custom_sprite_same_url_as_default_gets_default_path() {
+        let engine = temp_engine_dir(r#"{"TestChar": 5}"#, "{}");
+        let data = json!({
+            "profiles": [null, {
+                "base": "TestChar",
+                "icon": "",
+                "custom_sprites": [{
+                    "id": 1, "name": "pose",
+                    "talking": "Ressources/Images/persos/TestChar/1.gif",
+                    "still": "",
+                    "startup": ""
+                }]
+            }],
+            "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -1}]}]
+        });
+        let assets = extract_asset_urls(&data, &test_site_paths(), engine.path());
+
+        // Find the asset for the talking sprite URL
+        let talking_url_suffix = "persos/TestChar/1.gif";
+        let matching: Vec<_> = assets.iter()
+            .filter(|a| a.url.contains(talking_url_suffix))
+            .collect();
+        assert_eq!(matching.len(), 1, "Should have exactly 1 entry for TestChar/1.gif");
+        assert!(
+            !matching[0].local_path.is_empty(),
+            "local_path should be upgraded to default path, got empty"
+        );
+        assert!(
+            matching[0].local_path.starts_with("defaults/"),
+            "local_path should start with defaults/, got: {}",
+            matching[0].local_path
+        );
+    }
+
+    #[test]
+    fn test_rewrite_external_urls_handles_default_path() {
+        let mut data = json!({
+            "profiles": [null, {
+                "base": "Olga",
+                "icon": "",
+                "custom_sprites": [{
+                    "talking": "http://example.com/sprite.gif",
+                    "still": "",
+                    "startup": ""
+                }]
+            }]
+        });
+        let downloaded = vec![
+            DownloadedAsset {
+                original_url: "http://example.com/sprite.gif".into(),
+                local_path: "defaults/images/chars/Olga/1.gif".into(),
+                size: 1000,
+            },
+        ];
+        rewrite_external_urls(&mut data, 99, &downloaded);
+        assert_eq!(
+            data["profiles"][1]["custom_sprites"][0]["talking"],
+            "defaults/images/chars/Olga/1.gif",
+            "Custom sprite URL should be rewritten to default path"
         );
     }
 }
