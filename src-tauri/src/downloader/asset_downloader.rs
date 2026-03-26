@@ -28,6 +28,8 @@ pub enum DownloadEvent {
         completed: usize,
         total: usize,
         current_url: String,
+        bytes_downloaded: u64,
+        elapsed_ms: u64,
     },
     #[serde(rename = "finished")]
     Finished {
@@ -184,6 +186,7 @@ pub async fn download_assets(
     let completed = Arc::new(AtomicUsize::new(0));
     let total_bytes = Arc::new(AtomicU64::new(0));
     let failed = Arc::new(AtomicUsize::new(0));
+    let start_time = std::time::Instant::now();
 
     let results: Vec<Result<DownloadedAsset, FailedAsset>> = stream::iter(assets.into_iter())
         .map(|asset| {
@@ -206,6 +209,8 @@ pub async fn download_assets(
                     let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                     on_event.send(DownloadEvent::Progress {
                         completed: done, total, current_url: url.clone(),
+                        bytes_downloaded: total_bytes.load(Ordering::Relaxed),
+                        elapsed_ms: start_time.elapsed().as_millis() as u64,
                     }).ok();
                     return Err(FailedAsset {
                         url, asset_type, local_path: String::new(),
@@ -235,6 +240,8 @@ pub async fn download_assets(
                             completed: done,
                             total,
                             current_url: url.clone(),
+                            bytes_downloaded: total_bytes.load(Ordering::Relaxed),
+                            elapsed_ms: start_time.elapsed().as_millis() as u64,
                         })
                         .ok();
                     return Ok(DownloadedAsset {
@@ -253,6 +260,8 @@ pub async fn download_assets(
                                 completed: done,
                                 total,
                                 current_url: url.clone(),
+                                bytes_downloaded: total_bytes.load(Ordering::Relaxed),
+                                elapsed_ms: start_time.elapsed().as_millis() as u64,
                             })
                             .ok();
                         Ok(result)
@@ -269,6 +278,8 @@ pub async fn download_assets(
                                 completed: done,
                                 total,
                                 current_url: url.clone(),
+                                bytes_downloaded: total_bytes.load(Ordering::Relaxed),
+                                elapsed_ms: start_time.elapsed().as_millis() as u64,
                             })
                             .ok();
                         Err(FailedAsset {
@@ -898,12 +909,16 @@ mod tests {
             completed: 10,
             total: 50,
             current_url: "https://example.com/img.png".to_string(),
+            bytes_downloaded: 1024000,
+            elapsed_ms: 5000,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["event"], "progress");
         assert_eq!(json["data"]["completed"], 10);
         assert_eq!(json["data"]["total"], 50);
         assert_eq!(json["data"]["current_url"], "https://example.com/img.png");
+        assert_eq!(json["data"]["bytes_downloaded"], 1024000);
+        assert_eq!(json["data"]["elapsed_ms"], 5000);
     }
 
     #[test]
@@ -951,7 +966,7 @@ mod tests {
     fn test_download_event_all_variants_have_event_field() {
         let variants: Vec<DownloadEvent> = vec![
             DownloadEvent::Started { total: 10 },
-            DownloadEvent::Progress { completed: 1, total: 10, current_url: "http://a.com".into() },
+            DownloadEvent::Progress { completed: 1, total: 10, current_url: "http://a.com".into(), bytes_downloaded: 100, elapsed_ms: 500 },
             DownloadEvent::Finished { downloaded: 8, failed: 2, total_bytes: 500 },
             DownloadEvent::Error { message: "fail".into() },
             DownloadEvent::SequenceProgress { current_part: 1, total_parts: 3, part_title: "P1".into() },

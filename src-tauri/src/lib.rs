@@ -1253,6 +1253,7 @@ fn import_case(
         let _ = on_event.send(DownloadEvent::Progress {
             completed: 0, total: 1,
             current_url: "Reading file...".to_string(),
+            bytes_downloaded: 0, elapsed_ms: 0,
         });
 
         let url = reqwest::Url::parse(&source_path)
@@ -1280,6 +1281,7 @@ fn import_case(
             completed,
             total,
             current_url: format!("{}/{}", completed, total),
+            bytes_downloaded: 0, elapsed_ms: 0,
         });
     };
 
@@ -1666,6 +1668,7 @@ fn export_sequence(
             completed,
             total,
             current_url: format!("{}/{}", completed, total),
+            bytes_downloaded: 0, elapsed_ms: 0,
         });
     };
 
@@ -1732,6 +1735,7 @@ fn export_collection(
         let _ = on_event.send(DownloadEvent::Progress {
             completed, total,
             current_url: format!("{}/{}", completed, total),
+            bytes_downloaded: 0, elapsed_ms: 0,
         });
     };
 
@@ -1780,6 +1784,7 @@ fn export_case(
             completed,
             total,
             current_url: format!("{}/{}", completed, total),
+            bytes_downloaded: 0, elapsed_ms: 0,
         });
     };
 

@@ -3182,6 +3182,14 @@ window.addEventListener("DOMContentLoaded", function () {
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
         }
+        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
+          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
+          progressText.textContent += " — " + formatBytes(speed) + "/s";
+          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
+            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
+            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
+          }
+        }
       } else if (msg.event === "finished") {
         var sizeStr = formatBytes(msg.data.total_bytes);
         progressBarInner.style.width = "100%";
@@ -3298,6 +3306,14 @@ window.addEventListener("DOMContentLoaded", function () {
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
         }
+        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
+          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
+          progressText.textContent += " — " + formatBytes(speed) + "/s";
+          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
+            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
+            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
+          }
+        }
       } else if (msg.event === "finished") {
         var sizeStr = formatBytes(msg.data.total_bytes);
         progressBarInner.style.width = "100%";
@@ -3378,6 +3394,14 @@ window.addEventListener("DOMContentLoaded", function () {
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
         }
+        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
+          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
+          progressText.textContent += " — " + formatBytes(speed) + "/s";
+          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
+            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
+            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
+          }
+        }
       } else if (msg.event === "finished") {
         var sizeStr = formatBytes(msg.data.total_bytes);
         progressBarInner.style.width = "100%";
@@ -3452,6 +3476,14 @@ window.addEventListener("DOMContentLoaded", function () {
           var fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
+        }
+        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
+          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
+          progressText.textContent += " — " + formatBytes(speed) + "/s";
+          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
+            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
+            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
+          }
         }
       } else if (msg.event === "finished") {
         var sizeStr = formatBytes(msg.data.total_bytes);
@@ -3528,6 +3560,17 @@ window.addEventListener("DOMContentLoaded", function () {
       i++;
     }
     return b.toFixed(i > 0 ? 1 : 0) + " " + units[i];
+  }
+
+  function formatDuration(ms) {
+    var secs = Math.round(ms / 1000);
+    if (secs < 60) return secs + "s";
+    var mins = Math.floor(secs / 60);
+    var remainSecs = secs % 60;
+    if (mins < 60) return mins + "m " + remainSecs + "s";
+    var hrs = Math.floor(mins / 60);
+    var remainMins = mins % 60;
+    return hrs + "h " + remainMins + "m";
   }
 
   function formatDate(isoStr) {
