@@ -249,6 +249,78 @@ pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), 
     Ok((deduped_count, bytes_saved))
 }
 
+/// Clear default assets that are not referenced by any case manifest.
+/// Scans all manifests to build a set of used defaults/ paths, then deletes the rest.
+/// Returns (files_deleted, bytes_freed).
+pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
+    // Collect all defaults/ paths referenced by any case manifest
+    let mut used_defaults: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let cases_dir = data_dir.join("case");
+    if cases_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&cases_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                if let Ok(manifest) = read_manifest(&path) {
+                    for local_path in manifest.asset_map.values() {
+                        if local_path.starts_with("defaults/") {
+                            used_defaults.insert(local_path.replace('\\', "/"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Walk defaults/ and delete files not in the used set
+    let defaults_dir = data_dir.join("defaults");
+    if !defaults_dir.is_dir() {
+        return Ok((0, 0));
+    }
+
+    let mut deleted_count = 0usize;
+    let mut bytes_freed = 0u64;
+
+    fn walk_and_clean(
+        dir: &std::path::Path,
+        base_dir: &std::path::Path,
+        used: &std::collections::HashSet<String>,
+        deleted: &mut usize,
+        freed: &mut u64,
+    ) {
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_and_clean(&path, base_dir, used, deleted, freed);
+                // Remove empty directories
+                let _ = fs::remove_dir(&path);
+            } else if path.is_file() {
+                let relative = match path.strip_prefix(base_dir) {
+                    Ok(r) => r.to_string_lossy().replace('\\', "/"),
+                    Err(_) => continue,
+                };
+                if !used.contains(&relative) {
+                    let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+                    if fs::remove_file(&path).is_ok() {
+                        *deleted += 1;
+                        *freed += size;
+                    }
+                }
+            }
+        }
+    }
+
+    walk_and_clean(&defaults_dir, data_dir, &used_defaults, &mut deleted_count, &mut bytes_freed);
+
+    Ok((deleted_count, bytes_freed))
+}
+
 /// List all case directories under `data_dir/case/` with parseable numeric IDs.
 pub fn list_case_dirs(data_dir: &Path) -> Result<Vec<(u32, std::path::PathBuf)>, String> {
     let cases_dir = data_dir.join("case");
@@ -959,5 +1031,75 @@ mod tests {
             "Exported manifest should point to defaults/, got: {}",
             exported_path
         );
+    }
+
+    // --- clear_unused_defaults ---
+
+    #[test]
+    fn test_clear_unused_defaults_removes_only_unreferenced() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create defaults/ with 3 files: 2 used by a case, 1 unused
+        let chars_dir = data_dir.join("defaults").join("images").join("chars").join("Olga");
+        fs::create_dir_all(&chars_dir).unwrap();
+        fs::write(chars_dir.join("1.gif"), b"used sprite").unwrap();
+        fs::write(chars_dir.join("2.gif"), b"also used").unwrap();
+        let unused_dir = data_dir.join("defaults").join("music");
+        fs::create_dir_all(&unused_dir).unwrap();
+        fs::write(unused_dir.join("old_track.mp3"), b"unused music file").unwrap();
+
+        // Create a case whose manifest references only the 2 used sprites
+        let case_dir = data_dir.join("case").join("10");
+        fs::create_dir_all(&case_dir).unwrap();
+        let mut asset_map = HashMap::new();
+        asset_map.insert("http://a.com/1".into(), "defaults/images/chars/Olga/1.gif".into());
+        asset_map.insert("http://a.com/2".into(), "defaults/images/chars/Olga/2.gif".into());
+        let manifest = super::super::manifest::CaseManifest {
+            case_id: 10,
+            title: "Test".into(), author: "A".into(), language: "en".into(),
+            download_date: "2025-01-01".into(), format: "v6".into(),
+            sequence: None,
+            assets: super::super::manifest::AssetSummary {
+                case_specific: 0, shared_defaults: 2, total_downloaded: 2, total_size_bytes: 20,
+            },
+            asset_map,
+            failed_assets: vec![], has_plugins: false, has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        // Run clear
+        let (deleted, bytes) = clear_unused_defaults(data_dir).unwrap();
+        assert_eq!(deleted, 1, "Should delete only the unused music file");
+        assert_eq!(bytes, b"unused music file".len() as u64);
+
+        // Verify used files still exist
+        assert!(chars_dir.join("1.gif").exists(), "Used sprite should remain");
+        assert!(chars_dir.join("2.gif").exists(), "Used sprite should remain");
+        // Verify unused file is gone
+        assert!(!unused_dir.join("old_track.mp3").exists(), "Unused file should be deleted");
+    }
+
+    #[test]
+    fn test_clear_unused_defaults_no_cases_clears_everything() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create defaults/ with files but NO cases
+        let defaults_dir = data_dir.join("defaults").join("sounds");
+        fs::create_dir_all(&defaults_dir).unwrap();
+        fs::write(defaults_dir.join("sound.mp3"), b"orphaned").unwrap();
+
+        let (deleted, _) = clear_unused_defaults(data_dir).unwrap();
+        assert_eq!(deleted, 1, "All files should be cleared when no cases reference them");
+        assert!(!defaults_dir.join("sound.mp3").exists());
+    }
+
+    #[test]
+    fn test_clear_unused_defaults_no_defaults_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let (deleted, bytes) = clear_unused_defaults(dir.path()).unwrap();
+        assert_eq!(deleted, 0);
+        assert_eq!(bytes, 0);
     }
 }

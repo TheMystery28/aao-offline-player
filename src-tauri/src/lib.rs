@@ -1132,6 +1132,25 @@ fn get_storage_info(state: State<'_, Mutex<AppState>>) -> Result<config::Storage
     Ok(config::compute_storage_info(&data_dir))
 }
 
+/// Clear default asset cache files that are NOT referenced by any downloaded case.
+/// Scans all manifests to build a set of used defaults/ paths, then deletes the rest.
+#[tauri::command]
+async fn clear_unused_defaults(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    let (deleted, bytes_freed) = downloader::dedup::clear_unused_defaults(&data_dir)?;
+    debug_log!(
+        "Cleared {} unused default assets ({} bytes freed)",
+        deleted, bytes_freed
+    );
+    Ok(serde_json::json!({
+        "deleted": deleted,
+        "bytes_freed": bytes_freed
+    }))
+}
+
 /// Optimize storage by deduplicating assets across all cases.
 /// Promotes shared assets to defaults/shared/ and removes duplicate case copies.
 #[tauri::command]
@@ -2015,6 +2034,7 @@ pub fn run() {
             get_settings,
             save_settings,
             get_storage_info,
+            clear_unused_defaults,
             optimize_storage,
             open_data_dir,
             pick_folder,

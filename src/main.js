@@ -4064,6 +4064,7 @@ window.addEventListener("DOMContentLoaded", function () {
   var openDataDirBtn = document.getElementById("open-data-dir-btn");
   var storageText = document.getElementById("storage-text");
   var optimizeStorageBtn = document.getElementById("optimize-storage-btn");
+  var clearUnusedBtn = document.getElementById("clear-unused-defaults-btn");
 
   var settingsSaveTimeout = null;
 
@@ -4173,6 +4174,32 @@ window.addEventListener("DOMContentLoaded", function () {
       console.error("[SETTINGS] Failed to optimize storage:", e);
       statusMsg.textContent = "Error optimizing storage: " + e;
     });
+  });
+
+  clearUnusedBtn.addEventListener("click", function () {
+    showConfirmModal(
+      "Remove cached default assets not used by any downloaded case?\n\nThis frees disk space safely. The assets will be re-downloaded if needed later.",
+      "Clear Unused",
+      function () {
+        clearUnusedBtn.disabled = true;
+        clearUnusedBtn.textContent = "Clearing...";
+        invoke("clear_unused_defaults").then(function (result) {
+          clearUnusedBtn.textContent = "Clear Unused";
+          clearUnusedBtn.disabled = false;
+          if (result.deleted > 0) {
+            statusMsg.textContent = "Cleared " + result.deleted + " unused files (" + formatBytes(result.bytes_freed) + " freed).";
+          } else {
+            statusMsg.textContent = "No unused default assets found.";
+          }
+          loadStorageInfo();
+        }).catch(function (e) {
+          clearUnusedBtn.textContent = "Clear Unused";
+          clearUnusedBtn.disabled = false;
+          console.error("[SETTINGS] Failed to clear unused defaults:", e);
+          statusMsg.textContent = "Error clearing unused defaults: " + e;
+        });
+      }
+    );
   });
 
   // --- Import ---
