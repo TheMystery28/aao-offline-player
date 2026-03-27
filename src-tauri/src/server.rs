@@ -236,10 +236,45 @@ fn resolve_path(config: &ServerConfig, relative: &str) -> Option<PathBuf> {
     let path = config.engine_dir.join(relative);
 
     if path.is_file() {
-        Some(path)
-    } else {
-        None
+        return Some(path);
     }
+
+    // Case-insensitive fallback for Linux/Android (case-sensitive filesystems).
+    // If exact match fails, scan the parent directory for a case-insensitive filename match.
+    // Windows is already case-insensitive so we skip this overhead there.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let candidate = if relative.starts_with("case/") || relative.starts_with("defaults/") {
+            config.data_dir.join(relative)
+        } else {
+            config.engine_dir.join(relative)
+        };
+        if let Some(found) = case_insensitive_resolve(&candidate) {
+            return Some(found);
+        }
+    }
+
+    None
+}
+
+/// Case-insensitive file resolution: given a candidate path, if the file doesn't
+/// exist at the exact case, scan the parent directory for a case-insensitive match.
+#[cfg(not(target_os = "windows"))]
+fn case_insensitive_resolve(candidate: &std::path::Path) -> Option<PathBuf> {
+    let parent = candidate.parent()?;
+    if !parent.is_dir() {
+        return None;
+    }
+    let target_name = candidate.file_name()?.to_string_lossy().to_lowercase();
+    for entry in std::fs::read_dir(parent).ok()?.flatten() {
+        if entry.file_name().to_string_lossy().to_lowercase() == target_name {
+            let path = entry.path();
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
 }
 
 /// Canonical path normalization. Delegates to the shared normalize_path function
