@@ -3,6 +3,7 @@ pub mod asset_resolver;
 pub mod case_fetcher;
 pub mod dedup;
 pub mod manifest;
+pub mod paths;
 
 use serde::{Deserialize, Serialize};
 
