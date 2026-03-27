@@ -567,6 +567,42 @@ pub fn export_aaocase(
                                         overrides.insert("by_case".to_string(), serde_json::Value::Object(o));
                                     }
                                 }
+                                // by_sequence: read case manifest for sequence title
+                                let seq_title_opt = fs::read_to_string(case_dir.join("manifest.json")).ok()
+                                    .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                                    .and_then(|cm| cm.get("sequence")?.get("title")?.as_str().map(|s| s.to_string()));
+                                if let Some(ref seq_title) = seq_title_opt {
+                                    if let Some(by_seq) = params.get("by_sequence").and_then(|bs| bs.as_object()) {
+                                        if let Some(v) = by_seq.get(seq_title) {
+                                            let mut o = serde_json::Map::new();
+                                            o.insert(seq_title.clone(), v.clone());
+                                            overrides.insert("by_sequence".to_string(), serde_json::Value::Object(o));
+                                        }
+                                    }
+                                }
+                                // by_collection: check collection membership
+                                let collections_data = crate::collections::load_collections(engine_dir);
+                                for col in &collections_data.collections {
+                                    let case_in_col = col.items.iter().any(|item| {
+                                        match item {
+                                            crate::collections::CollectionItem::Case { case_id: cid } => *cid == case_id,
+                                            crate::collections::CollectionItem::Sequence { title } => {
+                                                seq_title_opt.as_deref() == Some(title.as_str())
+                                            }
+                                        }
+                                    });
+                                    if case_in_col {
+                                        if let Some(by_col) = params.get("by_collection").and_then(|bc| bc.as_object()) {
+                                            if let Some(v) = by_col.get(&col.id) {
+                                                let existing = overrides.entry("by_collection".to_string())
+                                                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                                                if let Some(map) = existing.as_object_mut() {
+                                                    map.insert(col.id.clone(), v.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 if !overrides.is_empty() {
                                     plugin_params.insert(plugin_name.clone(), serde_json::Value::Object(overrides));
                                 }
@@ -1172,6 +1208,73 @@ pub fn export_collection(
             .map_err(|e| format!("Failed to add saves.json to ZIP: {}", e))?;
         io::Write::write_all(&mut zip, saves_bytes.as_bytes())
             .map_err(|e| format!("Failed to write saves.json to ZIP: {}", e))?;
+    }
+
+    // Export non-default plugin param overrides from global manifest
+    if include_plugins {
+        let global_manifest_path = engine_dir.join("plugins").join("manifest.json");
+        if global_manifest_path.exists() {
+            if let Ok(text) = fs::read_to_string(&global_manifest_path) {
+                if let Ok(gm) = serde_json::from_str::<serde_json::Value>(&text) {
+                    let mut plugin_params = serde_json::Map::new();
+                    // Collect sequence titles from collection items
+                    let seq_titles: Vec<&str> = collection.items.iter().filter_map(|item| {
+                        match item {
+                            crate::collections::CollectionItem::Sequence { title } => Some(title.as_str()),
+                            _ => None,
+                        }
+                    }).collect();
+                    if let Some(plugins) = gm.get("plugins").and_then(|p| p.as_object()) {
+                        for (plugin_name, plugin_cfg) in plugins {
+                            if let Some(params) = plugin_cfg.get("params").and_then(|p| p.as_object()) {
+                                let mut overrides = serde_json::Map::new();
+                                // by_case for each case in the collection
+                                if let Some(by_case) = params.get("by_case").and_then(|bc| bc.as_object()) {
+                                    let mut case_overrides = serde_json::Map::new();
+                                    for &cid in &case_ids {
+                                        let key = cid.to_string();
+                                        if let Some(v) = by_case.get(&key) {
+                                            case_overrides.insert(key, v.clone());
+                                        }
+                                    }
+                                    if !case_overrides.is_empty() {
+                                        overrides.insert("by_case".to_string(), serde_json::Value::Object(case_overrides));
+                                    }
+                                }
+                                // by_sequence for each sequence in the collection
+                                if let Some(by_seq) = params.get("by_sequence").and_then(|bs| bs.as_object()) {
+                                    let mut seq_overrides = serde_json::Map::new();
+                                    for &st in &seq_titles {
+                                        if let Some(v) = by_seq.get(st) {
+                                            seq_overrides.insert(st.to_string(), v.clone());
+                                        }
+                                    }
+                                    if !seq_overrides.is_empty() {
+                                        overrides.insert("by_sequence".to_string(), serde_json::Value::Object(seq_overrides));
+                                    }
+                                }
+                                // by_collection for this collection
+                                if let Some(by_col) = params.get("by_collection").and_then(|bc| bc.as_object()) {
+                                    if let Some(v) = by_col.get(&collection.id) {
+                                        let mut o = serde_json::Map::new();
+                                        o.insert(collection.id.clone(), v.clone());
+                                        overrides.insert("by_collection".to_string(), serde_json::Value::Object(o));
+                                    }
+                                }
+                                if !overrides.is_empty() {
+                                    plugin_params.insert(plugin_name.clone(), serde_json::Value::Object(overrides));
+                                }
+                            }
+                        }
+                    }
+                    if !plugin_params.is_empty() {
+                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params)).unwrap();
+                        let _ = zip.start_file("plugin_params.json", options);
+                        let _ = io::Write::write_all(&mut zip, pp_bytes.as_bytes());
+                    }
+                }
+            }
+        }
     }
 
     zip.finish()
@@ -2069,20 +2172,33 @@ pub fn extract_plugin_descriptors(code: &str) -> Option<serde_json::Value> {
     let raw_js = &code[start..end];
 
     // Convert JS object literal to valid JSON:
-    // 1. Quote unquoted keys (word followed by colon)
-    let key_re = regex::Regex::new(r"(?m)([{,]\s*)(\w+)\s*:").ok()?;
-    let quoted = key_re.replace_all(raw_js, r#"$1"$2":"#);
+    // 1. Remove single-line comments
+    let comment_re = regex::Regex::new(r"//[^\n]*").ok()?;
+    let no_line_comments = comment_re.replace_all(raw_js, "");
 
-    // 2. Remove trailing commas before } or ]
+    // 2. Remove block comments (/* ... */)
+    let block_comment_re = regex::Regex::new(r"(?s)/\*.*?\*/").ok()?;
+    let no_comments = block_comment_re.replace_all(&no_line_comments, "");
+
+    // 3. Convert single-quoted strings to double-quoted
+    let single_re = regex::Regex::new(r"'([^']*)'").ok()?;
+    let double_quoted = single_re.replace_all(&no_comments, r#""$1""#);
+
+    // 4. Strip function(...){...} values (replace with null)
+    let func_re = regex::Regex::new(r"function\s*\([^)]*\)\s*\{[^}]*\}").ok()?;
+    let no_funcs = func_re.replace_all(&double_quoted, "null");
+
+    // 5. Quote unquoted keys (skip already-quoted keys)
+    // Rust regex doesn't support lookahead, so we match all keys and check manually
+    let key_re = regex::Regex::new(r#"(?m)([{,]\s*)"?(\w+)"?\s*:"#).ok()?;
+    let quoted = key_re.replace_all(&no_funcs, r#"$1"$2":"#);
+
+    // 6. Remove trailing commas before } or ]
     let trailing_re = regex::Regex::new(r",\s*([}\]])").ok()?;
     let cleaned = trailing_re.replace_all(&quoted, "$1");
 
-    // 3. Remove single-line comments
-    let comment_re = regex::Regex::new(r"//[^\n]*").ok()?;
-    let no_comments = comment_re.replace_all(&cleaned, "");
-
     // Try to parse
-    serde_json::from_str(&no_comments).ok()
+    serde_json::from_str(&cleaned).ok()
 }
 
 pub fn check_plugin_duplicate(code: &str, data_dir: &Path) -> Vec<DuplicateMatch> {
@@ -2675,6 +2791,54 @@ pub fn export_sequence(
             .map_err(|e| format!("Failed to add saves.json to ZIP: {}", e))?;
         io::Write::write_all(&mut zip, saves_bytes.as_bytes())
             .map_err(|e| format!("Failed to write saves.json to ZIP: {}", e))?;
+    }
+
+    // Export non-default plugin param overrides from global manifest
+    if include_plugins {
+        let global_manifest_path = engine_dir.join("plugins").join("manifest.json");
+        if global_manifest_path.exists() {
+            if let Ok(text) = fs::read_to_string(&global_manifest_path) {
+                if let Ok(gm) = serde_json::from_str::<serde_json::Value>(&text) {
+                    let mut plugin_params = serde_json::Map::new();
+                    if let Some(plugins) = gm.get("plugins").and_then(|p| p.as_object()) {
+                        for (plugin_name, plugin_cfg) in plugins {
+                            if let Some(params) = plugin_cfg.get("params").and_then(|p| p.as_object()) {
+                                let mut overrides = serde_json::Map::new();
+                                // by_case for each case in the sequence
+                                if let Some(by_case) = params.get("by_case").and_then(|bc| bc.as_object()) {
+                                    let mut case_overrides = serde_json::Map::new();
+                                    for &cid in case_ids {
+                                        let key = cid.to_string();
+                                        if let Some(v) = by_case.get(&key) {
+                                            case_overrides.insert(key, v.clone());
+                                        }
+                                    }
+                                    if !case_overrides.is_empty() {
+                                        overrides.insert("by_case".to_string(), serde_json::Value::Object(case_overrides));
+                                    }
+                                }
+                                // by_sequence for the sequence title
+                                if let Some(by_seq) = params.get("by_sequence").and_then(|bs| bs.as_object()) {
+                                    if let Some(v) = by_seq.get(sequence_title) {
+                                        let mut o = serde_json::Map::new();
+                                        o.insert(sequence_title.to_string(), v.clone());
+                                        overrides.insert("by_sequence".to_string(), serde_json::Value::Object(o));
+                                    }
+                                }
+                                if !overrides.is_empty() {
+                                    plugin_params.insert(plugin_name.clone(), serde_json::Value::Object(overrides));
+                                }
+                            }
+                        }
+                    }
+                    if !plugin_params.is_empty() {
+                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params)).unwrap();
+                        let _ = zip.start_file("plugin_params.json", options);
+                        let _ = io::Write::write_all(&mut zip, pp_bytes.as_bytes());
+                    }
+                }
+            }
+        }
     }
 
     zip.finish()
@@ -5933,5 +6097,271 @@ EnginePlugins.register({
 
         let result2 = extract_plugin_descriptors("");
         assert!(result2.is_none(), "Empty code should return None");
+    }
+
+    #[test]
+    fn test_extract_descriptors_single_quotes() {
+        let code = r#"
+EnginePlugins.register({
+    name: "test",
+    params: { theme: { type: 'select', default: 'dark', options: ['dark', 'light'] } },
+    init: function(c,e,a) {}
+});
+"#;
+        let result = extract_plugin_descriptors(code);
+        assert!(result.is_some(), "Should parse single-quoted strings");
+        let desc = result.unwrap();
+        assert_eq!(desc["theme"]["type"], "select");
+        assert_eq!(desc["theme"]["default"], "dark");
+        let opts = desc["theme"]["options"].as_array().unwrap();
+        assert_eq!(opts.len(), 2);
+        assert_eq!(opts[0], "dark");
+        assert_eq!(opts[1], "light");
+    }
+
+    #[test]
+    fn test_extract_descriptors_already_quoted_keys() {
+        let code = r#"
+EnginePlugins.register({
+    name: "test",
+    params: { "volume": { "type": "number", "min": 0, "max": 1 } },
+    init: function(c,e,a) {}
+});
+"#;
+        let result = extract_plugin_descriptors(code);
+        assert!(result.is_some(), "Should parse already-quoted keys");
+        let desc = result.unwrap();
+        assert_eq!(desc["volume"]["type"], "number");
+        assert_eq!(desc["volume"]["min"], 0);
+        assert_eq!(desc["volume"]["max"], 1);
+    }
+
+    #[test]
+    fn test_extract_descriptors_with_comments() {
+        let code = r#"
+EnginePlugins.register({
+    name: "test",
+    params: {
+        // Volume control
+        volume: { type: "number", default: 0.8 },
+        /* Theme selector
+           supports dark and light */
+        theme: { type: "select", default: "dark" }
+    },
+    init: function(c,e,a) {}
+});
+"#;
+        let result = extract_plugin_descriptors(code);
+        assert!(result.is_some(), "Should parse params with comments");
+        let desc = result.unwrap();
+        assert_eq!(desc["volume"]["type"], "number");
+        assert_eq!(desc["theme"]["type"], "select");
+    }
+
+    #[test]
+    fn test_export_import_plugin_params_with_sequence() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        // Create a case with a sequence
+        let case_id: u32 = 88001;
+        let case_dir = engine_dir.join("case").join(case_id.to_string());
+        fs::create_dir_all(&case_dir).unwrap();
+        let manifest = CaseManifest {
+            case_id,
+            title: "Seq Export Test".into(),
+            author: "A".into(),
+            language: "en".into(),
+            download_date: "2026-01-01".into(),
+            format: "v6".into(),
+            sequence: Some(serde_json::json!({"title": "Test Seq", "index": 0})),
+            assets: AssetSummary {
+                case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+        fs::write(case_dir.join("trial_data.json"), "{}").unwrap();
+
+        // Create global plugin manifest with by_sequence override
+        let plugins_dir = engine_dir.join("plugins");
+        fs::create_dir_all(&plugins_dir).unwrap();
+        fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+        fs::write(plugins_dir.join("manifest.json"), serde_json::to_string_pretty(
+            &serde_json::json!({
+                "scripts": ["a.js"],
+                "plugins": {
+                    "a.js": {
+                        "scope": {"all": true},
+                        "params": {
+                            "default": {"theme": "dark"},
+                            "by_sequence": {
+                                "Test Seq": {"theme": "light"}
+                            }
+                        },
+                        "descriptors": null
+                    }
+                }
+            })
+        ).unwrap()).unwrap();
+
+        // Export
+        let export_path = dir.path().join("test_seq.aaocase");
+        export_aaocase(case_id, engine_dir, &export_path, None, None, true).unwrap();
+
+        // Verify the ZIP contains by_sequence in plugin_params.json
+        let file = fs::File::open(&export_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let pp_text = {
+            let mut entry = archive.by_name("plugin_params.json").expect("plugin_params.json should exist");
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut entry, &mut s).unwrap();
+            s
+        };
+        let pp: serde_json::Value = serde_json::from_str(&pp_text).unwrap();
+        assert_eq!(pp["a.js"]["by_sequence"]["Test Seq"]["theme"], "light");
+
+        // Import into fresh engine dir and verify
+        let engine2 = tempfile::tempdir().unwrap();
+        let engine2_dir = engine2.path();
+        // Create global manifest in target so merge has something to merge into
+        let plugins_dir2 = engine2_dir.join("plugins");
+        fs::create_dir_all(&plugins_dir2).unwrap();
+        fs::write(plugins_dir2.join("a.js"), "// plugin").unwrap();
+        fs::write(plugins_dir2.join("manifest.json"), serde_json::to_string_pretty(
+            &serde_json::json!({
+                "scripts": ["a.js"],
+                "plugins": {
+                    "a.js": {
+                        "scope": {"all": true},
+                        "params": {"default": {"theme": "dark"}},
+                        "descriptors": null
+                    }
+                }
+            })
+        ).unwrap()).unwrap();
+
+        import_aaocase_zip(&export_path, engine2_dir, None).unwrap();
+
+        let gm_text = fs::read_to_string(plugins_dir2.join("manifest.json")).unwrap();
+        let gm: serde_json::Value = serde_json::from_str(&gm_text).unwrap();
+        assert_eq!(
+            gm["plugins"]["a.js"]["params"]["by_sequence"]["Test Seq"]["theme"],
+            "light",
+            "by_sequence override should be merged on import"
+        );
+    }
+
+    #[test]
+    fn test_export_import_plugin_params_with_collection() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        // Create a case
+        let case_id: u32 = 88002;
+        let case_dir = engine_dir.join("case").join(case_id.to_string());
+        fs::create_dir_all(&case_dir).unwrap();
+        let manifest = CaseManifest {
+            case_id,
+            title: "Col Export Test".into(),
+            author: "A".into(),
+            language: "en".into(),
+            download_date: "2026-01-01".into(),
+            format: "v6".into(),
+            sequence: None,
+            assets: AssetSummary {
+                case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+        fs::write(case_dir.join("trial_data.json"), "{}").unwrap();
+
+        // Create a collection containing this case
+        let collections = crate::collections::CollectionsData {
+            collections: vec![crate::collections::Collection {
+                id: "col_test_1".into(),
+                title: "Test Collection".into(),
+                items: vec![crate::collections::CollectionItem::Case { case_id }],
+                created_date: "2026-01-01".into(),
+            }],
+        };
+        fs::write(
+            engine_dir.join("collections.json"),
+            serde_json::to_string_pretty(&collections).unwrap(),
+        ).unwrap();
+
+        // Create global plugin manifest with by_collection override
+        let plugins_dir = engine_dir.join("plugins");
+        fs::create_dir_all(&plugins_dir).unwrap();
+        fs::write(plugins_dir.join("b.js"), "// plugin").unwrap();
+        fs::write(plugins_dir.join("manifest.json"), serde_json::to_string_pretty(
+            &serde_json::json!({
+                "scripts": ["b.js"],
+                "plugins": {
+                    "b.js": {
+                        "scope": {"all": true},
+                        "params": {
+                            "default": {"enabled": true},
+                            "by_collection": {
+                                "col_test_1": {"enabled": false}
+                            }
+                        },
+                        "descriptors": null
+                    }
+                }
+            })
+        ).unwrap()).unwrap();
+
+        // Export
+        let export_path = dir.path().join("test_col.aaocase");
+        export_aaocase(case_id, engine_dir, &export_path, None, None, true).unwrap();
+
+        // Verify the ZIP contains by_collection in plugin_params.json
+        let file = fs::File::open(&export_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let pp_text = {
+            let mut entry = archive.by_name("plugin_params.json").expect("plugin_params.json should exist");
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut entry, &mut s).unwrap();
+            s
+        };
+        let pp: serde_json::Value = serde_json::from_str(&pp_text).unwrap();
+        assert_eq!(pp["b.js"]["by_collection"]["col_test_1"]["enabled"], false);
+
+        // Import into fresh engine dir and verify
+        let engine2 = tempfile::tempdir().unwrap();
+        let engine2_dir = engine2.path();
+        let plugins_dir2 = engine2_dir.join("plugins");
+        fs::create_dir_all(&plugins_dir2).unwrap();
+        fs::write(plugins_dir2.join("b.js"), "// plugin").unwrap();
+        fs::write(plugins_dir2.join("manifest.json"), serde_json::to_string_pretty(
+            &serde_json::json!({
+                "scripts": ["b.js"],
+                "plugins": {
+                    "b.js": {
+                        "scope": {"all": true},
+                        "params": {"default": {"enabled": true}},
+                        "descriptors": null
+                    }
+                }
+            })
+        ).unwrap()).unwrap();
+
+        import_aaocase_zip(&export_path, engine2_dir, None).unwrap();
+
+        let gm_text = fs::read_to_string(plugins_dir2.join("manifest.json")).unwrap();
+        let gm: serde_json::Value = serde_json::from_str(&gm_text).unwrap();
+        assert_eq!(
+            gm["plugins"]["b.js"]["params"]["by_collection"]["col_test_1"]["enabled"],
+            false,
+            "by_collection override should be merged on import"
+        );
     }
 }
