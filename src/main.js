@@ -324,6 +324,7 @@ window.addEventListener("DOMContentLoaded", function () {
           cachedCollections.length + " collections");
         knownCaseIds = cachedCases.map(function (c) { return c.case_id; });
         applySearchAndSort();
+        loadStorageInfo();
       })
       .catch(function (e) {
         console.error("[LIBRARY] Failed to load library:", e);
