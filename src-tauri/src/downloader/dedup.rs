@@ -7,6 +7,7 @@ use serde_json::Value;
 use xxhash_rust::xxh3::xxh3_64;
 
 use super::manifest::{read_manifest, write_manifest};
+use super::paths::normalize_path;
 
 /// Primary index: relative_path → (file_size, xxh3_hash)
 const HASH_BY_PATH: TableDefinition<&str, (u64, u64)> =
@@ -168,7 +169,7 @@ impl DedupIndex {
                 Self::walk_and_register(&path, base_dir, db, count)?;
             } else if path.is_file() {
                 let relative = match path.strip_prefix(base_dir) {
-                    Ok(r) => r.to_string_lossy().replace('\\', "/"),
+                    Ok(r) => normalize_path(&r.to_string_lossy()),
                     Err(_) => continue,
                 };
 
@@ -563,7 +564,7 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
                 if let Ok(manifest) = read_manifest(&path) {
                     for local_path in manifest.asset_map.values() {
                         if local_path.starts_with("defaults/") {
-                            used_defaults.insert(local_path.replace('\\', "/"));
+                            used_defaults.insert(normalize_path(local_path));
                         }
                     }
                 }
@@ -603,7 +604,7 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
                 let _ = fs::remove_dir(&path);
             } else if path.is_file() {
                 let relative = match path.strip_prefix(base_dir) {
-                    Ok(r) => r.to_string_lossy().replace('\\', "/"),
+                    Ok(r) => normalize_path(&r.to_string_lossy()),
                     Err(_) => continue,
                 };
                 if !used.contains(&relative) {
