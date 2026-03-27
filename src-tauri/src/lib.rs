@@ -1589,6 +1589,32 @@ fn set_global_plugin_params(
     importer::set_global_plugin_params(&filename, &level, &key, &params, &data_dir)
 }
 
+/// Get all param overrides for a plugin across all cascade levels.
+/// Returns { default: {...}, by_collection: {...}, by_sequence: {...}, by_case: {...} }
+#[tauri::command]
+fn get_plugin_params(
+    state: State<'_, Mutex<AppState>>,
+    filename: String,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let manifest_path = data_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read manifest: {}", e))?;
+    let val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse manifest: {}", e))?;
+
+    let params = val.get("plugins")
+        .and_then(|p| p.get(&filename))
+        .and_then(|e| e.get("params"))
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
+
+    Ok(params)
+}
+
 /// Promote a case plugin to a global plugin.
 #[tauri::command]
 fn promote_plugin_to_global(
@@ -2086,6 +2112,7 @@ pub fn run() {
             check_plugin_duplicate,
             set_global_plugin_scope,
             set_global_plugin_params,
+            get_plugin_params,
             promote_plugin_to_global,
             export_case_plugins,
             cancel_download,
