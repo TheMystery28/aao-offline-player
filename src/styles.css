@@ -580,6 +580,104 @@
   padding: 0.35rem 0.85rem;
 }
 
+/* ── Plugins Section ── */
+
+#plugins-section {
+  margin-top: 2.5rem;
+}
+
+#plugins-section h2 {
+  font-size: 1.1rem;
+  color: #aaa;
+  border-bottom: 1px solid #333;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+#plugins-toggle {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 0.5rem 0;
+  width: 100%;
+  text-align: left;
+  transition: color 0.2s;
+}
+
+#plugins-toggle:hover {
+  color: #ccc;
+}
+
+#plugins-toggle::after {
+  content: " \25B8";
+  font-size: 0.8em;
+}
+
+#plugins-toggle.open::after {
+  content: " \25BE";
+}
+
+#plugins-panel {
+  padding: 1rem 0;
+}
+
+.plugin-panel-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.global-plugin-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #1a1a2e;
+}
+
+.global-plugin-row .plugin-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ddd;
+  font-size: 0.9rem;
+}
+
+.global-plugin-row .scope-badge {
+  color: #888;
+  font-size: 0.72rem;
+  background: #1a2a3e;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.global-plugin-row.disabled .plugin-name {
+  color: #666;
+  text-decoration: line-through;
+}
+
+.global-plugins-empty {
+  color: #666;
+  font-size: 0.85rem;
+  font-style: italic;
+  padding: 0.5rem 0;
+}
+
+/* ── Header Plugins Button ── */
+
+.header-plugins-btn {
+  margin-left: auto;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.6rem;
+  flex-shrink: 0;
+}
+
 /* ── Settings ── */
 
 #settings-section {

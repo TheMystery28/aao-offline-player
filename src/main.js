@@ -338,6 +338,7 @@ window.addEventListener("DOMContentLoaded", function () {
         knownCaseIds = cachedCases.map(function (c) { return c.case_id; });
         applySearchAndSort();
         loadStorageInfo();
+        loadGlobalPluginsPanel();
       })
       .catch(function (e) {
         console.error("[LIBRARY] Failed to load library:", e);
@@ -495,6 +496,35 @@ window.addEventListener("DOMContentLoaded", function () {
         downloadedCount + '/' + totalParts + ' parts' +
         ' &middot; ' + formatBytes(totalSize) +
       '</span>';
+
+    var seqPluginsBtn = document.createElement("button");
+    seqPluginsBtn.className = "small-btn header-plugins-btn";
+    seqPluginsBtn.textContent = "Plugins";
+    seqPluginsBtn.title = "Configure plugin params for this sequence";
+    seqPluginsBtn.addEventListener("click", (function (title) {
+      return function (e) {
+        e.stopPropagation();
+        invoke("list_global_plugins").then(function (manifest) {
+          var scripts = (manifest && manifest.scripts) || [];
+          if (scripts.length === 0) {
+            statusMsg.textContent = "No global plugins installed. Open the Plugins panel to add one.";
+            pluginsPanel.classList.remove("hidden");
+            pluginsToggle.classList.add("open");
+            loadGlobalPluginsPanel();
+            pluginsToggle.scrollIntoView({ behavior: "smooth" });
+            return;
+          }
+          if (scripts.length === 1) {
+            showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
+          } else {
+            showPluginPickerModal(scripts, function (selected) {
+              showPluginParamsModal(selected, 'Sequence "' + title + '"', "by_sequence", title);
+            });
+          }
+        });
+      };
+    })(sequenceTitle));
+    header.appendChild(seqPluginsBtn);
 
     var partsContainer = document.createElement("div");
     partsContainer.className = "sequence-parts";
@@ -765,34 +795,6 @@ window.addEventListener("DOMContentLoaded", function () {
       footer.appendChild(seqSavesBtn);
     }
 
-    // Plugin params button for sequence level
-    if (anyHasPlugins) {
-      var seqParamsBtn = document.createElement("button");
-      seqParamsBtn.className = "small-btn";
-      seqParamsBtn.textContent = "Plugin Params";
-      seqParamsBtn.title = "Configure plugin params for this sequence";
-      seqParamsBtn.addEventListener("click", (function (title) {
-        return function () {
-          // Show a picker: which plugin to configure?
-          invoke("list_global_plugins").then(function (manifest) {
-            var scripts = (manifest && manifest.scripts) || [];
-            if (scripts.length === 0) {
-              statusMsg.textContent = "No global plugins installed.";
-              return;
-            }
-            if (scripts.length === 1) {
-              showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
-            } else {
-              showPluginPickerModal(scripts, function (selected) {
-                showPluginParamsModal(selected, 'Sequence "' + title + '"', "by_sequence", title);
-              });
-            }
-          });
-        };
-      })(sequenceTitle));
-      footer.appendChild(seqParamsBtn);
-    }
-
     // Delete all button
     var delAllBtn = document.createElement("button");
     delAllBtn.className = "delete-btn";
@@ -1061,6 +1063,35 @@ window.addEventListener("DOMContentLoaded", function () {
         ' &middot; ' + formatBytes(totalSize) +
       '</span>';
 
+    var colPluginsBtn = document.createElement("button");
+    colPluginsBtn.className = "small-btn header-plugins-btn";
+    colPluginsBtn.textContent = "Plugins";
+    colPluginsBtn.title = "Configure plugin params for this collection";
+    colPluginsBtn.addEventListener("click", (function (col) {
+      return function (e) {
+        e.stopPropagation();
+        invoke("list_global_plugins").then(function (manifest) {
+          var scripts = (manifest && manifest.scripts) || [];
+          if (scripts.length === 0) {
+            statusMsg.textContent = "No global plugins installed. Open the Plugins panel to add one.";
+            pluginsPanel.classList.remove("hidden");
+            pluginsToggle.classList.add("open");
+            loadGlobalPluginsPanel();
+            pluginsToggle.scrollIntoView({ behavior: "smooth" });
+            return;
+          }
+          if (scripts.length === 1) {
+            showPluginParamsModal(scripts[0], 'Collection "' + col.title + '"', "by_collection", col.id);
+          } else {
+            showPluginPickerModal(scripts, function (selected) {
+              showPluginParamsModal(selected, 'Collection "' + col.title + '"', "by_collection", col.id);
+            });
+          }
+        });
+      };
+    })(collection));
+    header.appendChild(colPluginsBtn);
+
     var itemsContainer = document.createElement("div");
     itemsContainer.className = "collection-items";
 
@@ -1194,30 +1225,6 @@ window.addEventListener("DOMContentLoaded", function () {
         );
       };
     })(collection));
-    // Plugin params button for collection level
-    var colParamsBtn = document.createElement("button");
-    colParamsBtn.className = "small-btn";
-    colParamsBtn.textContent = "Plugin Params";
-    colParamsBtn.title = "Configure plugin params for this collection";
-    colParamsBtn.addEventListener("click", (function (col) {
-      return function () {
-        invoke("list_global_plugins").then(function (manifest) {
-          var scripts = (manifest && manifest.scripts) || [];
-          if (scripts.length === 0) {
-            statusMsg.textContent = "No global plugins installed.";
-            return;
-          }
-          if (scripts.length === 1) {
-            showPluginParamsModal(scripts[0], 'Collection "' + col.title + '"', "by_collection", col.id);
-          } else {
-            showPluginPickerModal(scripts, function (selected) {
-              showPluginParamsModal(selected, 'Collection "' + col.title + '"', "by_collection", col.id);
-            });
-          }
-        });
-      };
-    })(collection));
-    footer.appendChild(colParamsBtn);
 
     footer.appendChild(delBtn);
 
@@ -1259,6 +1266,35 @@ window.addEventListener("DOMContentLoaded", function () {
         downloadedCount + '/' + totalParts + ' parts' +
         ' &middot; ' + formatBytes(totalSize) +
       '</span>';
+
+    var seqInPluginsBtn = document.createElement("button");
+    seqInPluginsBtn.className = "small-btn header-plugins-btn";
+    seqInPluginsBtn.textContent = "Plugins";
+    seqInPluginsBtn.title = "Configure plugin params for this sequence";
+    seqInPluginsBtn.addEventListener("click", (function (title) {
+      return function (e) {
+        e.stopPropagation();
+        invoke("list_global_plugins").then(function (manifest) {
+          var scripts = (manifest && manifest.scripts) || [];
+          if (scripts.length === 0) {
+            statusMsg.textContent = "No global plugins installed. Open the Plugins panel to add one.";
+            pluginsPanel.classList.remove("hidden");
+            pluginsToggle.classList.add("open");
+            loadGlobalPluginsPanel();
+            pluginsToggle.scrollIntoView({ behavior: "smooth" });
+            return;
+          }
+          if (scripts.length === 1) {
+            showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
+          } else {
+            showPluginPickerModal(scripts, function (selected) {
+              showPluginParamsModal(selected, 'Sequence "' + title + '"', "by_sequence", title);
+            });
+          }
+        });
+      };
+    })(sequenceTitle));
+    header.appendChild(seqInPluginsBtn);
 
     var partsContainer = document.createElement("div");
     partsContainer.className = "sequence-parts";
@@ -4473,6 +4509,263 @@ window.addEventListener("DOMContentLoaded", function () {
       statusMsg.textContent = "Opened: " + url;
     }
   }
+
+  // --- Plugins Panel ---
+
+  var pluginsToggle = document.getElementById("plugins-toggle");
+  var pluginsPanel = document.getElementById("plugins-panel");
+  var globalPluginsList = document.getElementById("global-plugins-list");
+  var globalAttachBtn = document.getElementById("global-attach-btn");
+  var globalImportBtn = document.getElementById("global-import-btn");
+
+  pluginsToggle.addEventListener("click", function () {
+    var isOpen = !pluginsPanel.classList.contains("hidden");
+    if (isOpen) {
+      pluginsPanel.classList.add("hidden");
+      pluginsToggle.classList.remove("open");
+    } else {
+      pluginsPanel.classList.remove("hidden");
+      pluginsToggle.classList.add("open");
+      loadGlobalPluginsPanel();
+    }
+  });
+
+  function loadGlobalPluginsPanel() {
+    invoke("list_global_plugins")
+      .then(function (manifest) {
+        var scripts = (manifest && manifest.scripts) || [];
+        var plugins = (manifest && manifest.plugins) || {};
+        var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
+        globalPluginsList.innerHTML = "";
+        if (scripts.length === 0) {
+          var empty = document.createElement("div");
+          empty.className = "global-plugins-empty";
+          empty.textContent = "No global plugins installed.";
+          globalPluginsList.appendChild(empty);
+        } else {
+          for (var i = 0; i < scripts.length; i++) {
+            (function (filename) {
+              var isDisabled = disabledList.indexOf(filename) !== -1;
+              var row = document.createElement("div");
+              row.className = "global-plugin-row" + (isDisabled ? " disabled" : "");
+
+              var toggle = document.createElement("input");
+              toggle.type = "checkbox";
+              toggle.checked = !isDisabled;
+              toggle.style.accentColor = "#4a90d9";
+              toggle.style.width = "1rem";
+              toggle.style.height = "1rem";
+              toggle.style.flexShrink = "0";
+              toggle.addEventListener("change", function () {
+                invoke("toggle_global_plugin", { filename: filename, enabled: toggle.checked })
+                  .then(function () { loadGlobalPluginsPanel(); })
+                  .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+              });
+
+              var name = document.createElement("span");
+              name.className = "plugin-name";
+              name.textContent = filename;
+
+              // Scope badge
+              var scopeBadge = document.createElement("span");
+              scopeBadge.className = "scope-badge";
+              var pluginEntry = plugins[filename];
+              var scope = pluginEntry && pluginEntry.scope;
+              if (scope && scope.all) {
+                scopeBadge.textContent = "All cases";
+              } else if (scope && Array.isArray(scope.case_ids) && scope.case_ids.length > 0) {
+                scopeBadge.textContent = scope.case_ids.length + " case" + (scope.case_ids.length !== 1 ? "s" : "");
+              } else {
+                scopeBadge.textContent = "No scope";
+              }
+
+              var paramsBtn = document.createElement("button");
+              paramsBtn.className = "small-btn";
+              paramsBtn.textContent = "Params";
+              paramsBtn.style.cssText = "font-size:0.72rem; padding:0.1rem 0.5rem;";
+              paramsBtn.addEventListener("click", function () {
+                showPluginParamsModal(filename, "Global Default", "default", "");
+              });
+
+              var removeBtn = document.createElement("button");
+              removeBtn.className = "plugin-remove-btn";
+              removeBtn.textContent = "Remove";
+              removeBtn.addEventListener("click", function () {
+                showConfirmModal("Remove global plugin \"" + filename + "\"?", "Remove", function () {
+                  invoke("remove_global_plugin", { filename: filename })
+                    .then(function () { loadGlobalPluginsPanel(); })
+                    .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+                });
+              });
+
+              row.appendChild(toggle);
+              row.appendChild(name);
+              row.appendChild(scopeBadge);
+              row.appendChild(paramsBtn);
+              row.appendChild(removeBtn);
+              globalPluginsList.appendChild(row);
+            })(scripts[i]);
+          }
+        }
+      })
+      .catch(function (e) {
+        globalPluginsList.innerHTML = "";
+        var errEl = document.createElement("div");
+        errEl.className = "global-plugins-empty";
+        errEl.textContent = "Error loading plugins: " + e;
+        globalPluginsList.appendChild(errEl);
+      });
+  }
+
+  function showGlobalAttachCodeModal(onDone) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog modal-dialog-wide";
+
+    var titleEl = document.createElement("div");
+    titleEl.className = "modal-message";
+    titleEl.innerHTML = "<strong>Attach Global Plugin Code</strong>";
+
+    var filenameField = document.createElement("div");
+    filenameField.className = "modal-field";
+    var filenameLabel = document.createElement("label");
+    filenameLabel.textContent = "Filename";
+    var filenameInput = document.createElement("input");
+    filenameInput.type = "text";
+    filenameInput.placeholder = "my_plugin.js";
+    filenameField.appendChild(filenameLabel);
+    filenameField.appendChild(filenameInput);
+
+    var codeField = document.createElement("div");
+    codeField.className = "modal-field";
+    var codeLabel = document.createElement("label");
+    codeLabel.textContent = "Plugin Code";
+    var codeInput = document.createElement("textarea");
+    codeInput.className = "attach-code-textarea";
+    codeInput.placeholder = "// Paste your plugin JS code here...";
+    codeField.appendChild(codeLabel);
+    codeField.appendChild(codeInput);
+
+    var userEditedFilename = false;
+    filenameInput.addEventListener("input", function () {
+      userEditedFilename = true;
+    });
+
+    function detectPluginName() {
+      var code = codeInput.value;
+      var nameMatch = code.match(/EnginePlugins\.register\s*\(\s*\{[^}]*name\s*:\s*['"]([^'"]+)['"]/);
+      if (nameMatch) {
+        var detected = nameMatch[1] + ".js";
+        filenameInput.placeholder = detected;
+        if (!userEditedFilename) {
+          filenameInput.value = detected;
+        }
+      }
+    }
+
+    codeInput.addEventListener("input", detectPluginName);
+    codeInput.addEventListener("paste", function () {
+      setTimeout(detectPluginName, 0);
+    });
+
+    var buttons = document.createElement("div");
+    buttons.className = "modal-row-buttons";
+
+    var attachBtn = document.createElement("button");
+    attachBtn.className = "modal-btn modal-btn-secondary";
+    attachBtn.textContent = "Attach";
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+
+    function close() {
+      document.body.removeChild(overlay);
+    }
+
+    attachBtn.addEventListener("click", function () {
+      var filename = filenameInput.value.trim();
+      if (!filename && filenameInput.placeholder && filenameInput.placeholder !== "my_plugin.js") {
+        filename = filenameInput.placeholder;
+      }
+      var code = codeInput.value;
+
+      if (!filename) {
+        filenameInput.style.borderColor = "#a33";
+        filenameInput.focus();
+        return;
+      }
+      if (!filename.toLowerCase().endsWith(".js")) {
+        filename = filename + ".js";
+      }
+      if (!code) {
+        codeInput.style.borderColor = "#a33";
+        codeInput.focus();
+        return;
+      }
+
+      close();
+      statusMsg.textContent = "Attaching global plugin...";
+      invoke("attach_global_plugin_code", {
+        code: code,
+        filename: filename
+      })
+      .then(function () {
+        statusMsg.textContent = "Global plugin \"" + filename + "\" attached.";
+        if (onDone) onDone();
+      })
+      .catch(function (e) {
+        statusMsg.textContent = "Error attaching plugin: " + e;
+      });
+    });
+
+    cancelBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    buttons.appendChild(attachBtn);
+    buttons.appendChild(cancelBtn);
+
+    modal.appendChild(titleEl);
+    modal.appendChild(filenameField);
+    modal.appendChild(codeField);
+    modal.appendChild(buttons);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    filenameInput.focus();
+  }
+
+  globalAttachBtn.addEventListener("click", function () {
+    showGlobalAttachCodeModal(function () { loadGlobalPluginsPanel(); });
+  });
+
+  globalImportBtn.addEventListener("click", function () {
+    invoke("pick_import_file")
+      .then(function (selected) {
+        if (!selected) return;
+        if (!selected.toLowerCase().endsWith(".aaoplug")) {
+          statusMsg.textContent = "Please select a .aaoplug file.";
+          return;
+        }
+        statusMsg.textContent = "Importing global plugin...";
+        invoke("import_global_plugin_file", { sourcePath: selected })
+          .then(function () {
+            statusMsg.textContent = "Global plugin imported.";
+            loadGlobalPluginsPanel();
+          })
+          .catch(function () {
+            // Command may not exist — fall back to attach code modal
+            statusMsg.textContent = "Direct import not available. Use Attach Code instead.";
+          });
+      })
+      .catch(function (e) {
+        statusMsg.textContent = "Could not open file picker: " + e;
+      });
+  });
 
   // --- Settings ---
 
