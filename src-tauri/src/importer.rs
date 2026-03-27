@@ -1917,6 +1917,54 @@ pub struct DuplicateMatch {
     pub location: String,
 }
 
+/// Extract param descriptors from plugin JS source code.
+/// Looks for `params: { ... }` inside an `EnginePlugins.register({...})` call,
+/// converts the JS object literal to JSON, and parses it.
+/// Returns None if parsing fails (graceful fallback).
+pub fn extract_plugin_descriptors(code: &str) -> Option<serde_json::Value> {
+    // Find the params section inside EnginePlugins.register({...})
+    let params_re = regex::Regex::new(r"params\s*:\s*\{").ok()?;
+    let params_match = params_re.find(code)?;
+    let start = params_match.end() - 1; // position of the opening {
+
+    // Extract the balanced brace content
+    let bytes = code.as_bytes();
+    let mut depth = 0;
+    let mut end = start;
+    for i in start..bytes.len() {
+        match bytes[i] {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = i + 1;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 { return None; }
+
+    let raw_js = &code[start..end];
+
+    // Convert JS object literal to valid JSON:
+    // 1. Quote unquoted keys (word followed by colon)
+    let key_re = regex::Regex::new(r"(?m)([{,]\s*)(\w+)\s*:").ok()?;
+    let quoted = key_re.replace_all(raw_js, r#"$1"$2":"#);
+
+    // 2. Remove trailing commas before } or ]
+    let trailing_re = regex::Regex::new(r",\s*([}\]])").ok()?;
+    let cleaned = trailing_re.replace_all(&quoted, "$1");
+
+    // 3. Remove single-line comments
+    let comment_re = regex::Regex::new(r"//[^\n]*").ok()?;
+    let no_comments = comment_re.replace_all(&cleaned, "");
+
+    // Try to parse
+    serde_json::from_str(&no_comments).ok()
+}
+
 pub fn check_plugin_duplicate(code: &str, data_dir: &Path) -> Vec<DuplicateMatch> {
     let trimmed = code.trim();
     let mut matches = Vec::new();
@@ -5700,5 +5748,70 @@ var initial_trial_data = {{"profiles":[0,{{"icon":"","short_name":"Hero","custom
 
         // Verify resolved_plugins.json deleted
         assert!(!case_dir.join("resolved_plugins.json").exists());
+    }
+
+    // --- extract_plugin_descriptors ---
+
+    #[test]
+    fn test_extract_descriptors_basic() {
+        let code = r#"
+EnginePlugins.register({
+    name: "test_plugin",
+    params: {
+        volume: { type: "number", default: 0.8, min: 0, max: 1, step: 0.1, label: "Volume" },
+        enabled: { type: "checkbox", default: true, label: "Enable" }
+    },
+    init: function(config, events, api) {}
+});
+"#;
+        let result = extract_plugin_descriptors(code);
+        assert!(result.is_some(), "Should extract descriptors from basic plugin");
+        let desc = result.unwrap();
+        assert_eq!(desc["volume"]["type"], "number");
+        assert_eq!(desc["volume"]["min"], 0);
+        assert_eq!(desc["volume"]["max"], 1);
+        assert_eq!(desc["enabled"]["type"], "checkbox");
+        assert_eq!(desc["enabled"]["default"], true);
+    }
+
+    #[test]
+    fn test_extract_descriptors_with_select() {
+        let code = r#"
+EnginePlugins.register({
+    name: "theme_plugin",
+    params: {
+        theme: { type: "select", default: "dark", options: ["dark", "light", "auto"], label: "Theme" }
+    },
+    init: function() {}
+});
+"#;
+        let result = extract_plugin_descriptors(code);
+        assert!(result.is_some(), "Should extract select descriptors");
+        let desc = result.unwrap();
+        assert_eq!(desc["theme"]["type"], "select");
+        let opts = desc["theme"]["options"].as_array().unwrap();
+        assert_eq!(opts.len(), 3);
+        assert_eq!(opts[0], "dark");
+    }
+
+    #[test]
+    fn test_extract_descriptors_no_params() {
+        let code = r#"
+EnginePlugins.register({
+    name: "no_params",
+    init: function() {}
+});
+"#;
+        let result = extract_plugin_descriptors(code);
+        assert!(result.is_none(), "Plugin without params should return None");
+    }
+
+    #[test]
+    fn test_extract_descriptors_malformed() {
+        let result = extract_plugin_descriptors("this is not valid JS at all");
+        assert!(result.is_none(), "Malformed code should return None");
+
+        let result2 = extract_plugin_descriptors("");
+        assert!(result2.is_none(), "Empty code should return None");
     }
 }
