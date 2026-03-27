@@ -765,6 +765,39 @@ window.addEventListener("DOMContentLoaded", function () {
       footer.appendChild(seqSavesBtn);
     }
 
+    // Plugin params button for sequence level
+    if (anyHasPlugins) {
+      var seqParamsBtn = document.createElement("button");
+      seqParamsBtn.className = "small-btn";
+      seqParamsBtn.textContent = "Plugin Params";
+      seqParamsBtn.title = "Configure plugin params for this sequence";
+      seqParamsBtn.addEventListener("click", (function (title) {
+        return function () {
+          // Show a picker: which plugin to configure?
+          invoke("list_global_plugins").then(function (manifest) {
+            var scripts = (manifest && manifest.scripts) || [];
+            if (scripts.length === 0) {
+              statusMsg.textContent = "No global plugins installed.";
+              return;
+            }
+            if (scripts.length === 1) {
+              showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
+            } else {
+              // Multiple plugins — let user pick
+              showConfirmModal(
+                "Configure params for which plugin?\n\n" + scripts.join("\n"),
+                scripts[0],
+                function () {
+                  showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
+                }
+              );
+            }
+          });
+        };
+      })(sequenceTitle));
+      footer.appendChild(seqParamsBtn);
+    }
+
     // Delete all button
     var delAllBtn = document.createElement("button");
     delAllBtn.className = "delete-btn";
@@ -1166,6 +1199,35 @@ window.addEventListener("DOMContentLoaded", function () {
         );
       };
     })(collection));
+    // Plugin params button for collection level
+    var colParamsBtn = document.createElement("button");
+    colParamsBtn.className = "small-btn";
+    colParamsBtn.textContent = "Plugin Params";
+    colParamsBtn.title = "Configure plugin params for this collection";
+    colParamsBtn.addEventListener("click", (function (col) {
+      return function () {
+        invoke("list_global_plugins").then(function (manifest) {
+          var scripts = (manifest && manifest.scripts) || [];
+          if (scripts.length === 0) {
+            statusMsg.textContent = "No global plugins installed.";
+            return;
+          }
+          if (scripts.length === 1) {
+            showPluginParamsModal(scripts[0], 'Collection "' + col.title + '"', "by_collection", col.id);
+          } else {
+            showConfirmModal(
+              "Configure params for which plugin?\n\n" + scripts.join("\n"),
+              scripts[0],
+              function () {
+                showPluginParamsModal(scripts[0], 'Collection "' + col.title + '"', "by_collection", col.id);
+              }
+            );
+          }
+        });
+      };
+    })(collection));
+    footer.appendChild(colParamsBtn);
+
     footer.appendChild(delBtn);
 
     group.appendChild(header);
@@ -2455,8 +2517,17 @@ window.addEventListener("DOMContentLoaded", function () {
                   );
                 });
 
+                var paramsBtn = document.createElement("button");
+                paramsBtn.className = "small-btn";
+                paramsBtn.textContent = "Params";
+                paramsBtn.style.cssText = "font-size:11px; padding:1px 6px; margin-left:auto;";
+                paramsBtn.addEventListener("click", function () {
+                  showPluginParamsModal(filename, "Case " + caseId, "by_case", String(caseId));
+                });
+
                 item.appendChild(toggle);
                 item.appendChild(name);
+                item.appendChild(paramsBtn);
                 item.appendChild(removeBtn);
                 listContainer.appendChild(item);
               })(scripts[i]);
@@ -2596,6 +2667,177 @@ window.addEventListener("DOMContentLoaded", function () {
 
     refreshGlobalList();
     refreshList();
+  }
+
+  // --- Plugin Params Editor Modal ---
+  // Reusable for all cascade levels: global (default), collection, sequence, case.
+  // Shows current param values as editable key-value pairs.
+  // level: "default" | "by_collection" | "by_sequence" | "by_case"
+  // key: collection_id, sequence_title, or case_id (string). Empty for default.
+  function showPluginParamsModal(pluginFilename, levelLabel, level, key) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog";
+
+    var titleEl = document.createElement("div");
+    titleEl.className = "modal-message";
+    titleEl.innerHTML = "<strong>Plugin Params &mdash; " + escapeHtml(pluginFilename) + "</strong><br>" +
+      "<small>Level: " + escapeHtml(levelLabel) + "</small>";
+
+    var content = document.createElement("div");
+    content.style.cssText = "margin: 10px 0; max-height: 300px; overflow-y: auto;";
+
+    var loadingMsg = document.createElement("div");
+    loadingMsg.textContent = "Loading...";
+    loadingMsg.className = "muted";
+    content.appendChild(loadingMsg);
+
+    var paramsData = {};
+
+    function renderParams(params) {
+      content.innerHTML = "";
+      var keys = Object.keys(params);
+      if (keys.length === 0) {
+        var emptyMsg = document.createElement("div");
+        emptyMsg.className = "muted";
+        emptyMsg.textContent = "No params set at this level. Add new params below.";
+        content.appendChild(emptyMsg);
+      }
+      for (var i = 0; i < keys.length; i++) {
+        (function(paramKey) {
+          var row = document.createElement("div");
+          row.style.cssText = "display:flex; align-items:center; gap:6px; margin:4px 0;";
+
+          var keyLabel = document.createElement("span");
+          keyLabel.style.cssText = "min-width:100px; font-size:13px; color:#ccc;";
+          keyLabel.textContent = paramKey;
+
+          var val = params[paramKey];
+          var input;
+          if (typeof val === "boolean") {
+            input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = val;
+            input.addEventListener("change", function() { paramsData[paramKey] = input.checked; });
+          } else if (typeof val === "number") {
+            input = document.createElement("input");
+            input.type = "number";
+            input.value = String(val);
+            input.step = "any";
+            input.style.cssText = "width:80px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+            input.addEventListener("input", function() { paramsData[paramKey] = parseFloat(input.value) || 0; });
+          } else {
+            input = document.createElement("input");
+            input.type = "text";
+            input.value = String(val || "");
+            input.style.cssText = "width:120px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+            input.addEventListener("input", function() { paramsData[paramKey] = input.value; });
+          }
+
+          var delBtn = document.createElement("button");
+          delBtn.textContent = "x";
+          delBtn.className = "small-btn danger-btn";
+          delBtn.style.cssText = "padding:1px 6px; font-size:11px;";
+          delBtn.addEventListener("click", function() {
+            delete paramsData[paramKey];
+            renderParams(paramsData);
+          });
+
+          row.appendChild(keyLabel);
+          row.appendChild(input);
+          row.appendChild(delBtn);
+          content.appendChild(row);
+        })(keys[i]);
+      }
+    }
+
+    // Add new param row
+    var addRow = document.createElement("div");
+    addRow.style.cssText = "display:flex; gap:6px; margin-top:8px;";
+    var addKeyInput = document.createElement("input");
+    addKeyInput.type = "text";
+    addKeyInput.placeholder = "param name";
+    addKeyInput.style.cssText = "width:100px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+    var addValInput = document.createElement("input");
+    addValInput.type = "text";
+    addValInput.placeholder = "value";
+    addValInput.style.cssText = "width:80px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+    var addBtn = document.createElement("button");
+    addBtn.className = "small-btn";
+    addBtn.textContent = "+ Add";
+    addBtn.addEventListener("click", function() {
+      var k = addKeyInput.value.trim();
+      if (!k) return;
+      var v = addValInput.value.trim();
+      // Auto-detect type
+      if (v === "true") paramsData[k] = true;
+      else if (v === "false") paramsData[k] = false;
+      else if (v !== "" && !isNaN(Number(v))) paramsData[k] = Number(v);
+      else paramsData[k] = v;
+      addKeyInput.value = "";
+      addValInput.value = "";
+      renderParams(paramsData);
+    });
+    addRow.appendChild(addKeyInput);
+    addRow.appendChild(addValInput);
+    addRow.appendChild(addBtn);
+
+    var btns = document.createElement("div");
+    btns.className = "modal-buttons";
+
+    var saveBtn = document.createElement("button");
+    saveBtn.className = "modal-btn modal-btn-primary";
+    saveBtn.textContent = "Save";
+    saveBtn.addEventListener("click", function() {
+      invoke("set_global_plugin_params", {
+        filename: pluginFilename,
+        level: level,
+        key: key,
+        params: paramsData
+      }).then(function() {
+        document.body.removeChild(overlay);
+        statusMsg.textContent = "Plugin params saved for " + levelLabel + ".";
+      }).catch(function(e) {
+        statusMsg.textContent = "Error saving params: " + e;
+      });
+    });
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", function() {
+      document.body.removeChild(overlay);
+    });
+
+    btns.appendChild(saveBtn);
+    btns.appendChild(cancelBtn);
+
+    modal.appendChild(titleEl);
+    modal.appendChild(content);
+    modal.appendChild(addRow);
+    modal.appendChild(btns);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // Load current params at this level
+    invoke("get_plugin_params", { filename: pluginFilename }).then(function(allParams) {
+      if (level === "default") {
+        paramsData = (allParams && allParams["default"]) ? JSON.parse(JSON.stringify(allParams["default"])) : {};
+      } else if (allParams && allParams[level] && allParams[level][key]) {
+        paramsData = JSON.parse(JSON.stringify(allParams[level][key]));
+      } else {
+        paramsData = {};
+      }
+      renderParams(paramsData);
+    }).catch(function(e) {
+      content.innerHTML = "";
+      var errMsg = document.createElement("div");
+      errMsg.textContent = "Error loading params: " + e;
+      errMsg.style.color = "#ff6b6b";
+      content.appendChild(errMsg);
+    });
   }
 
   function showAttachCodeModal(caseId, caseTitle, onDone) {
