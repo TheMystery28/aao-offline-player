@@ -256,11 +256,16 @@ pub async fn download_assets(
                             elapsed_ms: start_time.elapsed().as_millis() as u64,
                         })
                         .ok();
+                    // Compute hash from existing file for accurate dedup index
+                    let file_path = save_dir.join(&relative_path);
+                    let content_hash = std::fs::read(&file_path)
+                        .map(|bytes| xxhash_rust::xxh3::xxh3_64(&bytes))
+                        .unwrap_or(0);
                     return Ok(DownloadedAsset {
                         original_url: url,
                         local_path: relative_path,
                         size,
-                        content_hash: 0, // Already on disk, hash not needed
+                        content_hash,
                     });
                 }
 
