@@ -6,11 +6,13 @@ version = 4
 name = "aao-offline-player"
 version = "0.1.0"
 dependencies = [
+ "camino",
  "futures",
  "portpicker",
  "proptest",
  "redb",
  "regex",
+ "relative-path",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -24,6 +26,7 @@ dependencies = [
  "tempfile",
  "tiny_http",
  "tokio",
+ "unicode-normalization",
  "url",
  "wiremock",
  "xxhash-rust",
@@ -3517,6 +3520,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
+name = "relative-path"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bca40a312222d8ba74837cb474edef44b37f561da5f773981007a10bbaa992b0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5192,6 +5204,15 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-segmentation"
