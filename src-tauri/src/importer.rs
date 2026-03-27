@@ -750,7 +750,8 @@ fn import_multi_case_zip(
         for (index_key, disk_path) in &extracted_files {
             if let Ok(hash) = crate::downloader::dedup::hash_file(disk_path) {
                 let size = disk_path.metadata().map(|m| m.len()).unwrap_or(0);
-                let _ = index.register(index_key, size, hash);
+                let normalized_key = crate::downloader::paths::normalize_path(index_key);
+                let _ = index.register(&normalized_key, size, hash);
             }
         }
         // Also register case assets that were extracted earlier
@@ -917,7 +918,8 @@ fn import_collection_zip(
         for (index_key, disk_path) in &extracted_files {
             if let Ok(hash) = crate::downloader::dedup::hash_file(disk_path) {
                 let size = disk_path.metadata().map(|m| m.len()).unwrap_or(0);
-                let _ = index.register(index_key, size, hash);
+                let normalized_key = crate::downloader::paths::normalize_path(index_key);
+                let _ = index.register(&normalized_key, size, hash);
             }
         }
         let _ = index.scan_and_register_cases(engine_dir);
@@ -1223,7 +1225,8 @@ fn import_single_case_zip(
             for (index_key, disk_path) in &extracted_files {
                 if let Ok(hash) = crate::downloader::dedup::hash_file(disk_path) {
                     let size = disk_path.metadata().map(|m| m.len()).unwrap_or(0);
-                    let _ = index.register(index_key, size, hash);
+                    let normalized_key = crate::downloader::paths::normalize_path(index_key);
+                    let _ = index.register(&normalized_key, size, hash);
                 }
             }
         }
