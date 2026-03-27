@@ -309,7 +309,17 @@ fn url_decode(input: &str) -> String {
         }
     }
 
-    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+    match String::from_utf8(bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[SERVER WARN] URL decode produced invalid UTF-8 for input '{}': lossy conversion applied",
+                input
+            );
+            String::from_utf8_lossy(e.as_bytes()).into_owned()
+        }
+    }
 }
 
 fn hex_val(b: u8) -> Option<u8> {
@@ -351,6 +361,15 @@ mod tests {
     #[test]
     fn test_url_decode_passthrough() {
         assert_eq!(url_decode("/simple/path.jpg"), "/simple/path.jpg");
+    }
+
+    #[test]
+    fn test_url_decode_invalid_utf8_is_lossy() {
+        // %80%81 are not valid UTF-8 start bytes — should produce replacement chars, not panic
+        let result = url_decode("/path/%80%81/file.gif");
+        assert!(result.contains('\u{FFFD}') || result.contains('�'),
+            "Invalid UTF-8 should produce replacement character, got: {:?}", result);
+        assert!(result.contains("file.gif"), "Rest of path should be preserved");
     }
 
     #[test]
