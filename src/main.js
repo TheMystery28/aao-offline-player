@@ -783,14 +783,9 @@ window.addEventListener("DOMContentLoaded", function () {
             if (scripts.length === 1) {
               showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
             } else {
-              // Multiple plugins — let user pick
-              showConfirmModal(
-                "Configure params for which plugin?\n\n" + scripts.join("\n"),
-                scripts[0],
-                function () {
-                  showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
-                }
-              );
+              showPluginPickerModal(scripts, function (selected) {
+                showPluginParamsModal(selected, 'Sequence "' + title + '"', "by_sequence", title);
+              });
             }
           });
         };
@@ -1215,13 +1210,9 @@ window.addEventListener("DOMContentLoaded", function () {
           if (scripts.length === 1) {
             showPluginParamsModal(scripts[0], 'Collection "' + col.title + '"', "by_collection", col.id);
           } else {
-            showConfirmModal(
-              "Configure params for which plugin?\n\n" + scripts.join("\n"),
-              scripts[0],
-              function () {
-                showPluginParamsModal(scripts[0], 'Collection "' + col.title + '"', "by_collection", col.id);
-              }
-            );
+            showPluginPickerModal(scripts, function (selected) {
+              showPluginParamsModal(selected, 'Collection "' + col.title + '"', "by_collection", col.id);
+            });
           }
         });
       };
@@ -2674,6 +2665,49 @@ window.addEventListener("DOMContentLoaded", function () {
   // Shows current param values as editable key-value pairs.
   // level: "default" | "by_collection" | "by_sequence" | "by_case"
   // key: collection_id, sequence_title, or case_id (string). Empty for default.
+  // --- Plugin Picker Modal ---
+  function showPluginPickerModal(scripts, onSelect) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog";
+
+    var titleEl = document.createElement("div");
+    titleEl.className = "modal-message";
+    titleEl.innerHTML = "<strong>Select Plugin</strong>";
+
+    var listEl = document.createElement("div");
+    listEl.style.cssText = "display:flex; flex-direction:column; gap:6px; margin:10px 0;";
+
+    for (var i = 0; i < scripts.length; i++) {
+      (function (scriptName) {
+        var btn = document.createElement("button");
+        btn.className = "modal-btn modal-btn-secondary";
+        btn.textContent = scriptName;
+        btn.style.textAlign = "left";
+        btn.addEventListener("click", function () {
+          document.body.removeChild(overlay);
+          onSelect(scriptName);
+        });
+        listEl.appendChild(btn);
+      })(scripts[i]);
+    }
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.style.width = "100%";
+    cancelBtn.addEventListener("click", function () {
+      document.body.removeChild(overlay);
+    });
+
+    modal.appendChild(titleEl);
+    modal.appendChild(listEl);
+    modal.appendChild(cancelBtn);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  }
+
   function showPluginParamsModal(pluginFilename, levelLabel, level, key) {
     var overlay = document.createElement("div");
     overlay.className = "modal-overlay";
@@ -2695,59 +2729,124 @@ window.addEventListener("DOMContentLoaded", function () {
     content.appendChild(loadingMsg);
 
     var paramsData = {};
+    var descriptorsCache = null; // filled after loading
 
     function renderParams(params) {
       content.innerHTML = "";
-      var keys = Object.keys(params);
-      if (keys.length === 0) {
+      // Merge descriptor keys into display (show all known params, not just overridden ones)
+      var allKeys = Object.keys(params);
+      if (descriptorsCache && typeof descriptorsCache === "object") {
+        var descKeys = Object.keys(descriptorsCache);
+        for (var dk = 0; dk < descKeys.length; dk++) {
+          if (allKeys.indexOf(descKeys[dk]) === -1) {
+            allKeys.push(descKeys[dk]);
+          }
+        }
+      }
+      if (allKeys.length === 0) {
         var emptyMsg = document.createElement("div");
         emptyMsg.className = "muted";
         emptyMsg.textContent = "No params set at this level. Add new params below.";
         content.appendChild(emptyMsg);
       }
-      for (var i = 0; i < keys.length; i++) {
+      for (var i = 0; i < allKeys.length; i++) {
         (function(paramKey) {
           var row = document.createElement("div");
           row.style.cssText = "display:flex; align-items:center; gap:6px; margin:4px 0;";
 
-          var keyLabel = document.createElement("span");
-          keyLabel.style.cssText = "min-width:100px; font-size:13px; color:#ccc;";
-          keyLabel.textContent = paramKey;
-
+          var desc = descriptorsCache && descriptorsCache[paramKey] ? descriptorsCache[paramKey] : null;
           var val = params[paramKey];
-          var input;
-          if (typeof val === "boolean") {
-            input = document.createElement("input");
-            input.type = "checkbox";
-            input.checked = val;
-            input.addEventListener("change", function() { paramsData[paramKey] = input.checked; });
-          } else if (typeof val === "number") {
-            input = document.createElement("input");
-            input.type = "number";
-            input.value = String(val);
-            input.step = "any";
-            input.style.cssText = "width:80px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
-            input.addEventListener("input", function() { paramsData[paramKey] = parseFloat(input.value) || 0; });
-          } else {
-            input = document.createElement("input");
-            input.type = "text";
-            input.value = String(val || "");
-            input.style.cssText = "width:120px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
-            input.addEventListener("input", function() { paramsData[paramKey] = input.value; });
+          // If no value set but descriptor has a default, show the default
+          if (val === undefined && desc && desc["default"] !== undefined) {
+            val = desc["default"];
           }
 
-          var delBtn = document.createElement("button");
-          delBtn.textContent = "x";
-          delBtn.className = "small-btn danger-btn";
-          delBtn.style.cssText = "padding:1px 6px; font-size:11px;";
-          delBtn.addEventListener("click", function() {
-            delete paramsData[paramKey];
-            renderParams(paramsData);
-          });
+          var keyLabel = document.createElement("span");
+          keyLabel.style.cssText = "min-width:100px; font-size:13px; color:#ccc;";
+          keyLabel.textContent = (desc && desc.label) ? desc.label : paramKey;
+          keyLabel.title = paramKey;
 
-          row.appendChild(keyLabel);
-          row.appendChild(input);
-          row.appendChild(delBtn);
+          var input;
+          var paramType = desc ? desc.type : null;
+
+          if (paramType === "number" || (paramType === null && typeof val === "number")) {
+            // Number with optional range
+            if (desc && (desc.min !== undefined || desc.max !== undefined)) {
+              input = document.createElement("input");
+              input.type = "range";
+              input.min = String(desc.min !== undefined ? desc.min : 0);
+              input.max = String(desc.max !== undefined ? desc.max : 100);
+              input.step = String(desc.step !== undefined ? desc.step : 1);
+              input.value = String(val !== undefined ? val : 0);
+              var valSpan = document.createElement("span");
+              valSpan.style.cssText = "min-width:30px; font-size:12px; color:#aaa;";
+              valSpan.textContent = " " + input.value;
+              input.addEventListener("input", function() {
+                valSpan.textContent = " " + input.value;
+                paramsData[paramKey] = parseFloat(input.value);
+              });
+              row.appendChild(keyLabel);
+              row.appendChild(input);
+              row.appendChild(valSpan);
+            } else {
+              input = document.createElement("input");
+              input.type = "number";
+              input.value = String(val !== undefined ? val : 0);
+              input.step = "any";
+              input.style.cssText = "width:80px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+              input.addEventListener("input", function() { paramsData[paramKey] = parseFloat(input.value) || 0; });
+              row.appendChild(keyLabel);
+              row.appendChild(input);
+            }
+          } else if (paramType === "checkbox" || (paramType === null && typeof val === "boolean")) {
+            input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = !!val;
+            input.addEventListener("change", function() { paramsData[paramKey] = input.checked; });
+            row.appendChild(keyLabel);
+            row.appendChild(input);
+          } else if (paramType === "select" && desc && desc.options) {
+            input = document.createElement("select");
+            input.style.cssText = "background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+            var opts = desc.options || [];
+            for (var oi = 0; oi < opts.length; oi++) {
+              var opt = document.createElement("option");
+              if (typeof opts[oi] === "object") {
+                opt.value = opts[oi].value;
+                opt.textContent = opts[oi].label;
+              } else {
+                opt.value = String(opts[oi]);
+                opt.textContent = String(opts[oi]);
+              }
+              input.appendChild(opt);
+            }
+            input.value = String(val !== undefined ? val : "");
+            input.addEventListener("change", function() { paramsData[paramKey] = input.value; });
+            row.appendChild(keyLabel);
+            row.appendChild(input);
+          } else {
+            // Text (default fallback)
+            input = document.createElement("input");
+            input.type = "text";
+            input.value = String(val !== undefined ? val : "");
+            input.style.cssText = "width:120px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+            input.addEventListener("input", function() { paramsData[paramKey] = input.value; });
+            row.appendChild(keyLabel);
+            row.appendChild(input);
+          }
+
+          // Only show delete button for params actually overridden at this level
+          if (params[paramKey] !== undefined) {
+            var delBtn = document.createElement("button");
+            delBtn.textContent = "x";
+            delBtn.className = "small-btn danger-btn";
+            delBtn.style.cssText = "padding:1px 6px; font-size:11px;";
+            delBtn.addEventListener("click", function() {
+              delete paramsData[paramKey];
+              renderParams(paramsData);
+            });
+            row.appendChild(delBtn);
+          }
           content.appendChild(row);
         })(keys[i]);
       }
@@ -2821,8 +2920,13 @@ window.addEventListener("DOMContentLoaded", function () {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
-    // Load current params at this level
-    invoke("get_plugin_params", { filename: pluginFilename }).then(function(allParams) {
+    // Load descriptors + current params at this level
+    Promise.all([
+      invoke("get_plugin_descriptors", { filename: pluginFilename }).catch(function() { return null; }),
+      invoke("get_plugin_params", { filename: pluginFilename })
+    ]).then(function(results) {
+      descriptorsCache = results[0]; // null if no descriptors
+      var allParams = results[1];
       if (level === "default") {
         paramsData = (allParams && allParams["default"]) ? JSON.parse(JSON.stringify(allParams["default"])) : {};
       } else if (allParams && allParams[level] && allParams[level][key]) {

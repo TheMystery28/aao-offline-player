@@ -548,6 +548,41 @@ pub fn export_aaocase(
             .map_err(|e| format!("Failed to write saves.json to ZIP: {}", e))?;
     }
 
+    // Export non-default plugin param overrides from global manifest
+    if include_plugins {
+        let global_manifest_path = engine_dir.join("plugins").join("manifest.json");
+        if global_manifest_path.exists() {
+            if let Ok(text) = fs::read_to_string(&global_manifest_path) {
+                if let Ok(gm) = serde_json::from_str::<serde_json::Value>(&text) {
+                    let mut plugin_params = serde_json::Map::new();
+                    if let Some(plugins) = gm.get("plugins").and_then(|p| p.as_object()) {
+                        for (plugin_name, plugin_cfg) in plugins {
+                            if let Some(params) = plugin_cfg.get("params").and_then(|p| p.as_object()) {
+                                let mut overrides = serde_json::Map::new();
+                                if let Some(by_case) = params.get("by_case").and_then(|bc| bc.as_object()) {
+                                    let case_key = case_id.to_string();
+                                    if let Some(v) = by_case.get(&case_key) {
+                                        let mut o = serde_json::Map::new();
+                                        o.insert(case_key, v.clone());
+                                        overrides.insert("by_case".to_string(), serde_json::Value::Object(o));
+                                    }
+                                }
+                                if !overrides.is_empty() {
+                                    plugin_params.insert(plugin_name.clone(), serde_json::Value::Object(overrides));
+                                }
+                            }
+                        }
+                    }
+                    if !plugin_params.is_empty() {
+                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params)).unwrap();
+                        let _ = zip.start_file("plugin_params.json", options);
+                        let _ = io::Write::write_all(&mut zip, pp_bytes.as_bytes());
+                    }
+                }
+            }
+        }
+    }
+
     zip.finish()
         .map_err(|e| format!("Failed to finalize ZIP: {}", e))?;
 
@@ -1247,6 +1282,18 @@ fn import_single_case_zip(
     manifest.has_case_config = has_case_config;
     write_manifest(&manifest, &case_dir)?;
 
+    // Import plugin param overrides from plugin_params.json if present
+    let plugin_params_path = case_dir.join("plugin_params.json");
+    if plugin_params_path.exists() {
+        if let Ok(text) = fs::read_to_string(&plugin_params_path) {
+            if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(&text) {
+                merge_plugin_param_overrides(&overrides, engine_dir);
+            }
+        }
+        // Remove the import-only file from the case dir
+        let _ = fs::remove_file(&plugin_params_path);
+    }
+
     // Post-import dedup: remove case assets identical to shared defaults
     let (dedup_count, _) = crate::downloader::dedup::dedup_case_assets(case_id, engine_dir)
         .unwrap_or((0, 0));
@@ -1940,6 +1987,54 @@ fn resolve_param_cascade(
 pub struct DuplicateMatch {
     pub filename: String,
     pub location: String,
+}
+
+/// Merge plugin param overrides from an imported plugin_params.json into the global manifest.
+/// Additive: only sets overrides that don't already exist.
+fn merge_plugin_param_overrides(overrides: &serde_json::Value, engine_dir: &Path) {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    let mut manifest = if manifest_path.exists() {
+        fs::read_to_string(&manifest_path).ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .unwrap_or(serde_json::json!({}))
+    } else {
+        return; // No global manifest → nothing to merge into
+    };
+
+    if let Some(override_plugins) = overrides.as_object() {
+        for (plugin_name, override_levels) in override_plugins {
+            if let Some(levels) = override_levels.as_object() {
+                // Ensure the plugin entry exists
+                if !manifest.get("plugins").and_then(|p| p.get(plugin_name)).is_some() {
+                    continue; // Only merge into existing plugins
+                }
+                let params = manifest["plugins"][plugin_name]
+                    .get("params")
+                    .cloned()
+                    .unwrap_or(serde_json::json!({}));
+                let mut params = params.as_object().cloned().unwrap_or_default();
+
+                for (level, level_overrides) in levels {
+                    if let Some(lo) = level_overrides.as_object() {
+                        let existing = params.entry(level.clone())
+                            .or_insert(serde_json::json!({}));
+                        if let Some(existing_map) = existing.as_object_mut() {
+                            for (key, value) in lo {
+                                // Additive: only set if not already present
+                                if !existing_map.contains_key(key) {
+                                    existing_map.insert(key.clone(), value.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                manifest["plugins"][plugin_name]["params"] = serde_json::Value::Object(params);
+            }
+        }
+    }
+
+    let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap());
 }
 
 /// Extract param descriptors from plugin JS source code.
