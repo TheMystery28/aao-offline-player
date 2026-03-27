@@ -92,7 +92,7 @@ fn add_internal(
     asset_type: &str,
     is_default: bool,
 ) {
-    if name.is_empty() {
+    if name.is_empty() || name.contains("..") {
         return;
     }
     let has_ext = name.contains('.');
@@ -103,6 +103,9 @@ fn add_internal(
     };
     let url = build_url(&format!("{}{}", server_dir, filename));
     let local_path = sanitize_path(&format!("{}{}", local_dir, filename));
+    if local_path.starts_with("..") {
+        return; // Reject paths that escape the sandbox after normalization
+    }
     add_asset(assets, seen, url, asset_type, is_default, local_path);
 }
 
@@ -114,7 +117,7 @@ fn add_external(
     url_or_path: &str,
     asset_type: &str,
 ) {
-    if url_or_path.is_empty() {
+    if url_or_path.is_empty() || url_or_path.contains("..") {
         return;
     }
     let full_url = if url_or_path.starts_with("http://") || url_or_path.starts_with("https://") {
