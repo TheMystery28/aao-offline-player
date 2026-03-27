@@ -426,21 +426,34 @@ pub fn rewrite_value_recursive(value: &mut Value, old: &str, new: &str) {
 }
 
 /// Dedup a single case's assets against the shared defaults pool.
-/// Returns the number of files deduplicated and bytes saved.
+/// Opens its own DedupIndex. For use from download/import pipelines.
 pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), String> {
     let case_dir = data_dir.join("case").join(case_id.to_string());
     let assets_dir = case_dir.join("assets");
     if !assets_dir.is_dir() {
         return Ok((0, 0));
     }
-
-    // Open persistent index and ensure defaults/ are registered
     let defaults_dir = data_dir.join("defaults");
     if !defaults_dir.is_dir() {
         return Ok((0, 0));
     }
     let index = DedupIndex::open(data_dir)?;
     index.scan_and_register(data_dir, "defaults")?;
+    dedup_case_assets_with_index(case_id, data_dir, &index)
+}
+
+/// Dedup a single case's assets using a pre-opened index.
+/// Avoids opening a second DedupIndex when called from optimize_all_cases.
+pub fn dedup_case_assets_with_index(
+    case_id: u32,
+    data_dir: &Path,
+    index: &DedupIndex,
+) -> Result<(usize, u64), String> {
+    let case_dir = data_dir.join("case").join(case_id.to_string());
+    let assets_dir = case_dir.join("assets");
+    if !assets_dir.is_dir() {
+        return Ok((0, 0));
+    }
 
     // Read manifest
     let mut manifest = read_manifest(&case_dir)?;
@@ -477,8 +490,11 @@ pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), 
             Err(_) => continue,
         };
 
-        // Check if this file has a duplicate in defaults/
+        // Check if this file has a duplicate in defaults/ (skip matches against other case assets)
         if let Some(default_relative_path) = index.find_duplicate(&file_path, data_dir) {
+            if !default_relative_path.starts_with("defaults/") {
+                continue; // Only dedup against defaults, not other case assets
+            }
             let asset_filename = match file_path.file_name().and_then(|n| n.to_str()) {
                 Some(n) => n.to_string(),
                 None => continue,
@@ -799,8 +815,9 @@ pub fn optimize_all_cases(
 
     // Phase 3: Run single-case dedup for each case against the full defaults pool
     // (catches assets matching existing defaults that weren't cross-case duplicates)
+    // Uses _with_index to reuse the already-open index (avoids double Database::open)
     for (case_id, _) in &case_dirs {
-        let (n, b) = dedup_case_assets(*case_id, data_dir).unwrap_or((0, 0));
+        let (n, b) = dedup_case_assets_with_index(*case_id, data_dir, &index).unwrap_or((0, 0));
         total_deduped += n;
         total_saved += b;
 
