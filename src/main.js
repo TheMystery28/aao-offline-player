@@ -4233,12 +4233,19 @@ window.addEventListener("DOMContentLoaded", function () {
         var pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
         progressBarInner.style.width = pct + "%";
         progressText.textContent = msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
+        if (msg.data.current_url) {
+          var fname = msg.data.current_url.split("/").pop();
+          if (fname.length > 40) fname = fname.substring(0, 37) + "...";
+          progressText.textContent += " — " + fname;
+          applySpoilerBlur();
+        }
       }
     };
 
     invoke("optimize_storage", { onEvent: onEvent }).then(function (result) {
       optimizeStorageBtn.textContent = "Optimize Storage";
       optimizeStorageBtn.disabled = false;
+      removeSpoilerBlur();
       progressContainer.classList.add("hidden");
       if (result.deduped > 0) {
         statusMsg.textContent = "Optimized: " + result.deduped + " files deduplicated, " + formatBytes(result.bytes_saved) + " saved.";

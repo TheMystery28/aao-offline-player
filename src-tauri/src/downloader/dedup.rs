@@ -677,7 +677,7 @@ pub fn list_case_dirs(data_dir: &Path) -> Result<Vec<(u32, std::path::PathBuf)>,
 /// Returns total files deduplicated and bytes saved.
 pub fn optimize_all_cases(
     data_dir: &Path,
-    on_progress: Option<&dyn Fn(usize, usize)>,
+    on_progress: Option<&dyn Fn(usize, usize, &str)>,
 ) -> Result<(usize, u64), String> {
     let case_dirs = list_case_dirs(data_dir)?;
     if case_dirs.is_empty() {
@@ -705,7 +705,7 @@ pub fn optimize_all_cases(
 
     progress += 1;
     if let Some(cb) = &on_progress {
-        cb(progress, total_phases);
+        cb(progress, total_phases, "");
     }
 
     let mut total_deduped = 0usize;
@@ -828,7 +828,8 @@ pub fn optimize_all_cases(
 
         progress += 1;
         if let Some(cb) = &on_progress {
-            cb(progress, total_phases);
+            let desc = format!("case/{}", case_id);
+            cb(progress, total_phases, &desc);
         }
     }
 

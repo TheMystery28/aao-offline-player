@@ -1198,11 +1198,11 @@ async fn optimize_storage(
     };
     let (deduped, bytes_saved) = downloader::dedup::optimize_all_cases(
         &data_dir,
-        Some(&|completed, total| {
+        Some(&|completed, total, current_path| {
             let _ = on_event.send(DownloadEvent::Progress {
                 completed,
                 total,
-                current_url: String::new(),
+                current_url: current_path.to_string(),
                 bytes_downloaded: 0,
                 elapsed_ms: 0,
             });
