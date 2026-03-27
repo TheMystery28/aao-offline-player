@@ -5543,4 +5543,84 @@ return 'data:image/gif;base64,'
         let result = promote_plugin_to_global(55558, "nope.js", &serde_json::json!({"all":true}), engine_dir);
         assert!(result.is_err());
     }
+
+    // --- Batch import tests ---
+
+    fn make_aaoffline_case(dir: &Path, case_id: u32, title: &str) {
+        fs::create_dir_all(dir).unwrap();
+        let html = format!(
+            r#"<html>
+<script>
+var trial_information = {{"author":"BatchTester","author_id":1,"can_read":true,"can_write":false,"format":"Def6","id":{},"language":"en","last_edit_date":1000000,"sequence":null,"title":"{}"}};
+var initial_trial_data = {{"profiles":[0,{{"icon":"","short_name":"Hero","custom_sprites":[]}}],"frames":[0],"evidence":[0],"places":[0],"cross_examinations":[0]}};
+</script>
+</html>"#,
+            case_id, title
+        );
+        fs::write(dir.join("index.html"), html).unwrap();
+    }
+
+    #[test]
+    fn test_import_aaoffline_batch_multiple_subfolders() {
+        let source = tempfile::tempdir().unwrap();
+        let engine = tempfile::tempdir().unwrap();
+
+        make_aaoffline_case(&source.path().join("case1"), 70001, "Batch Part 1");
+        make_aaoffline_case(&source.path().join("case2"), 70002, "Batch Part 2");
+        make_aaoffline_case(&source.path().join("case3"), 70003, "Batch Part 3");
+
+        let result = import_aaoffline_batch(source.path(), engine.path(), None, None).unwrap();
+        assert_eq!(result.batch_manifests.len(), 3, "Should import 3 cases");
+
+        let ids: Vec<u32> = result.batch_manifests.iter().map(|m| m.case_id).collect();
+        assert!(ids.contains(&70001));
+        assert!(ids.contains(&70002));
+        assert!(ids.contains(&70003));
+    }
+
+    #[test]
+    fn test_import_aaoffline_batch_skips_existing() {
+        let source = tempfile::tempdir().unwrap();
+        let engine = tempfile::tempdir().unwrap();
+
+        // Import case1 first
+        make_aaoffline_case(&source.path().join("case1"), 70010, "Already There");
+        import_aaoffline(&source.path().join("case1"), engine.path(), None).unwrap();
+
+        // Now batch import case1 + case2
+        make_aaoffline_case(&source.path().join("case2"), 70011, "New Case");
+        let result = import_aaoffline_batch(source.path(), engine.path(), None, None).unwrap();
+
+        // case1 silently skipped (already exists), case2 succeeds
+        assert_eq!(result.batch_manifests.len(), 1, "Only new case should be in manifests");
+        assert_eq!(result.batch_manifests[0].case_id, 70011);
+    }
+
+    #[test]
+    fn test_import_aaoffline_batch_with_root_and_subfolders() {
+        let source = tempfile::tempdir().unwrap();
+        let engine = tempfile::tempdir().unwrap();
+
+        // Root case (index.html in parent dir)
+        make_aaoffline_case(source.path(), 70020, "Root Case");
+        // Subfolder case
+        make_aaoffline_case(&source.path().join("sub1"), 70021, "Sub Case");
+
+        let result = import_aaoffline_batch(source.path(), engine.path(), None, None).unwrap();
+        assert_eq!(result.batch_manifests.len(), 2, "Root + subfolder should both import");
+
+        let ids: Vec<u32> = result.batch_manifests.iter().map(|m| m.case_id).collect();
+        assert!(ids.contains(&70020));
+        assert!(ids.contains(&70021));
+    }
+
+    #[test]
+    fn test_import_aaoffline_batch_empty_folder() {
+        let source = tempfile::tempdir().unwrap();
+        let engine = tempfile::tempdir().unwrap();
+
+        let result = import_aaoffline_batch(source.path(), engine.path(), None, None);
+        assert!(result.is_err(), "Empty folder should return error");
+        assert!(result.unwrap_err().contains("No index.html found"));
+    }
 }

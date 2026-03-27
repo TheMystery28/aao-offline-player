@@ -1927,4 +1927,57 @@ mod tests {
         assert_eq!(assets[0].0, 1); // case_id
         assert_eq!(assets[0].1, "custom.gif"); // filename
     }
+
+    #[test]
+    fn test_dedup_case_assets_no_trial_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create defaults/ with a known file
+        let defaults_dir = data_dir.join("defaults").join("images");
+        fs::create_dir_all(&defaults_dir).unwrap();
+        fs::write(defaults_dir.join("sprite.gif"), b"match content").unwrap();
+
+        // Create case with manifest + assets but NO trial_data.json
+        let case_dir = data_dir.join("case").join("33");
+        let assets_dir = case_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(assets_dir.join("sprite-abc.gif"), b"match content").unwrap();
+
+        let mut asset_map = HashMap::new();
+        asset_map.insert("http://x.com/s.gif".into(), "assets/sprite-abc.gif".into());
+        let manifest = super::super::manifest::CaseManifest {
+            case_id: 33,
+            title: "No Trial Data".into(), author: "A".into(), language: "en".into(),
+            download_date: "2025-01-01".into(), format: "v6".into(), sequence: None,
+            assets: super::super::manifest::AssetSummary {
+                case_specific: 1, shared_defaults: 0, total_downloaded: 1, total_size_bytes: 13,
+            },
+            asset_map, failed_assets: vec![], has_plugins: false, has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+        // Intentionally NO trial_data.json
+
+        let (count, bytes) = dedup_case_assets(33, data_dir).unwrap();
+        assert_eq!(count, 1, "Should dedup even without trial_data.json");
+        assert_eq!(bytes, 13);
+        assert!(!assets_dir.join("sprite-abc.gif").exists());
+
+        // Verify manifest updated
+        let updated = read_manifest(&case_dir).unwrap();
+        assert!(updated.asset_map["http://x.com/s.gif"].starts_with("defaults/"));
+    }
+
+    #[test]
+    fn test_normalize_ext_empty_and_edge_cases() {
+        assert_eq!(normalize_ext(""), "");
+        assert_eq!(normalize_ext("JPEG"), "jpg");
+        assert_eq!(normalize_ext("MP3"), "mp3");
+        assert_eq!(normalize_ext("Gif"), "gif");
+        assert_eq!(normalize_ext("HTML"), "html");
+        assert_eq!(normalize_ext("htm"), "html");
+        assert_eq!(normalize_ext("TIFF"), "tif");
+        assert_eq!(normalize_ext("ogg"), "ogg");
+        assert_eq!(normalize_ext("WAV"), "wav");
+    }
 }

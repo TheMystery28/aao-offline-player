@@ -1958,4 +1958,47 @@ var default_profiles_startup = {"Phoenix/3": 880};"#,
             "Custom sprite URL should be rewritten to default path"
         );
     }
+
+    #[test]
+    fn test_unicode_filename_in_sanitize_path() {
+        // Accented characters should be preserved (they're valid on all OS)
+        assert_eq!(
+            sanitize_path("Ace Attorney/Thème été.mp3"),
+            "Ace Attorney/Thème été.mp3",
+            "Unicode letters should be preserved"
+        );
+        // Japanese characters should be preserved
+        assert_eq!(
+            sanitize_path("逆転裁判/テーマ.mp3"),
+            "逆転裁判/テーマ.mp3",
+            "Japanese characters should be preserved"
+        );
+        // Only Windows-illegal chars should be replaced
+        assert_eq!(
+            sanitize_path("Thème: été \"test\" <special>.mp3"),
+            "Thème_ été _test_ _special_.mp3",
+            "Only :\"<> should be replaced, accented chars kept"
+        );
+    }
+
+    // --- Property-based tests ---
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn sanitize_path_removes_all_illegal_chars(input in "\\PC{0,200}") {
+                let result = sanitize_path(&input);
+                for c in result.chars() {
+                    prop_assert!(
+                        c != ':' && c != '*' && c != '?' && c != '"' && c != '<' && c != '>' && c != '|',
+                        "sanitize_path({:?}) still contains illegal char '{}' in result: {:?}",
+                        input, c, result
+                    );
+                }
+            }
+        }
+    }
 }

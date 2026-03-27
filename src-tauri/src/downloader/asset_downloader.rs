@@ -1213,7 +1213,7 @@ mod tests {
     // ============================================================
 
     use wiremock::{MockServer, Mock, ResponseTemplate};
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, path_regex};
 
     fn test_client() -> Client {
         Client::builder()
@@ -1429,6 +1429,151 @@ mod tests {
         assert_eq!(result.failed.len(), 1, "1 should fail");
     }
 
+    // --- Download orchestration tests ---
+
+    #[tokio::test]
+    async fn test_download_assets_empty_list() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+        let client = test_client();
+        let tx = tauri::ipc::Channel::new(|_| Ok(()));
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = download_assets(
+            &client, Vec::new(), &dir.path().to_path_buf(), &dir.path().to_path_buf(),
+            &tx, 3, cancel,
+        ).await.unwrap();
+
+        assert_eq!(result.downloaded.len(), 0);
+        assert_eq!(result.failed.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_assets_all_fail() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+
+        // All return 500
+        Mock::given(method("GET")).and(path_regex(".*"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&mock_server).await;
+
+        let assets: Vec<AssetRef> = (0..3).map(|i| AssetRef {
+            url: format!("{}/fail{}.png", mock_server.uri(), i),
+            asset_type: "sprite".into(),
+            is_default: false,
+            local_path: String::new(),
+        }).collect();
+
+        let client = test_client();
+        let tx = tauri::ipc::Channel::new(|_| Ok(()));
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = download_assets(
+            &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
+            &tx, 3, cancel,
+        ).await.unwrap();
+
+        assert_eq!(result.downloaded.len(), 0, "None should succeed");
+        assert_eq!(result.failed.len(), 3, "All 3 should fail");
+    }
+
+    // --- Cancel flag tests ---
+
+    #[tokio::test]
+    async fn test_cancel_flag_before_start() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+
+        // Set up 5 assets that would succeed
+        for i in 0..5 {
+            Mock::given(method("GET")).and(path(format!("/asset{}.png", i)))
+                .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![1, 2, 3]))
+                .mount(&mock_server).await;
+        }
+
+        let assets: Vec<AssetRef> = (0..5).map(|i| AssetRef {
+            url: format!("{}/asset{}.png", mock_server.uri(), i),
+            asset_type: "sprite".into(),
+            is_default: false,
+            local_path: String::new(),
+        }).collect();
+
+        let client = test_client();
+        let tx = tauri::ipc::Channel::new(|_| Ok(()));
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(true)); // Already cancelled!
+
+        let result = download_assets(
+            &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
+            &tx, 3, cancel,
+        ).await.unwrap();
+
+        assert_eq!(result.downloaded.len(), 0, "All should be cancelled, none downloaded");
+        assert_eq!(result.failed.len(), 5, "All should be in failed list as cancelled");
+        for f in &result.failed {
+            assert_eq!(f.error, "Cancelled", "Error should be 'Cancelled'");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cancel_flag_stops_midway() {
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+
+        // Set up 10 assets, each with a 50ms delay
+        for i in 0..10 {
+            Mock::given(method("GET")).and(path(format!("/slow{}.png", i)))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_bytes(vec![1, 2, 3])
+                        .set_delay(std::time::Duration::from_millis(50))
+                )
+                .mount(&mock_server).await;
+        }
+
+        let assets: Vec<AssetRef> = (0..10).map(|i| AssetRef {
+            url: format!("{}/slow{}.png", mock_server.uri(), i),
+            asset_type: "sprite".into(),
+            is_default: false,
+            local_path: String::new(),
+        }).collect();
+
+        let client = test_client();
+        let tx = tauri::ipc::Channel::new(|_| Ok(()));
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Cancel after 150ms (should get ~1-3 assets through with concurrency=1)
+        let cancel_clone = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            cancel_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        let result = download_assets(
+            &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
+            &tx, 1, cancel, // concurrency=1 so assets are sequential
+        ).await.unwrap();
+
+        assert!(
+            result.downloaded.len() < 10,
+            "Should have downloaded fewer than 10 (got {})",
+            result.downloaded.len()
+        );
+        assert!(
+            result.downloaded.len() > 0,
+            "Should have downloaded at least 1 before cancel"
+        );
+        // The rest should be cancelled
+        let cancelled: Vec<_> = result.failed.iter().filter(|f| f.error == "Cancelled").collect();
+        assert!(
+            !cancelled.is_empty(),
+            "Some assets should have 'Cancelled' error"
+        );
+    }
+
     // --- encode_url improvements ---
 
     #[test]
@@ -1563,5 +1708,30 @@ mod tests {
         let base = url::Url::parse("https://example.com/dir/").unwrap();
         let resolved = base.join("file.png").unwrap();
         assert_eq!(resolved.as_str(), "https://example.com/dir/file.png");
+    }
+
+    // --- Property-based tests ---
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn encode_url_never_panics(input in "\\PC{0,200}") {
+                let _ = encode_url(&input);
+            }
+
+            #[test]
+            fn generate_filename_always_valid(
+                url in "https?://[a-z]{1,10}\\.[a-z]{2,4}/[a-zA-Z0-9 _\\-]{1,50}\\.[a-z]{2,4}"
+            ) {
+                let name = generate_filename(&url);
+                prop_assert!(!name.is_empty(), "Filename should not be empty for URL: {}", url);
+                prop_assert!(!name.contains('/'), "Filename contains slash: {} from URL: {}", name, url);
+                prop_assert!(!name.contains('\\'), "Filename contains backslash: {} from URL: {}", name, url);
+                prop_assert!(name.contains('.'), "Filename has no extension: {} from URL: {}", name, url);
+            }
+        }
     }
 }
