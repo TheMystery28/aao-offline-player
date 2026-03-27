@@ -1494,6 +1494,23 @@ pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<
         }
     }
 
+    // Clean plugin params from case_config.json
+    let config_path = case_dir.join("case_config.json");
+    if config_path.exists() {
+        if let Ok(text) = fs::read_to_string(&config_path) {
+            if let Ok(mut config) = serde_json::from_str::<serde_json::Value>(&text) {
+                let plugin_name = filename.trim_end_matches(".js");
+                if let Some(plugins) = config.get_mut("plugins").and_then(|p| p.as_object_mut()) {
+                    plugins.remove(plugin_name);
+                }
+                let _ = fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap());
+            }
+        }
+    }
+
+    // Delete resolved_plugins.json (regenerated on next play)
+    let _ = fs::remove_file(case_dir.join("resolved_plugins.json"));
+
     Ok(())
 }
 
@@ -1602,6 +1619,13 @@ pub fn remove_global_plugin(filename: &str, engine_dir: &Path) -> Result<(), Str
             }
             if let Some(arr) = val.get_mut("disabled").and_then(|s| s.as_array_mut()) {
                 arr.retain(|s| s.as_str() != Some(filename));
+            }
+            // Clean plugin params
+            let plugin_name = filename.trim_end_matches(".js");
+            if let Some(plugins) = val.get_mut("plugins") {
+                if let Some(params) = plugins.get_mut("params").and_then(|p| p.as_object_mut()) {
+                    params.remove(plugin_name);
+                }
             }
             let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap());
         }
@@ -5625,5 +5649,56 @@ var initial_trial_data = {{"profiles":[0,{{"icon":"","short_name":"Hero","custom
         let result = import_aaoffline_batch(source.path(), engine.path(), None, None);
         assert!(result.is_err(), "Empty folder should return error");
         assert!(result.unwrap_err().contains("No index.html found"));
+    }
+
+    #[test]
+    fn test_remove_plugin_cleans_config_and_resolved() {
+        let engine = tempfile::tempdir().unwrap();
+        let case_id = 88001u32;
+        let case_dir = engine.path().join("case").join(case_id.to_string());
+        let plugins_dir = case_dir.join("plugins");
+        fs::create_dir_all(&plugins_dir).unwrap();
+
+        // Create plugin file
+        fs::write(plugins_dir.join("test_plugin.js"), "// plugin code").unwrap();
+
+        // Create manifest with the plugin
+        fs::write(plugins_dir.join("manifest.json"), r#"{"scripts":["test_plugin.js"]}"#).unwrap();
+
+        // Create case_config.json with plugin params
+        fs::write(case_dir.join("case_config.json"), r#"{"plugins":{"test_plugin":{"volume":0.5}}}"#).unwrap();
+
+        // Create resolved_plugins.json
+        fs::write(case_dir.join("resolved_plugins.json"), r#"{"active":[]}"#).unwrap();
+
+        // Create case manifest
+        let manifest = CaseManifest {
+            case_id,
+            title: "Config Test".into(), author: "A".into(), language: "en".into(),
+            download_date: "2025-01-01".into(), format: "v6".into(), sequence: None,
+            assets: crate::downloader::manifest::AssetSummary {
+                case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0,
+            },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![], has_plugins: true, has_case_config: true,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+
+        // Remove the plugin
+        remove_plugin(case_id, "test_plugin.js", engine.path()).unwrap();
+
+        // Verify plugin file deleted
+        assert!(!plugins_dir.join("test_plugin.js").exists());
+
+        // Verify case_config.json no longer has the plugin's params
+        let config_text = fs::read_to_string(case_dir.join("case_config.json")).unwrap();
+        let config: serde_json::Value = serde_json::from_str(&config_text).unwrap();
+        assert!(
+            config["plugins"].get("test_plugin").is_none(),
+            "Plugin params should be removed from case_config.json"
+        );
+
+        // Verify resolved_plugins.json deleted
+        assert!(!case_dir.join("resolved_plugins.json").exists());
     }
 }
