@@ -40,6 +40,19 @@ window.addEventListener("DOMContentLoaded", function () {
   var progressText = document.getElementById("progress-text");
   var cancelDownloadBtn = document.getElementById("cancel-download-btn");
 
+  // Helper: apply or remove spoiler blur based on the setting
+  function applySpoilerBlur() {
+    var blurEl = document.getElementById("settings-blur-spoilers");
+    if (blurEl && blurEl.checked) {
+      progressText.classList.add("spoiler-blur");
+    } else {
+      progressText.classList.remove("spoiler-blur");
+    }
+  }
+  function removeSpoilerBlur() {
+    progressText.classList.remove("spoiler-blur");
+  }
+
   // Track known case IDs for duplicate detection
   var knownCaseIds = [];
   var downloadInProgress = false;
@@ -3247,6 +3260,7 @@ window.addEventListener("DOMContentLoaded", function () {
           var fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
+          applySpoilerBlur();
         }
         if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
           var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
@@ -3260,6 +3274,7 @@ window.addEventListener("DOMContentLoaded", function () {
         var sizeStr = formatBytes(msg.data.total_bytes);
         progressBarInner.style.width = "100%";
         progressPhase.textContent = "Update complete!";
+        removeSpoilerBlur();
         progressText.textContent =
           msg.data.downloaded + " downloaded" +
           (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
@@ -3372,6 +3387,7 @@ window.addEventListener("DOMContentLoaded", function () {
           var fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
+          applySpoilerBlur();
         }
         if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
           var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
@@ -3385,6 +3401,7 @@ window.addEventListener("DOMContentLoaded", function () {
         var sizeStr = formatBytes(msg.data.total_bytes);
         progressBarInner.style.width = "100%";
         progressPhase.textContent = "Retry complete!";
+        removeSpoilerBlur();
         progressText.textContent =
           msg.data.downloaded + " downloaded" +
           (msg.data.failed > 0 ? ", " + msg.data.failed + " still failed" : "") +
@@ -3466,6 +3483,7 @@ window.addEventListener("DOMContentLoaded", function () {
           var fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
+          applySpoilerBlur();
         }
         if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
           var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
@@ -3479,6 +3497,7 @@ window.addEventListener("DOMContentLoaded", function () {
         var sizeStr = formatBytes(msg.data.total_bytes);
         progressBarInner.style.width = "100%";
         progressPhase.textContent = "Sequence download complete!";
+        removeSpoilerBlur();
         progressText.textContent =
           msg.data.downloaded + " downloaded" +
           (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
@@ -3551,6 +3570,7 @@ window.addEventListener("DOMContentLoaded", function () {
           var fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
+          applySpoilerBlur();
         }
         if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
           var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
@@ -3564,6 +3584,7 @@ window.addEventListener("DOMContentLoaded", function () {
         var sizeStr = formatBytes(msg.data.total_bytes);
         progressBarInner.style.width = "100%";
         progressPhase.textContent = "Download complete!";
+        removeSpoilerBlur();
         progressText.textContent =
           msg.data.downloaded + " downloaded" +
           (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
@@ -4135,6 +4156,7 @@ window.addEventListener("DOMContentLoaded", function () {
   });
 
   var settingsAutoSave = document.getElementById("settings-autosave");
+  var settingsBlurSpoilers = document.getElementById("settings-blur-spoilers");
 
   function loadSettings() {
     invoke("get_settings").then(function (settings) {
@@ -4142,6 +4164,7 @@ window.addEventListener("DOMContentLoaded", function () {
       settingsConcurrency.value = settings.concurrent_downloads;
       concurrencyValue.textContent = settings.concurrent_downloads;
       if (settingsAutoSave) settingsAutoSave.checked = settings.auto_save;
+      if (settingsBlurSpoilers) settingsBlurSpoilers.checked = settings.blur_spoilers;
     }).catch(function (e) {
       console.error("[SETTINGS] Failed to load settings:", e);
     });
@@ -4151,7 +4174,8 @@ window.addEventListener("DOMContentLoaded", function () {
     var settings = {
       language: settingsLanguage.value,
       concurrent_downloads: parseInt(settingsConcurrency.value, 10),
-      auto_save: settingsAutoSave ? settingsAutoSave.checked : true
+      auto_save: settingsAutoSave ? settingsAutoSave.checked : true,
+      blur_spoilers: settingsBlurSpoilers ? settingsBlurSpoilers.checked : true
     };
     invoke("save_settings", { settings: settings }).catch(function (e) {
       console.error("[SETTINGS] Failed to save settings:", e);
@@ -4171,6 +4195,7 @@ window.addEventListener("DOMContentLoaded", function () {
   });
 
   if (settingsAutoSave) settingsAutoSave.addEventListener("change", debounceSave);
+  if (settingsBlurSpoilers) settingsBlurSpoilers.addEventListener("change", debounceSave);
 
   function loadStorageInfo() {
     invoke("get_storage_info").then(function (info) {

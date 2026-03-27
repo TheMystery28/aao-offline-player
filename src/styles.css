@@ -1488,3 +1488,14 @@
     width: 90vw;
   }
 }
+
+/* Anti-spoiler blur for download progress filenames */
+.spoiler-blur {
+  filter: blur(5px);
+  transition: filter 0.2s;
+  cursor: pointer;
+  user-select: none;
+}
+.spoiler-blur:hover {
+  filter: none;
+}

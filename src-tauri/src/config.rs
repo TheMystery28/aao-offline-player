@@ -14,6 +14,9 @@ pub struct AppConfig {
     /// Automatically save game progress when leaving the player.
     #[serde(default = "default_auto_save")]
     pub auto_save: bool,
+    /// Blur asset filenames in download progress to avoid spoilers.
+    #[serde(default = "default_blur_spoilers")]
+    pub blur_spoilers: bool,
 }
 
 fn default_language() -> String {
@@ -25,6 +28,9 @@ fn default_concurrent_downloads() -> usize {
 fn default_auto_save() -> bool {
     false
 }
+fn default_blur_spoilers() -> bool {
+    true
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -32,6 +38,7 @@ impl Default for AppConfig {
             language: default_language(),
             concurrent_downloads: default_concurrent_downloads(),
             auto_save: default_auto_save(),
+            blur_spoilers: default_blur_spoilers(),
         }
     }
 }
@@ -162,6 +169,7 @@ mod tests {
             language: "fr".to_string(),
             concurrent_downloads: 5,
             auto_save: true,
+            blur_spoilers: false,
         };
         save_config(dir.path(), &config).unwrap();
         let loaded = load_config(dir.path());
@@ -192,6 +200,7 @@ mod tests {
             language: "en".to_string(),
             concurrent_downloads: 99,
             auto_save: true,
+            blur_spoilers: true,
         };
         validate(&mut config);
         assert_eq!(config.concurrent_downloads, 10);
@@ -207,6 +216,7 @@ mod tests {
             language: "xx".to_string(),
             concurrent_downloads: 3,
             auto_save: true,
+            blur_spoilers: true,
         };
         validate(&mut config);
         assert_eq!(config.language, "en");
