@@ -360,7 +360,7 @@ window.addEventListener("DOMContentLoaded", function () {
       sorted.sort(function (a, b) { return a.assets.total_size_bytes - b.assets.total_size_bytes; });
     }
 
-    renderCaseList(sorted, cachedCollections);
+    renderCaseList(sorted, cachedCollections, query);
   }
 
   var searchDebounceTimer = null;
@@ -370,7 +370,7 @@ window.addEventListener("DOMContentLoaded", function () {
   });
   librarySort.addEventListener("change", applySearchAndSort);
 
-  function renderCaseList(cases, collections) {
+  function renderCaseList(cases, collections, searchQuery) {
     libraryLoading.classList.add("hidden");
     // Remove old cards, groups, and collection groups
     caseList.querySelectorAll(".case-card, .sequence-group, .collection-group").forEach(function (c) { c.remove(); });
@@ -435,13 +435,13 @@ window.addEventListener("DOMContentLoaded", function () {
 
     // Render collections first
     for (var co = 0; co < collections.length; co++) {
-      appendCollectionGroup(collections[co], casesById, sequenceGroups);
+      appendCollectionGroup(collections[co], casesById, sequenceGroups, searchQuery);
     }
 
     // Render remaining uncollected sequences
     for (var gs = 0; gs < groupKeys.length; gs++) {
       if (!claimedSequenceTitles[groupKeys[gs]]) {
-        appendSequenceGroup(groupKeys[gs], sequenceGroups[groupKeys[gs]].list, sequenceGroups[groupKeys[gs]].cases);
+        appendSequenceGroup(groupKeys[gs], sequenceGroups[groupKeys[gs]].list, sequenceGroups[groupKeys[gs]].cases, searchQuery);
       }
     }
 
@@ -453,7 +453,7 @@ window.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  function appendSequenceGroup(sequenceTitle, sequenceList, downloadedCases) {
+  function appendSequenceGroup(sequenceTitle, sequenceList, downloadedCases, searchQuery) {
     var totalParts = sequenceList.length;
     var downloadedCount = downloadedCases.length;
     var totalSize = 0;
@@ -498,8 +498,19 @@ window.addEventListener("DOMContentLoaded", function () {
     });
 
     // Part rows
+    var renderedParts = 0;
     for (var k = 0; k < sequenceList.length; k++) {
       var partInfo = sequenceList[k];
+
+      // When searching, skip parts that don't match the query
+      if (searchQuery) {
+        var partTitle = (partInfo.title || "").toLowerCase();
+        var partId = String(partInfo.id);
+        if (partTitle.indexOf(searchQuery) === -1 && partId.indexOf(searchQuery) === -1) {
+          continue;
+        }
+      }
+
       var downloaded = null;
       for (var d = 0; d < downloadedCases.length; d++) {
         if (downloadedCases[d].case_id === partInfo.id) {
@@ -508,6 +519,12 @@ window.addEventListener("DOMContentLoaded", function () {
         }
       }
       appendSequencePart(partsContainer, partInfo, k + 1, downloaded);
+      renderedParts++;
+    }
+
+    // Don't render the group at all if search filtered out all parts
+    if (searchQuery && renderedParts === 0) {
+      return;
     }
 
     // Footer actions
@@ -968,7 +985,7 @@ window.addEventListener("DOMContentLoaded", function () {
 
   // --- Collections ---
 
-  function appendCollectionGroup(collection, allCases, sequenceGroups) {
+  function appendCollectionGroup(collection, allCases, sequenceGroups, searchQuery) {
     var items = collection.items || [];
     var itemCount = items.length;
 
@@ -1018,14 +1035,33 @@ window.addEventListener("DOMContentLoaded", function () {
     });
 
     // Render each item in order
+    var renderedItems = 0;
     for (var j = 0; j < items.length; j++) {
       var item = items[j];
       if (item.type === "sequence" && sequenceGroups[item.title]) {
         var sg = sequenceGroups[item.title];
-        appendSequenceGroupInto(itemsContainer, item.title, sg.list, sg.cases);
+        var beforeCount = itemsContainer.children.length;
+        appendSequenceGroupInto(itemsContainer, item.title, sg.list, sg.cases, searchQuery);
+        if (itemsContainer.children.length > beforeCount) renderedItems++;
       } else if (item.type === "case" && allCases[item.case_id]) {
+        // When searching, skip cases that don't match
+        if (searchQuery) {
+          var caseData = allCases[item.case_id];
+          var cTitle = (caseData.title || "").toLowerCase();
+          var cAuthor = (caseData.author || "").toLowerCase();
+          var cId = String(caseData.case_id);
+          if (cTitle.indexOf(searchQuery) === -1 && cAuthor.indexOf(searchQuery) === -1 && cId.indexOf(searchQuery) === -1) {
+            continue;
+          }
+        }
         appendCaseCardInto(itemsContainer, allCases[item.case_id]);
+        renderedItems++;
       }
+    }
+
+    // Don't render the collection at all if search filtered out all items
+    if (searchQuery && renderedItems === 0) {
+      return;
     }
 
     // Footer actions
@@ -1129,7 +1165,7 @@ window.addEventListener("DOMContentLoaded", function () {
    * Render a sequence group inside a container (used within collection items).
    * Reuses the same logic as appendSequenceGroup but appends to a given container.
    */
-  function appendSequenceGroupInto(container, sequenceTitle, sequenceList, downloadedCases) {
+  function appendSequenceGroupInto(container, sequenceTitle, sequenceList, downloadedCases, searchQuery) {
     var totalParts = sequenceList.length;
     var downloadedCount = downloadedCases.length;
     var totalSize = 0;
@@ -1172,8 +1208,19 @@ window.addEventListener("DOMContentLoaded", function () {
       }
     });
 
+    var renderedParts = 0;
     for (var k = 0; k < sequenceList.length; k++) {
       var partInfo = sequenceList[k];
+
+      // When searching, skip parts that don't match
+      if (searchQuery) {
+        var partTitle = (partInfo.title || "").toLowerCase();
+        var partId = String(partInfo.id);
+        if (partTitle.indexOf(searchQuery) === -1 && partId.indexOf(searchQuery) === -1) {
+          continue;
+        }
+      }
+
       var downloaded = null;
       for (var d = 0; d < downloadedCases.length; d++) {
         if (downloadedCases[d].case_id === partInfo.id) {
@@ -1182,6 +1229,12 @@ window.addEventListener("DOMContentLoaded", function () {
         }
       }
       appendSequencePart(partsContainer, partInfo, k + 1, downloaded);
+      renderedParts++;
+    }
+
+    // Don't render the group if search filtered out all parts
+    if (searchQuery && renderedParts === 0) {
+      return;
     }
 
     // Sequence-specific footer
