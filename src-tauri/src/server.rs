@@ -242,15 +242,10 @@ fn resolve_path(config: &ServerConfig, relative: &str) -> Option<PathBuf> {
     }
 }
 
-/// Sanitize path for Windows by replacing illegal characters.
-/// Must match the sanitization in asset_resolver::sanitize_path.
+/// Canonical path normalization. Delegates to the shared normalize_path function
+/// in downloader::paths — ensures server and downloader use identical normalization.
 fn sanitize_path(path: &str) -> String {
-    path.chars()
-        .map(|c| match c {
-            ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            _ => c,
-        })
-        .collect()
+    crate::downloader::paths::normalize_path(path)
 }
 
 /// URL path decoding (handles %XX sequences only).
@@ -339,12 +334,13 @@ mod tests {
 
     #[test]
     fn test_url_decode_then_sanitize() {
-        // Simulates what the server does: decode URL, then sanitize
+        // Simulates what the server does: decode URL, trim leading /, then sanitize
         let url = "/defaults/music/Ace%20Attorney%20Investigations%20%3A%20Miles/song.mp3";
         let decoded = url_decode(url);
         assert_eq!(decoded, "/defaults/music/Ace Attorney Investigations : Miles/song.mp3");
-        let sanitized = sanitize_path(&decoded);
-        assert_eq!(sanitized, "/defaults/music/Ace Attorney Investigations _ Miles/song.mp3");
+        let relative = decoded.trim_start_matches('/');
+        let sanitized = sanitize_path(relative);
+        assert_eq!(sanitized, "defaults/music/Ace Attorney Investigations _ Miles/song.mp3");
     }
 
     #[test]
