@@ -42,16 +42,9 @@ fn build_url(path: &str) -> String {
     }
 }
 
-/// Sanitize a path for Windows by replacing illegal characters.
-/// Must match the sanitization applied in server.rs for path resolution.
-pub fn sanitize_path(path: &str) -> String {
-    path.chars()
-        .map(|c| match c {
-            ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            _ => c,
-        })
-        .collect()
-}
+/// Canonical path normalization: NFC unicode, forward slashes, `.`/`..` resolution,
+/// Windows-illegal character replacement. Delegates to `paths::normalize_path`.
+pub use super::paths::normalize_path as sanitize_path;
 
 /// Add an asset with a local_path (for internal assets) or empty local_path (for external).
 fn add_asset(
