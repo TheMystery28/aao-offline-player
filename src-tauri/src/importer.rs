@@ -1594,8 +1594,33 @@ pub fn attach_global_plugin_code(code: &str, filename: &str, engine_dir: &Path) 
     if !scripts.contains(&filename.to_string()) {
         scripts.push(filename.to_string());
     }
-    let manifest_json = serde_json::json!({ "scripts": scripts, "disabled": disabled });
-    fs::write(&manifest_file, serde_json::to_string_pretty(&manifest_json).unwrap())
+
+    // Extract and store param descriptors from plugin source code
+    let descriptors = extract_plugin_descriptors(code);
+
+    // Build manifest preserving existing plugins config
+    let mut manifest_val = if manifest_file.exists() {
+        fs::read_to_string(&manifest_file).ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    manifest_val["scripts"] = serde_json::json!(scripts);
+    manifest_val["disabled"] = serde_json::json!(disabled);
+
+    // Store descriptors under plugins.{filename}.descriptors
+    if !manifest_val.get("plugins").map(|p| p.is_object()).unwrap_or(false) {
+        manifest_val["plugins"] = serde_json::json!({});
+    }
+    let plugin_entry = manifest_val["plugins"].get(filename).cloned()
+        .unwrap_or(serde_json::json!({"scope": {"all": false}, "params": {}}));
+    let mut entry = plugin_entry.as_object().cloned().unwrap_or_default();
+    entry.insert("descriptors".to_string(), descriptors.unwrap_or(serde_json::Value::Null));
+    manifest_val["plugins"].as_object_mut().unwrap()
+        .insert(filename.to_string(), serde_json::Value::Object(entry));
+
+    fs::write(&manifest_file, serde_json::to_string_pretty(&manifest_val).unwrap())
         .map_err(|e| format!("Failed to write global plugin manifest: {}", e))?;
 
     Ok(())
