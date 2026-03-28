@@ -1,0 +1,50 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
+/// Check if a file already exists locally and should be skipped.
+/// Returns `Some(size)` if the file exists and has content (skip download),
+/// or `None` if the file is missing or empty (proceed with download).
+pub fn check_skip_existing(save_dir: &std::path::Path, relative_path: &str) -> Option<u64> {
+    let file_path = save_dir.join(relative_path);
+    if file_path.exists() {
+        let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+        if size > 0 {
+            return Some(size);
+        }
+    }
+    None
+}
+
+pub(super) fn generate_filename(url: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    let hash = hasher.finish();
+    let hash_str = format!("{:016x}", hash);
+
+    let url_path = url.split('?').next().unwrap_or(url);
+    let raw_name = url_path.rsplit('/').next().unwrap_or("asset");
+
+    let (name, ext) = match raw_name.rfind('.') {
+        Some(pos) => (&raw_name[..pos], &raw_name[pos + 1..]),
+        None => (raw_name, "bin"),
+    };
+
+    let sanitized: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+
+    let sanitized = if sanitized.is_empty() {
+        "asset".to_string()
+    } else {
+        sanitized.to_lowercase()
+    };
+
+    format!("{}-{}.{}", sanitized, &hash_str[..12], ext.to_lowercase())
+}

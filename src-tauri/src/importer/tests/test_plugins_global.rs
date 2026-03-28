@@ -1,0 +1,494 @@
+use super::*;
+use std::io;
+
+#[test]
+fn test_attach_global_plugin() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    attach_global_plugin_code("// global", "global.js", engine_dir).unwrap();
+    assert!(engine_dir.join("plugins/global.js").exists());
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
+    ).unwrap();
+    assert!(manifest["scripts"].as_array().unwrap().iter().any(|s| s.as_str() == Some("global.js")));
+}
+
+#[test]
+fn test_remove_global_plugin() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    attach_global_plugin_code("// global", "global.js", engine_dir).unwrap();
+    remove_global_plugin("global.js", engine_dir).unwrap();
+    assert!(!engine_dir.join("plugins/global.js").exists());
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
+    ).unwrap();
+    assert!(manifest["scripts"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn test_toggle_global_plugin() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    attach_global_plugin_code("// global", "g.js", engine_dir).unwrap();
+    toggle_global_plugin("g.js", false, engine_dir).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
+    ).unwrap();
+    assert!(manifest["disabled"].as_array().unwrap().iter().any(|s| s.as_str() == Some("g.js")));
+
+    toggle_global_plugin("g.js", true, engine_dir).unwrap();
+    let manifest2: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
+    ).unwrap();
+    assert!(manifest2["disabled"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn test_migrate_old_format_to_new() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js","b.js"],"disabled":["b.js"]}"#).unwrap();
+
+    migrate_global_manifest(engine_dir).unwrap();
+
+    let text = std::fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(val.get("plugins").is_some());
+    let plugins = val["plugins"].as_object().unwrap();
+    assert_eq!(plugins["a.js"]["scope"]["all"], true);
+    assert_eq!(plugins["b.js"]["scope"]["all"], true); // All plugins migrate to all:true
+    assert!(val.get("disabled").is_none()); // old field removed
+}
+
+#[test]
+fn test_migrate_already_new_stays_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    let original = r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"x":1}}}}}"#;
+    std::fs::write(plugins_dir.join("manifest.json"), original).unwrap();
+
+    migrate_global_manifest(engine_dir).unwrap();
+
+    let text = std::fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    // Params should still be there (not wiped)
+    assert_eq!(val["plugins"]["a.js"]["params"]["default"]["x"], 1);
+}
+
+#[test]
+fn test_migrate_missing_file_does_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let result = migrate_global_manifest(dir.path());
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_migrate_scope_to_all_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    fs::create_dir_all(&plugins_dir).unwrap();
+    // Plugin with old scope format
+    fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"case_ids":[1,2],"sequence_titles":["Seq"],"collection_ids":["c1"]},"params":{}}}}"#).unwrap();
+
+    migrate_global_manifest(engine_dir).unwrap();
+
+    let text = fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["plugins"]["a.js"]["scope"]["all"], true);
+    // Old fields should be gone
+    assert!(val["plugins"]["a.js"]["scope"].get("case_ids").is_none());
+    assert!(val["plugins"]["a.js"]["scope"].get("sequence_titles").is_none());
+    assert!(val["plugins"]["a.js"]["scope"].get("collection_ids").is_none());
+}
+
+#[test]
+fn test_scope_all_matches_any_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{}}}}"#).unwrap();
+    // Create a case dir
+    let case_dir = engine_dir.join("case/99999");
+    std::fs::create_dir_all(&case_dir).unwrap();
+
+    let resolved = resolve_plugins_for_case(99999, engine_dir).unwrap();
+    let active = resolved["active"].as_array().unwrap();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0]["script"], "a.js");
+}
+
+#[test]
+fn test_scope_case_ids_matching() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"case_ids":[12345],"sequence_titles":[],"collection_ids":[]},"params":{}}}}"#).unwrap();
+    std::fs::create_dir_all(engine_dir.join("case/12345")).unwrap();
+
+    let resolved = resolve_plugins_for_case(12345, engine_dir).unwrap();
+    assert_eq!(resolved["active"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn test_disabled_for_case_not_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{},"disabled_for":{"cases":[99999],"sequences":[],"collections":[]}}}}"#).unwrap();
+    std::fs::create_dir_all(engine_dir.join("case/99999")).unwrap();
+
+    let resolved = resolve_plugins_for_case(99999, engine_dir).unwrap();
+    assert_eq!(resolved["active"].as_array().unwrap().len(), 0);
+    assert_eq!(resolved["available"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn test_globally_disabled_not_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"disabled":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{}}}}"#).unwrap();
+    std::fs::create_dir_all(engine_dir.join("case/11111")).unwrap();
+
+    let resolved = resolve_plugins_for_case(11111, engine_dir).unwrap();
+    assert_eq!(resolved["active"].as_array().unwrap().len(), 0);
+    assert_eq!(resolved["available"].as_array().unwrap().len(), 1);
+    assert!(resolved["available"][0]["reason"].as_str().unwrap().contains("global"));
+}
+
+#[test]
+fn test_params_defaults_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "//").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"font":"Arial","size":14}}}}}"#).unwrap();
+    std::fs::create_dir_all(engine_dir.join("case/1")).unwrap();
+
+    let resolved = resolve_plugins_for_case(1, engine_dir).unwrap();
+    let params = &resolved["active"][0]["params"];
+    assert_eq!(params["font"], "Arial");
+    assert_eq!(params["size"], 14);
+}
+
+#[test]
+fn test_params_case_overrides() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "//").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"font":"Arial","size":14},"by_case":{"42":{"font":"sans-serif","size":10}}}}}}"#).unwrap();
+    std::fs::create_dir_all(engine_dir.join("case/42")).unwrap();
+
+    let resolved = resolve_plugins_for_case(42, engine_dir).unwrap();
+    let params = &resolved["active"][0]["params"];
+    assert_eq!(params["font"], "sans-serif");
+    assert_eq!(params["size"], 10);
+}
+
+#[test]
+fn test_params_partial_override_inherits() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "//").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"font":"Arial","size":14},"by_case":{"42":{"font":"Calibri"}}}}}}"#).unwrap();
+    std::fs::create_dir_all(engine_dir.join("case/42")).unwrap();
+
+    let resolved = resolve_plugins_for_case(42, engine_dir).unwrap();
+    let params = &resolved["active"][0]["params"];
+    assert_eq!(params["font"], "Calibri"); // overridden
+    assert_eq!(params["size"], 14); // inherited from default
+}
+
+#[test]
+fn test_attach_global_plugin_starts_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+
+    let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+    // Should be in disabled[] (starts disabled globally)
+    let disabled = val["disabled"].as_array().unwrap();
+    assert!(disabled.iter().any(|s| s == "test.js"), "New plugin should start in disabled[]");
+
+    // Should have scope all:true
+    assert_eq!(val["plugins"]["test.js"]["scope"]["all"], true, "Default scope should be all:true");
+}
+
+#[test]
+fn test_attach_existing_plugin_not_re_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    // Attach first time (starts disabled)
+    attach_global_plugin_code("// v1", "test.js", engine_dir).unwrap();
+    // Enable it
+    toggle_global_plugin("test.js", true, engine_dir).unwrap();
+    // Re-attach (update code)
+    attach_global_plugin_code("// v2", "test.js", engine_dir).unwrap();
+
+    let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+    // Should NOT be re-added to disabled[]
+    let disabled = val["disabled"].as_array().unwrap();
+    assert!(!disabled.iter().any(|s| s == "test.js"), "Re-attached plugin should not be re-disabled");
+}
+
+#[test]
+fn test_resolve_globally_disabled_plugin_inactive() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    // Create case
+    create_test_case_for_save(engine_dir, 99001);
+
+    // Attach plugin (starts disabled)
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+
+    let resolved = resolve_plugins_for_case(99001, engine_dir).unwrap();
+    let active = resolved["active"].as_array().unwrap();
+    assert!(active.is_empty(), "Globally disabled plugin should not be active");
+}
+
+#[test]
+fn test_resolve_globally_enabled_plugin_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    create_test_case_for_save(engine_dir, 99002);
+
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    toggle_global_plugin("test.js", true, engine_dir).unwrap();
+
+    let resolved = resolve_plugins_for_case(99002, engine_dir).unwrap();
+    let active = resolved["active"].as_array().unwrap();
+    assert_eq!(active.len(), 1, "Globally enabled plugin should be active");
+    assert_eq!(active[0]["script"], "test.js");
+}
+
+#[test]
+fn test_resolve_with_disabled_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    create_test_case_for_save(engine_dir, 99003);
+
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    toggle_global_plugin("test.js", true, engine_dir).unwrap();
+
+    // Disable for this specific case
+    toggle_plugin_for_scope("test.js", "case", "99003", false, engine_dir).unwrap();
+
+    let resolved = resolve_plugins_for_case(99003, engine_dir).unwrap();
+    let active = resolved["active"].as_array().unwrap();
+    assert!(active.is_empty(), "Plugin disabled_for this case should not be active");
+}
+
+#[test]
+fn test_resolve_with_enabled_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    create_test_case_for_save(engine_dir, 99004);
+
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    // Plugin starts disabled globally
+
+    // Enable for this specific case
+    toggle_plugin_for_scope("test.js", "case", "99004", true, engine_dir).unwrap();
+
+    let resolved = resolve_plugins_for_case(99004, engine_dir).unwrap();
+    let active = resolved["active"].as_array().unwrap();
+    assert_eq!(active.len(), 1, "Plugin enabled_for this case should be active");
+}
+
+#[test]
+fn test_toggle_plugin_for_scope_globally_enabled_disable() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    toggle_global_plugin("test.js", true, engine_dir).unwrap();
+
+    // Disable for a sequence
+    toggle_plugin_for_scope("test.js", "sequence", "My Seq", false, engine_dir).unwrap();
+
+    let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let df = &val["plugins"]["test.js"]["disabled_for"]["sequences"];
+    assert!(df.as_array().unwrap().iter().any(|s| s == "My Seq"));
+}
+
+#[test]
+fn test_toggle_plugin_for_scope_globally_disabled_enable() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    // Plugin starts globally disabled
+
+    // Enable for a collection
+    toggle_plugin_for_scope("test.js", "collection", "col_1", true, engine_dir).unwrap();
+
+    let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let ef = &val["plugins"]["test.js"]["enabled_for"]["collections"];
+    assert!(ef.as_array().unwrap().iter().any(|s| s == "col_1"));
+}
+
+#[test]
+fn test_toggle_plugin_for_scope_re_enable_removes_from_disabled_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    toggle_global_plugin("test.js", true, engine_dir).unwrap();
+
+    // Disable then re-enable for a case
+    toggle_plugin_for_scope("test.js", "case", "123", false, engine_dir).unwrap();
+    toggle_plugin_for_scope("test.js", "case", "123", true, engine_dir).unwrap();
+
+    let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let df = &val["plugins"]["test.js"]["disabled_for"]["cases"];
+    assert!(df.as_array().unwrap().is_empty(), "Re-enabling should remove from disabled_for");
+}
+
+#[test]
+fn test_resolve_bidirectional_precedence() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    create_test_case_for_save(engine_dir, 99010);
+    create_test_case_for_save(engine_dir, 99011);
+
+    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    // Globally disabled, but enable for case 99010 only
+    toggle_plugin_for_scope("test.js", "case", "99010", true, engine_dir).unwrap();
+
+    // Case 99010 should have it active
+    let resolved1 = resolve_plugins_for_case(99010, engine_dir).unwrap();
+    assert_eq!(resolved1["active"].as_array().unwrap().len(), 1, "enabled_for case should be active");
+
+    // Case 99011 should NOT have it active
+    let resolved2 = resolve_plugins_for_case(99011, engine_dir).unwrap();
+    assert!(resolved2["active"].as_array().unwrap().is_empty(), "Other case should remain inactive");
+}
+
+// --- import_aaoplug_global tests ---
+
+fn create_aaoplug_zip(dir: &std::path::Path, scripts: &[(&str, &str)]) -> std::path::PathBuf {
+    let zip_path = dir.join("test.aaoplug");
+    let file = fs::File::create(&zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+
+    // Write manifest.json
+    let script_names: Vec<&str> = scripts.iter().map(|(name, _)| *name).collect();
+    let manifest = serde_json::json!({ "scripts": script_names });
+    zip.start_file("manifest.json", options).unwrap();
+    io::Write::write_all(&mut zip, serde_json::to_string(&manifest).unwrap().as_bytes()).unwrap();
+
+    // Write each script
+    for (name, code) in scripts {
+        zip.start_file(*name, options).unwrap();
+        io::Write::write_all(&mut zip, code.as_bytes()).unwrap();
+    }
+
+    zip.finish().unwrap();
+    zip_path
+}
+
+#[test]
+fn test_import_aaoplug_global_basic() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let zip_path = create_aaoplug_zip(dir.path(), &[("myplugin.js", "// test plugin code")]);
+
+    let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+    assert_eq!(result, vec!["myplugin.js"]);
+
+    // Verify plugin is in global manifest
+    let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(val["scripts"].as_array().unwrap().iter().any(|s| s == "myplugin.js"));
+    assert_eq!(val["plugins"]["myplugin.js"]["scope"]["all"], true);
+    // Should start disabled
+    assert!(val["disabled"].as_array().unwrap().iter().any(|s| s == "myplugin.js"));
+    // JS file should exist on disk
+    assert!(engine_dir.join("plugins/myplugin.js").exists());
+}
+
+#[test]
+fn test_import_aaoplug_global_multiple_scripts() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let zip_path = create_aaoplug_zip(dir.path(), &[
+        ("a.js", "// plugin a"),
+        ("b.js", "// plugin b"),
+    ]);
+
+    let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+    assert_eq!(result.len(), 2);
+    assert!(result.contains(&"a.js".to_string()));
+    assert!(result.contains(&"b.js".to_string()));
+
+    let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["scripts"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn test_import_aaoplug_global_skips_assets() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    // Create a ZIP with JS + assets directory
+    let zip_path = dir.path().join("test.aaoplug");
+    let file = fs::File::create(&zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+
+    zip.start_file("manifest.json", options).unwrap();
+    io::Write::write_all(&mut zip, br#"{"scripts":["p.js"]}"#).unwrap();
+    zip.start_file("p.js", options).unwrap();
+    io::Write::write_all(&mut zip, b"// plugin").unwrap();
+    zip.start_file("assets/sound.mp3", options).unwrap();
+    io::Write::write_all(&mut zip, b"fake audio data").unwrap();
+    zip.finish().unwrap();
+
+    let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+    assert_eq!(result, vec!["p.js"]);
+    // Assets should NOT be extracted to global plugins dir
+    assert!(!engine_dir.join("plugins/assets").exists());
+}

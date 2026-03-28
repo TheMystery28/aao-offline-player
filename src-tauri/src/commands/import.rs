@@ -1,0 +1,147 @@
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use tauri::ipc::Channel;
+use tauri::State;
+
+use crate::app_state::AppState;
+use crate::downloader::asset_downloader::DownloadEvent;
+use crate::importer;
+
+/// Import a case from an existing aaoffline download directory or a .aaocase ZIP file.
+///
+/// - If `source_path` is a directory: expects `index.html` + optional `assets/` (aaoffline format)
+/// - If `source_path` is a file: expects a .aaocase or .zip file
+/// - If `source_path` is a content:// URI (Android): copies to temp file first via Tauri fs plugin
+///
+/// Returns `ImportResult` containing the manifest and optionally any game saves.
+#[tauri::command]
+pub async fn import_case(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+    source_path: String,
+    on_event: Channel<DownloadEvent>,
+) -> Result<importer::ImportResult, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+
+    // On Android, the file picker returns content:// URIs which aren't regular filesystem paths.
+    // Copy the file to a temp location using Tauri's fs plugin (handles content URIs).
+    let (path, _temp_file) = if source_path.starts_with("content://") {
+        use tauri_plugin_fs::FsExt;
+        debug_log!("Android content URI detected: {}", source_path);
+
+        let _ = on_event.send(DownloadEvent::Started { total: 1 });
+        let _ = on_event.send(DownloadEvent::Progress {
+            completed: 0, total: 1,
+            current_url: "Reading file...".to_string(),
+            bytes_downloaded: 0, elapsed_ms: 0,
+        });
+
+        let url = reqwest::Url::parse(&source_path)
+            .map_err(|e| format!("Failed to parse content URI: {}", e))?;
+        let file_path = tauri_plugin_fs::FilePath::from(url);
+        let content = app.fs().read(file_path)
+            .map_err(|e| format!("Failed to read from content URI: {}", e))?;
+
+        let temp_path = data_dir.join("_import_temp.aaocase");
+        fs::write(&temp_path, &content)
+            .map_err(|e| format!("Failed to write temp import file: {}", e))?;
+
+        debug_log!("Copied {} bytes from content URI to {}", content.len(), temp_path.display());
+        (temp_path.clone(), Some(temp_path)) // _temp_file keeps the path for cleanup
+    } else {
+        let p = PathBuf::from(&source_path);
+        if !p.exists() {
+            return Err(format!("Path not found: {}", source_path));
+        }
+        (p, None)
+    };
+
+    let progress_cb = |completed: usize, total: usize| {
+        let _ = on_event.send(DownloadEvent::Progress {
+            completed,
+            total,
+            current_url: format!("{}/{}", completed, total),
+            bytes_downloaded: 0, elapsed_ms: 0,
+        });
+    };
+
+    let import_result = if path.is_dir() {
+        let has_subfolders = !importer::find_aaoffline_subfolders(&path).is_empty();
+        if has_subfolders {
+            // Parent folder with case subfolders (may also have root index.html — batch handles both)
+            let _ = on_event.send(DownloadEvent::Started { total: 0 });
+            let case_progress_cb = |current: usize, total: usize, name: &str| {
+                let _ = on_event.send(DownloadEvent::SequenceProgress {
+                    current_part: current,
+                    total_parts: total,
+                    part_title: format!("Importing: {}", name),
+                });
+            };
+            importer::import_aaoffline_batch(&path, &data_dir, Some(&case_progress_cb), Some(&progress_cb))?
+        } else if path.join("index.html").exists() {
+            // Single aaoffline case folder (no subfolders)
+            let _ = on_event.send(DownloadEvent::Started { total: 0 });
+            let manifest = importer::import_aaoffline(&path, &data_dir, Some(&progress_cb))?;
+            importer::ImportResult { manifest, saves: None, missing_defaults: 0, batch_manifests: Vec::new(), batch_errors: Vec::new() }
+        } else {
+            return Err(format!(
+                "No index.html found in {} and no subfolders with cases found either.",
+                path.display()
+            ));
+        }
+    } else if path.is_file() {
+        let _ = on_event.send(DownloadEvent::Started { total: 0 });
+        importer::import_aaocase_zip(&path, &data_dir, Some(&progress_cb))?
+    } else {
+        return Err(format!("Not a file or directory: {}", source_path));
+    };
+
+    // Clean up temp file if we created one
+    if let Some(temp) = _temp_file {
+        let _ = fs::remove_file(&temp);
+    }
+
+    // Sum up totals for batch imports
+    let (total_downloaded, total_bytes) = if !import_result.batch_manifests.is_empty() {
+        import_result.batch_manifests.iter().fold((0usize, 0u64), |(d, b), m| {
+            (d + m.assets.total_downloaded, b + m.assets.total_size_bytes)
+        })
+    } else {
+        (import_result.manifest.assets.total_downloaded, import_result.manifest.assets.total_size_bytes)
+    };
+
+    let _ = on_event.send(DownloadEvent::Finished {
+        downloaded: total_downloaded,
+        failed: 0,
+        total_bytes,
+    });
+
+    debug_log!(
+        "Imported case {} \"{}\" ({} assets, {} bytes{})",
+        import_result.manifest.case_id,
+        import_result.manifest.title,
+        import_result.manifest.assets.total_downloaded,
+        import_result.manifest.assets.total_size_bytes,
+        if import_result.saves.is_some() { ", with saves" } else { "" }
+    );
+
+    Ok(import_result)
+}
+
+/// Import saves from a .aaosave file.
+#[tauri::command]
+pub fn import_save(
+    state: State<'_, Mutex<AppState>>,
+    source_path: String,
+) -> Result<importer::ImportSaveResult, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone()
+    };
+    let path = std::path::PathBuf::from(&source_path);
+    importer::import_aaosave(&path, &data_dir)
+}
