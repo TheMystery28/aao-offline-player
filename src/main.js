@@ -2817,8 +2817,30 @@ window.addEventListener("DOMContentLoaded", function () {
       if (e.target === overlay) close();
     });
 
+    var scopedAttachBtn = document.createElement("button");
+    scopedAttachBtn.className = "small-btn";
+    scopedAttachBtn.textContent = "Attach Code";
+    scopedAttachBtn.style.cssText = "width:100%; margin:0.5rem 0;";
+    scopedAttachBtn.addEventListener("click", function () {
+      close();
+      showGlobalAttachCodeModal(function (attachedFilename) {
+        if (!attachedFilename) return;
+        invoke("toggle_plugin_for_scope", {
+          filename: attachedFilename,
+          scopeType: scopeType,
+          scopeKey: scopeKey,
+          enabled: true
+        }).then(function () {
+          showScopedPluginModal(scopeType, scopeKey, scopeLabel);
+        }).catch(function (e) {
+          statusMsg.textContent = "Error: " + e;
+        });
+      });
+    });
+
     modal.appendChild(titleEl);
     modal.appendChild(listContainer);
+    modal.appendChild(scopedAttachBtn);
     modal.appendChild(closeBtn);
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
@@ -4693,28 +4715,9 @@ window.addEventListener("DOMContentLoaded", function () {
 
               // Scope badge
               var pluginEntry = plugins[filename] || {};
-              var scope = pluginEntry.scope;
-              var scopeIsAll = scope && scope.all;
               var scopeBadge = document.createElement("span");
               scopeBadge.className = "scope-badge";
-              if (scopeIsAll) {
-                scopeBadge.textContent = "All cases";
-              } else {
-                // Old scope format — show clickable fix button
-                scopeBadge = document.createElement("button");
-                scopeBadge.className = "scope-badge";
-                scopeBadge.style.cssText = "cursor:pointer; border:none; background:none; text-decoration:underline;";
-                scopeBadge.textContent = "Restricted";
-                scopeBadge.title = "Click to set scope to all cases";
-              }
-              if (!scopeIsAll) {
-                scopeBadge.addEventListener("click", (function (fn) {
-                  return function () {
-                    invoke("set_global_plugin_scope", { filename: fn, scope: { all: true } })
-                      .then(function () { loadGlobalPluginsPanel(); })
-                      .catch(function (e) { statusMsg.textContent = "Error: " + e; });
-                  };
-              })(filename, scopeIsAll));
+              scopeBadge.textContent = "All cases";
 
               // Override summary badge
               var overrideBadge = document.createElement("span");
@@ -4872,8 +4875,37 @@ window.addEventListener("DOMContentLoaded", function () {
         filename: filename
       })
       .then(function () {
-        statusMsg.textContent = "Global plugin \"" + filename + "\" attached.";
-        if (onDone) onDone();
+        // If specific scopes selected, enable for each
+        var selectedScopes = [];
+        if (scopeSpecificRadio.checked) {
+          var checks = scopeChecklist.querySelectorAll("input[type=checkbox]:checked");
+          for (var sc = 0; sc < checks.length; sc++) {
+            selectedScopes.push({
+              scopeType: checks[sc].dataset.scopeType,
+              scopeKey: checks[sc].dataset.scopeKey
+            });
+          }
+        }
+        if (selectedScopes.length > 0) {
+          var togglePromises = selectedScopes.map(function (s) {
+            return invoke("toggle_plugin_for_scope", {
+              filename: filename,
+              scopeType: s.scopeType,
+              scopeKey: s.scopeKey,
+              enabled: true
+            });
+          });
+          Promise.all(togglePromises).then(function () {
+            statusMsg.textContent = "Plugin \"" + filename + "\" attached and enabled for " + selectedScopes.length + " scope(s).";
+            if (onDone) onDone(filename);
+          }).catch(function (e) {
+            statusMsg.textContent = "Plugin attached but scope error: " + e;
+            if (onDone) onDone(filename);
+          });
+        } else {
+          statusMsg.textContent = "Global plugin \"" + filename + "\" attached (disabled by default).";
+          if (onDone) onDone(filename);
+        }
       })
       .catch(function (e) {
         statusMsg.textContent = "Error attaching plugin: " + e;
@@ -4885,12 +4917,174 @@ window.addEventListener("DOMContentLoaded", function () {
       if (e.target === overlay) close();
     });
 
+    // --- Scope picker ---
+    var scopeSection = document.createElement("div");
+    scopeSection.style.cssText = "margin: 0.75rem 0;";
+
+    var scopeLabel = document.createElement("div");
+    scopeLabel.style.cssText = "color:#999; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.35rem;";
+    scopeLabel.textContent = "Enable for";
+
+    var scopeAllRadio = document.createElement("input");
+    scopeAllRadio.type = "radio";
+    scopeAllRadio.name = "scope-mode";
+    scopeAllRadio.checked = true;
+    scopeAllRadio.style.accentColor = "#4a90d9";
+    var scopeAllLabel = document.createElement("label");
+    scopeAllLabel.style.cssText = "display:flex; align-items:center; gap:0.4rem; color:#ccc; font-size:0.85rem; margin-bottom:0.3rem; cursor:pointer;";
+    scopeAllLabel.appendChild(scopeAllRadio);
+    scopeAllLabel.appendChild(document.createTextNode("All cases (disabled by default)"));
+
+    var scopeSpecificRadio = document.createElement("input");
+    scopeSpecificRadio.type = "radio";
+    scopeSpecificRadio.name = "scope-mode";
+    scopeSpecificRadio.style.accentColor = "#4a90d9";
+    var scopeSpecificLabel = document.createElement("label");
+    scopeSpecificLabel.style.cssText = "display:flex; align-items:center; gap:0.4rem; color:#ccc; font-size:0.85rem; margin-bottom:0.3rem; cursor:pointer;";
+    scopeSpecificLabel.appendChild(scopeSpecificRadio);
+    scopeSpecificLabel.appendChild(document.createTextNode("Enable for specific scopes"));
+
+    var scopeChecklist = document.createElement("div");
+    scopeChecklist.style.cssText = "max-height:180px; overflow-y:auto; padding:0.3rem 0; display:none;";
+
+    function makeScopeGroupLabel(text) {
+      var lbl = document.createElement("div");
+      lbl.style.cssText = "color:#888; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.04em; margin:0.4rem 0 0.2rem 0;";
+      lbl.textContent = text;
+      return lbl;
+    }
+
+    function makeScopeCheckbox(label, scopeType, scopeKey) {
+      var row = document.createElement("label");
+      row.style.cssText = "display:flex; align-items:center; gap:0.4rem; color:#ddd; font-size:0.82rem; padding:0.15rem 0; cursor:pointer;";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.style.accentColor = "#4a90d9";
+      cb.dataset.scopeType = scopeType;
+      cb.dataset.scopeKey = scopeKey;
+      row.appendChild(cb);
+      row.appendChild(document.createTextNode(label));
+      return row;
+    }
+
+    var scopeChecklistPopulated = false;
+    function populateScopeChecklist(cases, cols) {
+      if (scopeChecklistPopulated) return;
+      scopeChecklistPopulated = true;
+      scopeChecklist.innerHTML = "";
+
+      var collections = cols || [];
+      var collectionCaseIds = {};
+      var collectionSeqTitles = {};
+      for (var ci = 0; ci < collections.length; ci++) {
+        var colItems = collections[ci].items || [];
+        for (var ii = 0; ii < colItems.length; ii++) {
+          if (colItems[ii].type === "case") collectionCaseIds[colItems[ii].case_id] = true;
+          if (colItems[ii].type === "sequence") collectionSeqTitles[colItems[ii].title] = true;
+        }
+      }
+
+      var seqTitles = [];
+      var seenSeqs = {};
+      var sequenceCaseIds = {};
+      for (var si = 0; si < cases.length; si++) {
+        var seq = cases[si].sequence;
+        if (seq && seq.title) {
+          sequenceCaseIds[cases[si].case_id] = true;
+          if (!seenSeqs[seq.title] && !collectionSeqTitles[seq.title]) {
+            seenSeqs[seq.title] = true;
+            seqTitles.push(seq.title);
+          }
+        }
+      }
+
+      var standaloneCases = [];
+      for (var sci = 0; sci < cases.length; sci++) {
+        var c = cases[sci];
+        if (!sequenceCaseIds[c.case_id] && !collectionCaseIds[c.case_id]) {
+          standaloneCases.push(c);
+        }
+      }
+
+      if (collections.length > 0) {
+        scopeChecklist.appendChild(makeScopeGroupLabel("Collections"));
+        for (var colIdx = 0; colIdx < collections.length; colIdx++) {
+          scopeChecklist.appendChild(makeScopeCheckbox(
+          collections[colIdx].title,
+          "collection",
+          collections[colIdx].id
+        ));
+      }
+    }
+
+    if (seqTitles.length > 0) {
+      scopeChecklist.appendChild(makeScopeGroupLabel("Sequences"));
+      for (var seqIdx = 0; seqIdx < seqTitles.length; seqIdx++) {
+        scopeChecklist.appendChild(makeScopeCheckbox(
+          seqTitles[seqIdx],
+          "sequence",
+          seqTitles[seqIdx]
+        ));
+      }
+    }
+
+    if (standaloneCases.length > 0) {
+      scopeChecklist.appendChild(makeScopeGroupLabel("Individual Cases"));
+      for (var caseIdx = 0; caseIdx < standaloneCases.length; caseIdx++) {
+        scopeChecklist.appendChild(makeScopeCheckbox(
+          standaloneCases[caseIdx].title,
+          "case",
+          String(standaloneCases[caseIdx].case_id)
+        ));
+      }
+    }
+
+      if (scopeChecklist.children.length === 0) {
+        var emptyMsg = document.createElement("div");
+        emptyMsg.className = "muted";
+        emptyMsg.style.fontSize = "0.82rem";
+        emptyMsg.textContent = "No cases downloaded yet.";
+        scopeChecklist.appendChild(emptyMsg);
+      }
+    }
+
+    scopeAllRadio.addEventListener("change", function () {
+      scopeChecklist.style.display = "none";
+    });
+    scopeSpecificRadio.addEventListener("change", function () {
+      scopeChecklist.style.display = "block";
+      // Lazy populate: use cached data or fetch if empty
+      if (cachedCases.length > 0 || cachedCollections.length > 0) {
+        populateScopeChecklist(cachedCases, cachedCollections);
+      } else {
+        scopeChecklist.innerHTML = "";
+        var loadMsg = document.createElement("div");
+        loadMsg.className = "muted";
+        loadMsg.style.fontSize = "0.82rem";
+        loadMsg.textContent = "Loading...";
+        scopeChecklist.appendChild(loadMsg);
+        Promise.all([
+          invoke("list_cases"),
+          invoke("list_collections").catch(function () { return []; })
+        ]).then(function (results) {
+          scopeChecklistPopulated = false;
+          populateScopeChecklist(results[0], results[1]);
+        });
+      }
+    });
+
+    scopeSection.appendChild(scopeLabel);
+    scopeSection.appendChild(scopeAllLabel);
+    scopeSection.appendChild(scopeSpecificLabel);
+    scopeSection.appendChild(scopeChecklist);
+
     buttons.appendChild(attachBtn);
     buttons.appendChild(cancelBtn);
 
     modal.appendChild(titleEl);
     modal.appendChild(filenameField);
     modal.appendChild(codeField);
+    modal.appendChild(scopeSection);
     modal.appendChild(buttons);
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
@@ -4911,14 +5105,13 @@ window.addEventListener("DOMContentLoaded", function () {
           return;
         }
         statusMsg.textContent = "Importing global plugin...";
-        invoke("import_global_plugin_file", { sourcePath: selected })
-          .then(function () {
-            statusMsg.textContent = "Global plugin imported.";
+        invoke("import_aaoplug_global", { sourcePath: selected })
+          .then(function (filenames) {
+            statusMsg.textContent = "Imported " + filenames.length + " plugin(s) globally.";
             loadGlobalPluginsPanel();
           })
-          .catch(function () {
-            // Command may not exist — fall back to attach code modal
-            statusMsg.textContent = "Direct import not available. Use Attach Code instead.";
+          .catch(function (e) {
+            statusMsg.textContent = "Error importing plugin: " + e;
           });
       })
       .catch(function (e) {

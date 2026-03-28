@@ -1530,6 +1530,48 @@ pub fn import_aaoplug(
     Ok(imported_cases)
 }
 
+/// Import a .aaoplug ZIP file as a global plugin.
+/// Extracts JS files and attaches each via attach_global_plugin_code.
+/// Assets and case_config are skipped (case-specific, not relevant globally).
+pub fn import_aaoplug_global(zip_path: &Path, engine_dir: &Path) -> Result<Vec<String>, String> {
+    let file = fs::File::open(zip_path)
+        .map_err(|e| format!("Failed to open .aaoplug file: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Invalid .aaoplug file: {}", e))?;
+
+    // Read manifest.json for scripts list
+    let manifest_text = read_zip_text(&mut archive, "manifest.json")
+        .map_err(|_| "Invalid .aaoplug: missing manifest.json".to_string())?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_text)
+        .map_err(|e| format!("Failed to parse .aaoplug manifest: {}", e))?;
+
+    let scripts: Vec<String> = manifest.get("scripts")
+        .and_then(|s| s.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    if scripts.is_empty() {
+        return Err("No scripts listed in .aaoplug manifest".to_string());
+    }
+
+    let mut attached = Vec::new();
+    for script_name in &scripts {
+        // Read the JS file from the ZIP
+        let code = match read_zip_text(&mut archive, script_name) {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("[IMPORT_GLOBAL] Script {} listed in manifest but not found in ZIP, skipping", script_name);
+                continue;
+            }
+        };
+
+        attach_global_plugin_code(&code, script_name, engine_dir)?;
+        attached.push(script_name.clone());
+    }
+
+    Ok(attached)
+}
+
 /// Attach raw plugin JS code to one or more existing cases.
 pub fn attach_plugin_code(
     code: &str,
@@ -6703,5 +6745,114 @@ EnginePlugins.register({
         // Case 99011 should NOT have it active
         let resolved2 = resolve_plugins_for_case(99011, engine_dir).unwrap();
         assert!(resolved2["active"].as_array().unwrap().is_empty(), "Other case should remain inactive");
+    }
+
+    // --- import_aaoplug_global tests ---
+
+    fn create_aaoplug_zip(dir: &Path, scripts: &[(&str, &str)]) -> std::path::PathBuf {
+        let zip_path = dir.join("test.aaoplug");
+        let file = fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+
+        // Write manifest.json
+        let script_names: Vec<&str> = scripts.iter().map(|(name, _)| *name).collect();
+        let manifest = serde_json::json!({ "scripts": script_names });
+        zip.start_file("manifest.json", options).unwrap();
+        io::Write::write_all(&mut zip, serde_json::to_string(&manifest).unwrap().as_bytes()).unwrap();
+
+        // Write each script
+        for (name, code) in scripts {
+            zip.start_file(*name, options).unwrap();
+            io::Write::write_all(&mut zip, code.as_bytes()).unwrap();
+        }
+
+        zip.finish().unwrap();
+        zip_path
+    }
+
+    #[test]
+    fn test_import_aaoplug_global_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let zip_path = create_aaoplug_zip(dir.path(), &[("myplugin.js", "// test plugin code")]);
+
+        let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+        assert_eq!(result, vec!["myplugin.js"]);
+
+        // Verify plugin is in global manifest
+        let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(val["scripts"].as_array().unwrap().iter().any(|s| s == "myplugin.js"));
+        assert_eq!(val["plugins"]["myplugin.js"]["scope"]["all"], true);
+        // Should start disabled
+        assert!(val["disabled"].as_array().unwrap().iter().any(|s| s == "myplugin.js"));
+        // JS file should exist on disk
+        assert!(engine_dir.join("plugins/myplugin.js").exists());
+    }
+
+    #[test]
+    fn test_import_aaoplug_global_multiple_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let zip_path = create_aaoplug_zip(dir.path(), &[
+            ("a.js", "// plugin a"),
+            ("b.js", "// plugin b"),
+        ]);
+
+        let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"a.js".to_string()));
+        assert!(result.contains(&"b.js".to_string()));
+
+        let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(val["scripts"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_import_aaoplug_global_skips_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        // Create a ZIP with JS + assets directory
+        let zip_path = dir.path().join("test.aaoplug");
+        let file = fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+
+        zip.start_file("manifest.json", options).unwrap();
+        io::Write::write_all(&mut zip, br#"{"scripts":["p.js"]}"#).unwrap();
+        zip.start_file("p.js", options).unwrap();
+        io::Write::write_all(&mut zip, b"// plugin").unwrap();
+        zip.start_file("assets/sound.mp3", options).unwrap();
+        io::Write::write_all(&mut zip, b"fake audio data").unwrap();
+        zip.finish().unwrap();
+
+        let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+        assert_eq!(result, vec!["p.js"]);
+        // Assets should NOT be extracted to global plugins dir
+        assert!(!engine_dir.join("plugins/assets").exists());
+    }
+
+    #[test]
+    fn test_migrate_scope_to_all_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        let plugins_dir = engine_dir.join("plugins");
+        fs::create_dir_all(&plugins_dir).unwrap();
+        // Plugin with old scope format
+        fs::write(plugins_dir.join("manifest.json"),
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"case_ids":[1,2],"sequence_titles":["Seq"],"collection_ids":["c1"]},"params":{}}}}"#).unwrap();
+
+        migrate_global_manifest(engine_dir).unwrap();
+
+        let text = fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(val["plugins"]["a.js"]["scope"]["all"], true);
+        // Old fields should be gone
+        assert!(val["plugins"]["a.js"]["scope"].get("case_ids").is_none());
+        assert!(val["plugins"]["a.js"]["scope"].get("sequence_titles").is_none());
+        assert!(val["plugins"]["a.js"]["scope"].get("collection_ids").is_none());
     }
 }

@@ -1457,6 +1457,16 @@ fn import_plugin(
     importer::import_aaoplug(&path, &target_case_ids, &data_dir)
 }
 
+/// Import a .aaoplug ZIP as a global plugin.
+#[tauri::command]
+fn import_aaoplug_global(
+    state: State<'_, Mutex<AppState>>,
+    source_path: String,
+) -> Result<Vec<String>, String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::import_aaoplug_global(&std::path::PathBuf::from(&source_path), &data_dir)
+}
+
 /// Attach raw plugin JS code to one or more existing cases.
 #[tauri::command]
 fn attach_plugin_code(
@@ -1576,17 +1586,6 @@ fn check_plugin_duplicate(
 ) -> Result<Vec<importer::DuplicateMatch>, String> {
     let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
     Ok(importer::check_plugin_duplicate(&code, &data_dir))
-}
-
-/// Set the scope for a global plugin.
-#[tauri::command]
-fn set_global_plugin_scope(
-    state: State<'_, Mutex<AppState>>,
-    filename: String,
-    scope: serde_json::Value,
-) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
-    importer::set_global_plugin_scope(&filename, &scope, &data_dir)
 }
 
 /// Set params for a global plugin at a specific cascade level.
@@ -2138,6 +2137,7 @@ pub fn run() {
             pick_import_file,
             import_case,
             import_plugin,
+            import_aaoplug_global,
             attach_plugin_code,
             list_plugins,
             remove_plugin,
@@ -2148,7 +2148,6 @@ pub fn run() {
             toggle_global_plugin,
             toggle_plugin_for_scope,
             check_plugin_duplicate,
-            set_global_plugin_scope,
             set_global_plugin_params,
             get_plugin_params,
             get_plugin_descriptors,
