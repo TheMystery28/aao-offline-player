@@ -1555,6 +1555,19 @@ fn toggle_global_plugin(
     importer::toggle_global_plugin(&filename, enabled, &data_dir)
 }
 
+/// Toggle a plugin's enabled/disabled state for a specific scope.
+#[tauri::command]
+fn toggle_plugin_for_scope(
+    state: State<'_, Mutex<AppState>>,
+    filename: String,
+    scope_type: String,
+    scope_key: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    importer::toggle_plugin_for_scope(&filename, &scope_type, &scope_key, enabled, &data_dir)
+}
+
 /// Check for duplicate plugin code across global and all case plugins.
 #[tauri::command]
 fn check_plugin_duplicate(
@@ -2133,6 +2146,7 @@ pub fn run() {
             attach_global_plugin_code,
             remove_global_plugin,
             toggle_global_plugin,
+            toggle_plugin_for_scope,
             check_plugin_duplicate,
             set_global_plugin_scope,
             set_global_plugin_params,

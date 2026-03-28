@@ -1741,8 +1741,13 @@ pub fn attach_global_plugin_code(code: &str, filename: &str, engine_dir: &Path) 
             }
         }
     }
-    if !scripts.contains(&filename.to_string()) {
+    let is_new = !scripts.contains(&filename.to_string());
+    if is_new {
         scripts.push(filename.to_string());
+        // New plugins start globally disabled (user must explicitly enable)
+        if !disabled.contains(&filename.to_string()) {
+            disabled.push(filename.to_string());
+        }
     }
 
     // Extract and store param descriptors from plugin source code
@@ -1764,7 +1769,7 @@ pub fn attach_global_plugin_code(code: &str, filename: &str, engine_dir: &Path) 
         manifest_val["plugins"] = serde_json::json!({});
     }
     let plugin_entry = manifest_val["plugins"].get(filename).cloned()
-        .unwrap_or(serde_json::json!({"scope": {"all": false}, "params": {}}));
+        .unwrap_or(serde_json::json!({"scope": {"all": true}, "params": {}}));
     let mut entry = plugin_entry.as_object().cloned().unwrap_or_default();
     entry.insert("descriptors".to_string(), descriptors.unwrap_or(serde_json::Value::Null));
     manifest_val["plugins"].as_object_mut().unwrap()
@@ -1835,6 +1840,112 @@ pub fn toggle_global_plugin(filename: &str, enabled: bool, engine_dir: &Path) ->
 
     fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
         .map_err(|e| format!("Failed to write global plugin manifest: {}", e))?;
+    Ok(())
+}
+
+/// Toggle a plugin's enabled/disabled state for a specific scope.
+///
+/// Uses bidirectional override logic:
+/// - If globally enabled: `enabled=false` adds to `disabled_for`, `enabled=true` removes from it
+/// - If globally disabled: `enabled=true` adds to `enabled_for`, `enabled=false` removes from it
+pub fn toggle_plugin_for_scope(
+    filename: &str,
+    scope_type: &str,
+    scope_key: &str,
+    enabled: bool,
+    engine_dir: &Path,
+) -> Result<(), String> {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() {
+        return Err("No global plugin manifest".to_string());
+    }
+
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read manifest: {}", e))?;
+    let mut val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse manifest: {}", e))?;
+
+    // Determine if plugin is globally disabled
+    let globally_disabled = val.get("disabled")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.iter().any(|s| s.as_str() == Some(filename)))
+        .unwrap_or(false);
+
+    // Map scope_type to JSON field name
+    let field_name = match scope_type {
+        "case" => "cases",
+        "sequence" => "sequences",
+        "collection" => "collections",
+        _ => return Err(format!("Invalid scope_type: {}", scope_type)),
+    };
+
+    // Build the scope value (numbers for cases, strings for sequences/collections)
+    let scope_val: serde_json::Value = if scope_type == "case" {
+        match scope_key.parse::<u64>() {
+            Ok(id) => serde_json::json!(id),
+            Err(_) => return Err(format!("Invalid case ID: {}", scope_key)),
+        }
+    } else {
+        serde_json::json!(scope_key)
+    };
+
+    // Ensure plugin entry exists
+    let plugins = val.get_mut("plugins")
+        .and_then(|p| p.as_object_mut())
+        .ok_or_else(|| "No plugins config in manifest".to_string())?;
+    let entry = plugins.entry(filename.to_string())
+        .or_insert(serde_json::json!({"scope": {"all": true}, "params": {}}));
+
+    if globally_disabled {
+        // Globally disabled → modify enabled_for
+        let override_field = "enabled_for";
+        if entry.get(override_field).is_none() {
+            entry.as_object_mut().unwrap().insert(
+                override_field.to_string(),
+                serde_json::json!({"cases": [], "sequences": [], "collections": []}),
+            );
+        }
+        let arr = entry[override_field]
+            .get_mut(field_name)
+            .and_then(|a| a.as_array_mut())
+            .ok_or_else(|| format!("Missing {}.{}", override_field, field_name))?;
+
+        if enabled {
+            // Add to enabled_for (if not already present)
+            if !arr.iter().any(|v| *v == scope_val) {
+                arr.push(scope_val);
+            }
+        } else {
+            // Remove from enabled_for
+            arr.retain(|v| *v != scope_val);
+        }
+    } else {
+        // Globally enabled → modify disabled_for
+        let override_field = "disabled_for";
+        if entry.get(override_field).is_none() {
+            entry.as_object_mut().unwrap().insert(
+                override_field.to_string(),
+                serde_json::json!({"cases": [], "sequences": [], "collections": []}),
+            );
+        }
+        let arr = entry[override_field]
+            .get_mut(field_name)
+            .and_then(|a| a.as_array_mut())
+            .ok_or_else(|| format!("Missing {}.{}", override_field, field_name))?;
+
+        if !enabled {
+            // Add to disabled_for (if not already present)
+            if !arr.iter().any(|v| *v == scope_val) {
+                arr.push(scope_val);
+            }
+        } else {
+            // Remove from disabled_for
+            arr.retain(|v| *v != scope_val);
+        }
+    }
+
+    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+        .map_err(|e| format!("Failed to write manifest: {}", e))?;
     Ok(())
 }
 
@@ -1957,6 +2068,12 @@ pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_j
         .map(|c| c.id.clone())
         .collect();
 
+    // Read global disabled list
+    let global_disabled: Vec<String> = manifest.get("disabled")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
     let mut active = Vec::new();
     let mut available = Vec::new();
 
@@ -1967,9 +2084,11 @@ pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_j
         };
 
         let plugin_cfg = plugins_config.get(script_name);
-        let scope = plugin_cfg.and_then(|p| p.get("scope"));
+        let globally_disabled = global_disabled.contains(&script_name.to_string());
 
-        let is_active = match scope {
+        // Determine scope match (does the plugin's scope include this case?)
+        let scope = plugin_cfg.and_then(|p| p.get("scope"));
+        let scope_matches = match scope {
             Some(s) => {
                 let all = s.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
                 if all { true }
@@ -1989,7 +2108,43 @@ pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_j
                     case_match || seq_match || col_match
                 }
             }
-            None => false,
+            None => true, // Missing scope = all cases
+        };
+
+        // Helper: check if a scope override list matches this case
+        let check_scope_override = |override_obj: Option<&serde_json::Value>| -> bool {
+            let obj = match override_obj {
+                Some(o) => o,
+                None => return false,
+            };
+            let case_match = obj.get("cases")
+                .and_then(|c| c.as_array())
+                .map(|arr| arr.iter().any(|id| id.as_u64() == Some(case_id as u64)))
+                .unwrap_or(false);
+            let seq_match = case_sequence_title.as_ref().map(|st| {
+                obj.get("sequences")
+                    .and_then(|s| s.as_array())
+                    .map(|arr| arr.iter().any(|t| t.as_str() == Some(st.as_str())))
+                    .unwrap_or(false)
+            }).unwrap_or(false);
+            let col_match = obj.get("collections")
+                .and_then(|c| c.as_array())
+                .map(|arr| arr.iter().any(|cid| {
+                    cid.as_str().map(|s| case_collection_ids.contains(&s.to_string())).unwrap_or(false)
+                }))
+                .unwrap_or(false);
+            case_match || seq_match || col_match
+        };
+
+        // Bidirectional override logic
+        let is_active = if globally_disabled {
+            // Globally disabled → check enabled_for overrides
+            check_scope_override(plugin_cfg.and_then(|p| p.get("enabled_for")))
+        } else if scope_matches {
+            // Globally enabled + scope matches → check disabled_for overrides
+            !check_scope_override(plugin_cfg.and_then(|p| p.get("disabled_for")))
+        } else {
+            false // Scope doesn't match and not globally disabled
         };
 
         if is_active {
@@ -2007,9 +2162,16 @@ pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_j
                 "params": params
             }));
         } else {
+            let reason = if globally_disabled {
+                "disabled (global)"
+            } else if !scope_matches {
+                "disabled (no matching scope)"
+            } else {
+                "disabled (scope override)"
+            };
             available.push(serde_json::json!({
                 "script": script_name,
-                "reason": "disabled (no matching scope)"
+                "reason": reason
             }));
         }
     }
@@ -6363,5 +6525,185 @@ EnginePlugins.register({
             false,
             "by_collection override should be merged on import"
         );
+    }
+
+    // --- Plugin scope and override tests ---
+
+    #[test]
+    fn test_attach_global_plugin_starts_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+
+        let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        // Should be in disabled[] (starts disabled globally)
+        let disabled = val["disabled"].as_array().unwrap();
+        assert!(disabled.iter().any(|s| s == "test.js"), "New plugin should start in disabled[]");
+
+        // Should have scope all:true
+        assert_eq!(val["plugins"]["test.js"]["scope"]["all"], true, "Default scope should be all:true");
+    }
+
+    #[test]
+    fn test_attach_existing_plugin_not_re_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        // Attach first time (starts disabled)
+        attach_global_plugin_code("// v1", "test.js", engine_dir).unwrap();
+        // Enable it
+        toggle_global_plugin("test.js", true, engine_dir).unwrap();
+        // Re-attach (update code)
+        attach_global_plugin_code("// v2", "test.js", engine_dir).unwrap();
+
+        let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        // Should NOT be re-added to disabled[]
+        let disabled = val["disabled"].as_array().unwrap();
+        assert!(!disabled.iter().any(|s| s == "test.js"), "Re-attached plugin should not be re-disabled");
+    }
+
+    #[test]
+    fn test_resolve_globally_disabled_plugin_inactive() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        // Create case
+        create_test_case_for_save(engine_dir, 99001);
+
+        // Attach plugin (starts disabled)
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+
+        let resolved = resolve_plugins_for_case(99001, engine_dir).unwrap();
+        let active = resolved["active"].as_array().unwrap();
+        assert!(active.is_empty(), "Globally disabled plugin should not be active");
+    }
+
+    #[test]
+    fn test_resolve_globally_enabled_plugin_active() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        create_test_case_for_save(engine_dir, 99002);
+
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+        toggle_global_plugin("test.js", true, engine_dir).unwrap();
+
+        let resolved = resolve_plugins_for_case(99002, engine_dir).unwrap();
+        let active = resolved["active"].as_array().unwrap();
+        assert_eq!(active.len(), 1, "Globally enabled plugin should be active");
+        assert_eq!(active[0]["script"], "test.js");
+    }
+
+    #[test]
+    fn test_resolve_with_disabled_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        create_test_case_for_save(engine_dir, 99003);
+
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+        toggle_global_plugin("test.js", true, engine_dir).unwrap();
+
+        // Disable for this specific case
+        toggle_plugin_for_scope("test.js", "case", "99003", false, engine_dir).unwrap();
+
+        let resolved = resolve_plugins_for_case(99003, engine_dir).unwrap();
+        let active = resolved["active"].as_array().unwrap();
+        assert!(active.is_empty(), "Plugin disabled_for this case should not be active");
+    }
+
+    #[test]
+    fn test_resolve_with_enabled_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        create_test_case_for_save(engine_dir, 99004);
+
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+        // Plugin starts disabled globally
+
+        // Enable for this specific case
+        toggle_plugin_for_scope("test.js", "case", "99004", true, engine_dir).unwrap();
+
+        let resolved = resolve_plugins_for_case(99004, engine_dir).unwrap();
+        let active = resolved["active"].as_array().unwrap();
+        assert_eq!(active.len(), 1, "Plugin enabled_for this case should be active");
+    }
+
+    #[test]
+    fn test_toggle_plugin_for_scope_globally_enabled_disable() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+        toggle_global_plugin("test.js", true, engine_dir).unwrap();
+
+        // Disable for a sequence
+        toggle_plugin_for_scope("test.js", "sequence", "My Seq", false, engine_dir).unwrap();
+
+        let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let df = &val["plugins"]["test.js"]["disabled_for"]["sequences"];
+        assert!(df.as_array().unwrap().iter().any(|s| s == "My Seq"));
+    }
+
+    #[test]
+    fn test_toggle_plugin_for_scope_globally_disabled_enable() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+        // Plugin starts globally disabled
+
+        // Enable for a collection
+        toggle_plugin_for_scope("test.js", "collection", "col_1", true, engine_dir).unwrap();
+
+        let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let ef = &val["plugins"]["test.js"]["enabled_for"]["collections"];
+        assert!(ef.as_array().unwrap().iter().any(|s| s == "col_1"));
+    }
+
+    #[test]
+    fn test_toggle_plugin_for_scope_re_enable_removes_from_disabled_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+        toggle_global_plugin("test.js", true, engine_dir).unwrap();
+
+        // Disable then re-enable for a case
+        toggle_plugin_for_scope("test.js", "case", "123", false, engine_dir).unwrap();
+        toggle_plugin_for_scope("test.js", "case", "123", true, engine_dir).unwrap();
+
+        let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let df = &val["plugins"]["test.js"]["disabled_for"]["cases"];
+        assert!(df.as_array().unwrap().is_empty(), "Re-enabling should remove from disabled_for");
+    }
+
+    #[test]
+    fn test_resolve_bidirectional_precedence() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path();
+
+        create_test_case_for_save(engine_dir, 99010);
+        create_test_case_for_save(engine_dir, 99011);
+
+        attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+        // Globally disabled, but enable for case 99010 only
+        toggle_plugin_for_scope("test.js", "case", "99010", true, engine_dir).unwrap();
+
+        // Case 99010 should have it active
+        let resolved1 = resolve_plugins_for_case(99010, engine_dir).unwrap();
+        assert_eq!(resolved1["active"].as_array().unwrap().len(), 1, "enabled_for case should be active");
+
+        // Case 99011 should NOT have it active
+        let resolved2 = resolve_plugins_for_case(99011, engine_dir).unwrap();
+        assert!(resolved2["active"].as_array().unwrap().is_empty(), "Other case should remain inactive");
     }
 }

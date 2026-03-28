@@ -514,13 +514,7 @@ window.addEventListener("DOMContentLoaded", function () {
             pluginsToggle.scrollIntoView({ behavior: "smooth" });
             return;
           }
-          if (scripts.length === 1) {
-            showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
-          } else {
-            showPluginPickerModal(scripts, function (selected) {
-              showPluginParamsModal(selected, 'Sequence "' + title + '"', "by_sequence", title);
-            });
-          }
+          showScopedPluginModal("sequence", title, 'Sequence "' + title + '"');
         });
       };
     })(sequenceTitle));
@@ -1080,13 +1074,7 @@ window.addEventListener("DOMContentLoaded", function () {
             pluginsToggle.scrollIntoView({ behavior: "smooth" });
             return;
           }
-          if (scripts.length === 1) {
-            showPluginParamsModal(scripts[0], 'Collection "' + col.title + '"', "by_collection", col.id);
-          } else {
-            showPluginPickerModal(scripts, function (selected) {
-              showPluginParamsModal(selected, 'Collection "' + col.title + '"', "by_collection", col.id);
-            });
-          }
+          showScopedPluginModal("collection", col.id, 'Collection "' + col.title + '"');
         });
       };
     })(collection));
@@ -1284,13 +1272,7 @@ window.addEventListener("DOMContentLoaded", function () {
             pluginsToggle.scrollIntoView({ behavior: "smooth" });
             return;
           }
-          if (scripts.length === 1) {
-            showPluginParamsModal(scripts[0], 'Sequence "' + title + '"', "by_sequence", title);
-          } else {
-            showPluginPickerModal(scripts, function (selected) {
-              showPluginParamsModal(selected, 'Sequence "' + title + '"', "by_sequence", title);
-            });
-          }
+          showScopedPluginModal("sequence", title, 'Sequence "' + title + '"');
         });
       };
     })(sequenceTitle));
@@ -2701,6 +2683,149 @@ window.addEventListener("DOMContentLoaded", function () {
   // Shows current param values as editable key-value pairs.
   // level: "default" | "by_collection" | "by_sequence" | "by_case"
   // key: collection_id, sequence_title, or case_id (string). Empty for default.
+  // --- Scoped Plugin Modal ---
+  // Shows all global plugins with per-scope enable/disable toggle + params button.
+  // scopeType: "sequence" | "collection" | "case"
+  // scopeKey: sequence title, collection ID, or case ID string
+  // scopeLabel: display name like 'Sequence "My Seq"'
+  function showScopedPluginModal(scopeType, scopeKey, scopeLabel) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    var modal = document.createElement("div");
+    modal.className = "modal-dialog modal-dialog-wide";
+
+    var titleEl = document.createElement("div");
+    titleEl.className = "modal-message";
+    titleEl.innerHTML = "<strong>Plugins &mdash; " + escapeHtml(scopeLabel) + "</strong>";
+
+    var listContainer = document.createElement("div");
+    listContainer.style.cssText = "margin: 10px 0; max-height: 350px; overflow-y: auto;";
+
+    function close() { document.body.removeChild(overlay); }
+
+    function refreshScopedList() {
+      invoke("list_global_plugins").then(function (manifest) {
+        var scripts = (manifest && manifest.scripts) || [];
+        var plugins = (manifest && manifest.plugins) || {};
+        var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
+        listContainer.innerHTML = "";
+
+        if (scripts.length === 0) {
+          var empty = document.createElement("div");
+          empty.className = "muted";
+          empty.textContent = "No global plugins installed.";
+          listContainer.appendChild(empty);
+          return;
+        }
+
+        for (var i = 0; i < scripts.length; i++) {
+          (function (filename) {
+            var globallyDisabled = disabledList.indexOf(filename) !== -1;
+            var pluginEntry = plugins[filename] || {};
+
+            // Determine effective state for this scope
+            var isEnabledForScope = false;
+            var stateLabel = "";
+            if (globallyDisabled) {
+              // Check enabled_for
+              var ef = pluginEntry.enabled_for || {};
+              var fieldName = scopeType === "case" ? "cases" : (scopeType === "sequence" ? "sequences" : "collections");
+              var arr = ef[fieldName] || [];
+              var matchVal = scopeType === "case" ? Number(scopeKey) : scopeKey;
+              isEnabledForScope = false;
+              for (var ei = 0; ei < arr.length; ei++) {
+                if (scopeType === "case" ? arr[ei] === matchVal : arr[ei] === matchVal) {
+                  isEnabledForScope = true;
+                  break;
+                }
+              }
+              stateLabel = isEnabledForScope ? "enabled (override)" : "disabled (global)";
+            } else {
+              // Check disabled_for
+              var df = pluginEntry.disabled_for || {};
+              var fieldName2 = scopeType === "case" ? "cases" : (scopeType === "sequence" ? "sequences" : "collections");
+              var arr2 = df[fieldName2] || [];
+              var matchVal2 = scopeType === "case" ? Number(scopeKey) : scopeKey;
+              var isDisabledForScope = false;
+              for (var di = 0; di < arr2.length; di++) {
+                if (scopeType === "case" ? arr2[di] === matchVal2 : arr2[di] === matchVal2) {
+                  isDisabledForScope = true;
+                  break;
+                }
+              }
+              isEnabledForScope = !isDisabledForScope;
+              stateLabel = isDisabledForScope ? "disabled (override)" : "enabled (global)";
+            }
+
+            var row = document.createElement("div");
+            row.className = "global-plugin-row";
+
+            var toggle = document.createElement("input");
+            toggle.type = "checkbox";
+            toggle.checked = isEnabledForScope;
+            toggle.style.accentColor = "#4a90d9";
+            toggle.style.width = "1rem";
+            toggle.style.height = "1rem";
+            toggle.style.flexShrink = "0";
+            toggle.addEventListener("change", function () {
+              invoke("toggle_plugin_for_scope", {
+                filename: filename,
+                scopeType: scopeType,
+                scopeKey: scopeKey,
+                enabled: toggle.checked
+              }).then(function () {
+                refreshScopedList();
+              }).catch(function (e) {
+                statusMsg.textContent = "Error: " + e;
+              });
+            });
+
+            var name = document.createElement("span");
+            name.className = "plugin-name";
+            name.textContent = filename;
+
+            var badge = document.createElement("span");
+            badge.className = "scope-badge";
+            badge.textContent = stateLabel;
+
+            var paramsBtn = document.createElement("button");
+            paramsBtn.className = "small-btn";
+            paramsBtn.textContent = "Params";
+            paramsBtn.style.cssText = "font-size:0.72rem; padding:0.1rem 0.5rem;";
+            paramsBtn.addEventListener("click", (function (fn) {
+              return function () {
+                showPluginParamsModal(fn, scopeLabel, "by_" + scopeType, scopeKey);
+              };
+            })(filename));
+
+            row.appendChild(toggle);
+            row.appendChild(name);
+            row.appendChild(badge);
+            row.appendChild(paramsBtn);
+            listContainer.appendChild(row);
+          })(scripts[i]);
+        }
+      });
+    }
+
+    var closeBtn = document.createElement("button");
+    closeBtn.className = "modal-btn modal-btn-cancel";
+    closeBtn.textContent = "Close";
+    closeBtn.style.width = "100%";
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    modal.appendChild(titleEl);
+    modal.appendChild(listContainer);
+    modal.appendChild(closeBtn);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    refreshScopedList();
+  }
+
   // --- Plugin Picker Modal ---
   function showPluginPickerModal(scripts, onSelect) {
     var overlay = document.createElement("div");
@@ -2884,7 +3009,7 @@ window.addEventListener("DOMContentLoaded", function () {
             row.appendChild(delBtn);
           }
           content.appendChild(row);
-        })(keys[i]);
+        })(allKeys[i]);
       }
     }
 
@@ -4569,14 +4694,35 @@ window.addEventListener("DOMContentLoaded", function () {
               // Scope badge
               var scopeBadge = document.createElement("span");
               scopeBadge.className = "scope-badge";
-              var pluginEntry = plugins[filename];
-              var scope = pluginEntry && pluginEntry.scope;
+              var pluginEntry = plugins[filename] || {};
+              var scope = pluginEntry.scope;
               if (scope && scope.all) {
                 scopeBadge.textContent = "All cases";
               } else if (scope && Array.isArray(scope.case_ids) && scope.case_ids.length > 0) {
                 scopeBadge.textContent = scope.case_ids.length + " case" + (scope.case_ids.length !== 1 ? "s" : "");
               } else {
                 scopeBadge.textContent = "No scope";
+              }
+
+              // Override summary badge
+              var overrideBadge = document.createElement("span");
+              overrideBadge.className = "scope-badge";
+              if (isDisabled) {
+                // Globally disabled → count enabled_for entries
+                var ef = pluginEntry.enabled_for || {};
+                var efCount = ((ef.cases || []).length) + ((ef.sequences || []).length) + ((ef.collections || []).length);
+                if (efCount > 0) {
+                  overrideBadge.textContent = efCount + " enabled";
+                  overrideBadge.style.color = "#6a6";
+                }
+              } else {
+                // Globally enabled → count disabled_for entries
+                var df = pluginEntry.disabled_for || {};
+                var dfCount = ((df.cases || []).length) + ((df.sequences || []).length) + ((df.collections || []).length);
+                if (dfCount > 0) {
+                  overrideBadge.textContent = dfCount + " exception" + (dfCount !== 1 ? "s" : "");
+                  overrideBadge.style.color = "#a66";
+                }
               }
 
               var paramsBtn = document.createElement("button");
@@ -4601,6 +4747,7 @@ window.addEventListener("DOMContentLoaded", function () {
               row.appendChild(toggle);
               row.appendChild(name);
               row.appendChild(scopeBadge);
+              if (overrideBadge.textContent) row.appendChild(overrideBadge);
               row.appendChild(paramsBtn);
               row.appendChild(removeBtn);
               globalPluginsList.appendChild(row);
