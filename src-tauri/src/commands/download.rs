@@ -216,9 +216,13 @@ pub async fn download_sequence(
             }
         }
 
-        // Post-download dedup for this case in the sequence
-        let (dedup_count, _) = downloader::dedup::dedup_case_assets(case_id, &data_dir)
-            .unwrap_or((0, 0));
+        // Post-download finalization: register + dedup
+        let _ = on_event.send(DownloadEvent::Progress {
+            completed: 0, total: 1,
+            current_url: "Optimizing storage...".to_string(),
+            bytes_downloaded: 0, elapsed_ms: 0,
+        });
+        let (dedup_count, _) = downloader::dedup::finalize_case_import(case_id, &data_dir);
         if dedup_count > 0 {
             manifest = downloader::manifest::read_manifest(&case_dir)?;
         }
@@ -234,6 +238,7 @@ pub async fn download_sequence(
         downloaded: total_downloaded,
         failed: total_failed,
         total_bytes,
+        dedup_saved_bytes: 0,
     });
 
     Ok(manifests)
@@ -462,11 +467,14 @@ pub async fn download_case(
         }
     }
 
-    // Post-download dedup: remove case assets that are identical to shared defaults
-    let (dedup_count, dedup_bytes) = downloader::dedup::dedup_case_assets(case_id, &data_dir)
-        .unwrap_or((0, 0));
+    // Post-download finalization: register + dedup
+    let _ = on_event.send(DownloadEvent::Progress {
+        completed: 0, total: 1,
+        current_url: "Optimizing storage...".to_string(),
+        bytes_downloaded: 0, elapsed_ms: 0,
+    });
+    let (dedup_count, _dedup_bytes) = downloader::dedup::finalize_case_import(case_id, &data_dir);
     if dedup_count > 0 {
-        debug_log!("Dedup: {} files deduplicated, {} bytes saved", dedup_count, dedup_bytes);
         manifest = downloader::manifest::read_manifest(&case_dir)?;
     }
 

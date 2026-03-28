@@ -41,6 +41,7 @@ export function initImport(ctx) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
 
+    var dedupSavedBytes = 0;
     var onEvent = new Channel();
     onEvent.onmessage = function (msg) {
       if (msg.event === "sequence_progress") {
@@ -54,8 +55,12 @@ export function initImport(ctx) {
       } else if (msg.event === "finished") {
         progressBarInner.style.width = "100%";
         progressPhase.textContent = "Import complete!";
-        progressText.textContent =
-          msg.data.downloaded + " assets (" + formatBytes(msg.data.total_bytes) + ")";
+        dedupSavedBytes = msg.data.dedup_saved_bytes || 0;
+        var finishedText = msg.data.downloaded + " assets (" + formatBytes(msg.data.total_bytes) + ")";
+        if (dedupSavedBytes > 0) {
+          finishedText += " — saved " + formatBytes(dedupSavedBytes) + " by dedup";
+        }
+        progressText.textContent = finishedText;
       }
     };
 
@@ -107,8 +112,9 @@ export function initImport(ctx) {
               totalAssets += result.batch_manifests[i].assets.total_downloaded;
               totalBytes += result.batch_manifests[i].assets.total_size_bytes;
             }
+            var dedupInfo = dedupSavedBytes > 0 ? ' — saved ' + formatBytes(dedupSavedBytes) + ' by dedup' : '';
             var html = '<strong>' + result.batch_manifests.length + ' cases imported</strong> (' +
-              totalAssets + ' assets, ' + formatBytes(totalBytes) + savesInfo + ')';
+              totalAssets + ' assets, ' + formatBytes(totalBytes) + savesInfo + dedupInfo + ')';
             if (result.batch_errors && result.batch_errors.length > 0) {
               html += '<br><span style="color:#e8a030;">' + result.batch_errors.length +
                 ' case(s) skipped: ' + escapeHtml(result.batch_errors.join("; ")) + '</span>';
@@ -149,11 +155,12 @@ export function initImport(ctx) {
             );
           } else {
             // Single case import
+            var singleDedupInfo = dedupSavedBytes > 0 ? ' — saved ' + formatBytes(dedupSavedBytes) + ' by dedup' : '';
             importResult.innerHTML =
               '<strong>' + escapeHtml(manifest.title) + '</strong> by ' +
               escapeHtml(manifest.author) + ' &mdash; imported (' +
               manifest.assets.total_downloaded + ' assets, ' +
-              formatBytes(manifest.assets.total_size_bytes) + savesInfo + ')' + missingInfo;
+              formatBytes(manifest.assets.total_size_bytes) + savesInfo + singleDedupInfo + ')' + missingInfo;
           }
 
           importResult.className = "result-success";

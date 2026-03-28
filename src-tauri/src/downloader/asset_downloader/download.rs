@@ -199,6 +199,7 @@ pub async fn download_assets(
             downloaded: downloaded.len(),
             failed: fail_count,
             total_bytes: bytes,
+            dedup_saved_bytes: 0,
         })
         .ok();
 

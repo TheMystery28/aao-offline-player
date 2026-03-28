@@ -8,6 +8,49 @@ use super::index::DedupIndex;
 use crate::downloader::manifest::{read_manifest, write_manifest};
 use crate::downloader::paths::normalize_path;
 
+/// Run all post-import processing for a case: register assets in the dedup index,
+/// then deduplicate case assets against the shared defaults pool.
+///
+/// **All import paths must call this** after a case is installed — whether from
+/// aaoffline folder, .aaocase ZIP, or the download pipeline. This single entry
+/// point prevents omissions (previously aaoffline imports forgot to dedup).
+///
+/// Steps:
+/// 1. Open (or create) the dedup index
+/// 2. Register the case's assets + any new defaults in the index
+/// 3. Deduplicate: replace case assets identical to shared defaults with references
+///
+/// Returns (dedup_count, bytes_saved). Errors are non-fatal — import succeeds even if dedup fails.
+pub fn finalize_case_import(case_id: u32, data_dir: &Path) -> (usize, u64) {
+    // Register in index + dedup — both handled by dedup_case_assets which
+    // internally opens the index, scans defaults, and performs dedup.
+    match dedup_case_assets(case_id, data_dir) {
+        Ok((count, bytes)) => {
+            if count > 0 {
+                eprintln!("[DEDUP] Case {}: {} files deduplicated, {} bytes saved", case_id, count, bytes);
+            }
+            (count, bytes)
+        }
+        Err(e) => {
+            eprintln!("[DEDUP] Case {}: dedup failed (non-fatal): {}", case_id, e);
+            (0, 0)
+        }
+    }
+}
+
+/// Batch version: run post-import processing for multiple cases.
+/// Used after batch aaoffline imports and multi-case .aaocase imports.
+pub fn finalize_batch_import(case_ids: &[u32], data_dir: &Path) -> (usize, u64) {
+    let mut total_count = 0;
+    let mut total_bytes = 0;
+    for &case_id in case_ids {
+        let (c, b) = finalize_case_import(case_id, data_dir);
+        total_count += c;
+        total_bytes += b;
+    }
+    (total_count, total_bytes)
+}
+
 /// Dedup a single case's assets against the shared defaults pool.
 /// Opens its own DedupIndex. For use from download/import pipelines.
 pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), String> {

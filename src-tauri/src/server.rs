@@ -221,10 +221,11 @@ fn resolve_path(config: &ServerConfig, relative: &str) -> Option<PathBuf> {
         return None;
     }
 
-    // Route case/ and defaults/ to the writable data directory.
-    // These are downloaded at runtime and must be writable (important on Android
-    // where bundled resources are read-only).
-    if relative.starts_with("case/") || relative.starts_with("defaults/") {
+    // Route case/, defaults/, and plugins/ to the writable data directory.
+    // These are created at runtime and must be writable (important on Android
+    // where bundled resources are read-only). In dev mode, data_dir differs
+    // from engine_dir, so plugins/ must be explicitly routed here.
+    if relative.starts_with("case/") || relative.starts_with("defaults/") || relative.starts_with("plugins/") {
         let path = config.data_dir.join(relative);
         if path.is_file() {
             return Some(path);

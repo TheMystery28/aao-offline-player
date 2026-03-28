@@ -32,6 +32,8 @@ pub enum DownloadEvent {
         downloaded: usize,
         failed: usize,
         total_bytes: u64,
+        #[serde(default)]
+        dedup_saved_bytes: u64,
     },
     #[serde(rename = "error")]
     Error { message: String },

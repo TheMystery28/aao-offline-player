@@ -70,6 +70,7 @@ pub fn export_case(
         downloaded: 0,
         failed: 0,
         total_bytes: size,
+        dedup_saved_bytes: 0,
     });
 
     debug_log!(
@@ -152,6 +153,7 @@ pub fn export_sequence(
         downloaded: 0,
         failed: 0,
         total_bytes: size,
+        dedup_saved_bytes: 0,
     });
 
     Ok(size)
@@ -194,6 +196,7 @@ pub fn export_collection(
         downloaded: 0,
         failed: 0,
         total_bytes: size,
+        dedup_saved_bytes: 0,
     });
 
     Ok(size)

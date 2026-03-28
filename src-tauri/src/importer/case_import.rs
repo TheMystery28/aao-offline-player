@@ -211,10 +211,8 @@ fn import_multi_case_zip(
         let _ = index.scan_and_register_cases(engine_dir);
     }
 
-    // Post-import dedup: run for each case now that defaults/ are all extracted
-    for &case_id in &case_ids {
-        let _ = crate::downloader::dedup::dedup_case_assets(case_id, engine_dir);
-    }
+    // Post-import finalization: register + dedup for each case
+    crate::downloader::dedup::finalize_batch_import(&case_ids, engine_dir);
     // Re-read first manifest if dedup modified it
     if let Some(ref fm) = first_manifest {
         let case_dir = engine_dir.join("case").join(fm.case_id.to_string());
@@ -378,10 +376,8 @@ fn import_collection_zip(
         let _ = index.scan_and_register_cases(engine_dir);
     }
 
-    // Post-import dedup for each case now that defaults/ are all extracted
-    for &case_id in &case_ids {
-        let _ = crate::downloader::dedup::dedup_case_assets(case_id, engine_dir);
-    }
+    // Post-import finalization: register + dedup for each case
+    crate::downloader::dedup::finalize_batch_import(&case_ids, engine_dir);
 
     let manifest = first_manifest
         .ok_or_else(|| "No cases were imported from the collection ZIP".to_string())?;
@@ -516,9 +512,8 @@ fn import_single_case_zip(
         let _ = fs::remove_file(&plugin_params_path);
     }
 
-    // Post-import dedup: remove case assets identical to shared defaults
-    let (dedup_count, _) = crate::downloader::dedup::dedup_case_assets(case_id, engine_dir)
-        .unwrap_or((0, 0));
+    // Post-import finalization: register + dedup
+    let (dedup_count, _) = crate::downloader::dedup::finalize_case_import(case_id, engine_dir);
     if dedup_count > 0 {
         manifest = read_manifest(&case_dir)?;
     }

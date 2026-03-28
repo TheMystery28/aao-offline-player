@@ -38,6 +38,7 @@ fn test_download_event_finished_serialization() {
         downloaded: 45,
         failed: 5,
         total_bytes: 123456,
+        dedup_saved_bytes: 0,
     };
     let json = serde_json::to_value(&event).unwrap();
     assert_eq!(json["event"], "finished");
@@ -76,7 +77,7 @@ fn test_download_event_all_variants_have_event_field() {
     let variants: Vec<DownloadEvent> = vec![
         DownloadEvent::Started { total: 10 },
         DownloadEvent::Progress { completed: 1, total: 10, current_url: "http://a.com".into(), bytes_downloaded: 100, elapsed_ms: 500 },
-        DownloadEvent::Finished { downloaded: 8, failed: 2, total_bytes: 500 },
+        DownloadEvent::Finished { downloaded: 8, failed: 2, total_bytes: 500, dedup_saved_bytes: 0 },
         DownloadEvent::Error { message: "fail".into() },
         DownloadEvent::SequenceProgress { current_part: 1, total_parts: 3, part_title: "P1".into() },
     ];
