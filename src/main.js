@@ -4692,17 +4692,29 @@ window.addEventListener("DOMContentLoaded", function () {
               name.textContent = filename;
 
               // Scope badge
-              var scopeBadge = document.createElement("span");
-              scopeBadge.className = "scope-badge";
               var pluginEntry = plugins[filename] || {};
               var scope = pluginEntry.scope;
-              if (scope && scope.all) {
+              var scopeIsAll = scope && scope.all;
+              var scopeBadge = document.createElement("span");
+              scopeBadge.className = "scope-badge";
+              if (scopeIsAll) {
                 scopeBadge.textContent = "All cases";
-              } else if (scope && Array.isArray(scope.case_ids) && scope.case_ids.length > 0) {
-                scopeBadge.textContent = scope.case_ids.length + " case" + (scope.case_ids.length !== 1 ? "s" : "");
               } else {
-                scopeBadge.textContent = "No scope";
+                // Old scope format — show clickable fix button
+                scopeBadge = document.createElement("button");
+                scopeBadge.className = "scope-badge";
+                scopeBadge.style.cssText = "cursor:pointer; border:none; background:none; text-decoration:underline;";
+                scopeBadge.textContent = "Restricted";
+                scopeBadge.title = "Click to set scope to all cases";
               }
+              if (!scopeIsAll) {
+                scopeBadge.addEventListener("click", (function (fn) {
+                  return function () {
+                    invoke("set_global_plugin_scope", { filename: fn, scope: { all: true } })
+                      .then(function () { loadGlobalPluginsPanel(); })
+                      .catch(function (e) { statusMsg.textContent = "Error: " + e; });
+                  };
+              })(filename, scopeIsAll));
 
               // Override summary badge
               var overrideBadge = document.createElement("span");

@@ -1964,8 +1964,34 @@ pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), String> {
     let mut val: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("Failed to parse global manifest: {}", e))?;
 
-    // Already migrated?
+    // If already has plugins, just ensure all scopes are {all: true}
     if val.get("plugins").is_some() {
+        let mut changed = false;
+        if let Some(plugins) = val.get_mut("plugins").and_then(|p| p.as_object_mut()) {
+            for (_name, entry) in plugins.iter_mut() {
+                if let Some(scope) = entry.get_mut("scope") {
+                    let is_all = scope.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !is_all {
+                        *scope = serde_json::json!({"all": true});
+                        changed = true;
+                    } else {
+                        // Remove old fields if present
+                        if let Some(obj) = scope.as_object_mut() {
+                            if obj.remove("case_ids").is_some() { changed = true; }
+                            if obj.remove("sequence_titles").is_some() { changed = true; }
+                            if obj.remove("collection_ids").is_some() { changed = true; }
+                        }
+                    }
+                } else {
+                    entry.as_object_mut().unwrap().insert("scope".to_string(), serde_json::json!({"all": true}));
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+                .map_err(|e| format!("Failed to write migrated manifest: {}", e))?;
+        }
         return Ok(());
     }
 
@@ -1973,22 +1999,12 @@ pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), String> {
         .and_then(|s| s.as_array())
         .cloned()
         .unwrap_or_default();
-    let disabled: Vec<String> = val.get("disabled")
-        .and_then(|d| d.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or_default();
 
     let mut plugins = serde_json::Map::new();
     for script_val in &scripts {
         if let Some(script_name) = script_val.as_str() {
-            let is_disabled = disabled.contains(&script_name.to_string());
             plugins.insert(script_name.to_string(), serde_json::json!({
-                "scope": {
-                    "all": !is_disabled,
-                    "case_ids": [],
-                    "sequence_titles": [],
-                    "collection_ids": []
-                },
+                "scope": { "all": true },
                 "params": {}
             }));
         }
@@ -2086,29 +2102,11 @@ pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_j
         let plugin_cfg = plugins_config.get(script_name);
         let globally_disabled = global_disabled.contains(&script_name.to_string());
 
-        // Determine scope match (does the plugin's scope include this case?)
+        // Scope check — simplified: scope.all controls on/off, fine-grained via disabled_for/enabled_for
         let scope = plugin_cfg.and_then(|p| p.get("scope"));
         let scope_matches = match scope {
-            Some(s) => {
-                let all = s.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
-                if all { true }
-                else {
-                    let case_ids = s.get("case_ids").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                    let seq_titles = s.get("sequence_titles").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                    let col_ids = s.get("collection_ids").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-
-                    let case_match = case_ids.iter().any(|id| id.as_u64() == Some(case_id as u64));
-                    let seq_match = case_sequence_title.as_ref().map(|st| {
-                        seq_titles.iter().any(|t| t.as_str() == Some(st.as_str()))
-                    }).unwrap_or(false);
-                    let col_match = col_ids.iter().any(|cid| {
-                        cid.as_str().map(|s| case_collection_ids.contains(&s.to_string())).unwrap_or(false)
-                    });
-
-                    case_match || seq_match || col_match
-                }
-            }
-            None => true, // Missing scope = all cases
+            Some(s) => s.get("all").and_then(|v| v.as_bool()).unwrap_or(true),
+            None => true,
         };
 
         // Helper: check if a scope override list matches this case
@@ -5775,7 +5773,7 @@ return 'data:image/gif;base64,'
         assert!(val.get("plugins").is_some());
         let plugins = val["plugins"].as_object().unwrap();
         assert_eq!(plugins["a.js"]["scope"]["all"], true);
-        assert_eq!(plugins["b.js"]["scope"]["all"], false);
+        assert_eq!(plugins["b.js"]["scope"]["all"], true); // All plugins migrate to all:true
         assert!(val.get("disabled").is_none()); // old field removed
     }
 
@@ -5838,14 +5836,14 @@ return 'data:image/gif;base64,'
     }
 
     #[test]
-    fn test_scope_case_ids_no_match() {
+    fn test_disabled_for_case_not_active() {
         let dir = tempfile::tempdir().unwrap();
         let engine_dir = dir.path();
         let plugins_dir = engine_dir.join("plugins");
         std::fs::create_dir_all(&plugins_dir).unwrap();
         std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
         std::fs::write(plugins_dir.join("manifest.json"),
-            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"case_ids":[12345],"sequence_titles":[],"collection_ids":[]},"params":{}}}}"#).unwrap();
+            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{},"disabled_for":{"cases":[99999],"sequences":[],"collections":[]}}}}"#).unwrap();
         std::fs::create_dir_all(engine_dir.join("case/99999")).unwrap();
 
         let resolved = resolve_plugins_for_case(99999, engine_dir).unwrap();
@@ -5854,20 +5852,20 @@ return 'data:image/gif;base64,'
     }
 
     #[test]
-    fn test_scope_disabled_everywhere() {
+    fn test_globally_disabled_not_active() {
         let dir = tempfile::tempdir().unwrap();
         let engine_dir = dir.path();
         let plugins_dir = engine_dir.join("plugins");
         std::fs::create_dir_all(&plugins_dir).unwrap();
         std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
         std::fs::write(plugins_dir.join("manifest.json"),
-            r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false},"params":{}}}}"#).unwrap();
+            r#"{"scripts":["a.js"],"disabled":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{}}}}"#).unwrap();
         std::fs::create_dir_all(engine_dir.join("case/11111")).unwrap();
 
         let resolved = resolve_plugins_for_case(11111, engine_dir).unwrap();
         assert_eq!(resolved["active"].as_array().unwrap().len(), 0);
         assert_eq!(resolved["available"].as_array().unwrap().len(), 1);
-        assert!(resolved["available"][0]["reason"].as_str().unwrap().contains("no matching scope"));
+        assert!(resolved["available"][0]["reason"].as_str().unwrap().contains("global"));
     }
 
     #[test]
