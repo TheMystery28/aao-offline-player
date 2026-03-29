@@ -44,7 +44,6 @@ export function initSettings(invoke, Channel, statusMsg) {
 
   var settingsAutoSave = document.getElementById("settings-autosave");
   var settingsBlurSpoilers = document.getElementById("settings-blur-spoilers");
-  var settingsKeepShared = document.getElementById("settings-keep-shared-assets");
 
   function loadSettings() {
     invoke("get_settings").then(function (settings) {
@@ -53,7 +52,6 @@ export function initSettings(invoke, Channel, statusMsg) {
       concurrencyValue.textContent = settings.concurrent_downloads;
       if (settingsAutoSave) settingsAutoSave.checked = settings.auto_save;
       if (settingsBlurSpoilers) settingsBlurSpoilers.checked = settings.blur_spoilers;
-      if (settingsKeepShared) settingsKeepShared.checked = settings.keep_shared_assets;
     }).catch(function (e) {
       console.error("[SETTINGS] Failed to load settings:", e);
     });
@@ -64,8 +62,7 @@ export function initSettings(invoke, Channel, statusMsg) {
       language: settingsLanguage.value,
       concurrent_downloads: parseInt(settingsConcurrency.value, 10),
       auto_save: settingsAutoSave ? settingsAutoSave.checked : true,
-      blur_spoilers: settingsBlurSpoilers ? settingsBlurSpoilers.checked : true,
-      keep_shared_assets: settingsKeepShared ? settingsKeepShared.checked : true
+      blur_spoilers: settingsBlurSpoilers ? settingsBlurSpoilers.checked : true
     };
     invoke("save_settings", { settings: settings }).catch(function (e) {
       console.error("[SETTINGS] Failed to save settings:", e);
@@ -86,7 +83,6 @@ export function initSettings(invoke, Channel, statusMsg) {
 
   if (settingsAutoSave) settingsAutoSave.addEventListener("change", debounceSave);
   if (settingsBlurSpoilers) settingsBlurSpoilers.addEventListener("change", debounceSave);
-  if (settingsKeepShared) settingsKeepShared.addEventListener("change", debounceSave);
 
   function loadStorageInfo() {
     invoke("get_storage_info").then(function (info) {

@@ -142,6 +142,39 @@ impl DedupIndex {
         None
     }
 
+    /// Find any file in the index matching the given size, extension, and content hash.
+    /// Prefers defaults/ matches over case/ matches. Returns None if no match.
+    /// If `exclude` is provided, skip that exact path (used to avoid self-matches).
+    pub fn find_by_hash(&self, size: u64, ext: &str, hash: u64, exclude: Option<&str>) -> Option<String> {
+        let size_ext_key = format!("{}:{}", size, normalize_ext(ext));
+        let txn = self.db.begin_read().ok()?;
+        let lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT).ok()?;
+        let candidates = lookup_table.get(&*size_ext_key).ok()?;
+        let hash_table = txn.open_table(HASH_BY_PATH).ok()?;
+
+        let mut best: Option<String> = None;
+        for candidate in candidates.flatten() {
+            let path = candidate.value().to_string();
+            if let Some(excl) = exclude {
+                if path == excl {
+                    continue;
+                }
+            }
+            if let Ok(Some(entry)) = hash_table.get(&*path) {
+                let (_, candidate_hash) = entry.value();
+                if candidate_hash == hash {
+                    if path.starts_with("defaults/") {
+                        return Some(path); // Prefer defaults/ — return immediately
+                    }
+                    if best.is_none() {
+                        best = Some(path);
+                    }
+                }
+            }
+        }
+        best
+    }
+
     /// Scan a directory and register all files not already in the db.
     /// Used on first run or when the index is out of date.
     /// Returns the count of newly registered files.

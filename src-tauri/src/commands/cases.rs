@@ -72,11 +72,8 @@ pub fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<()
 
     debug_log!("Deleted case {} at {}", case_id, case_dir.display());
 
-    // Auto-clean unused shared defaults unless user opted to keep them
-    let config = state.lock().map_err(|e| e.to_string())?.config.clone();
-    if !config.keep_shared_assets {
-        let _ = downloader::dedup::clear_unused_defaults(&data_dir);
-    }
+    // Auto-clean unused shared defaults
+    let _ = downloader::dedup::clear_unused_defaults(&data_dir);
 
     Ok(())
 }

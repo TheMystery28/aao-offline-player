@@ -382,3 +382,125 @@ fn test_export_after_dedup_includes_defaults() {
         exported_path
     );
 }
+
+#[test]
+fn test_dedup_promotes_cross_case_to_shared() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path();
+
+    // Create two cases with identical custom assets (no defaults/ involved)
+    let content = b"identical custom image data";
+    make_case_with_asset(data_dir, 100, "photo.png", content);
+    make_case_with_asset(data_dir, 200, "photo.png", content);
+
+    // Run dedup on case 200 — it should find case 100 has the same file
+    let (count, _) = dedup_case_assets(200, data_dir).unwrap();
+    assert_eq!(count, 1, "Should dedup 1 file");
+
+    // The file should be promoted to defaults/shared/
+    let manifest_200 = read_manifest(&data_dir.join("case/200")).unwrap();
+    let path_200 = &manifest_200.asset_map["http://example.com/photo.png"];
+    assert!(
+        path_200.starts_with("defaults/shared/"),
+        "Case 200 should point to shared, got: {}", path_200
+    );
+
+    // Case 100 should also be rewritten to point to the shared copy
+    let manifest_100 = read_manifest(&data_dir.join("case/100")).unwrap();
+    let path_100 = &manifest_100.asset_map["http://example.com/photo.png"];
+    assert!(
+        path_100.starts_with("defaults/shared/"),
+        "Case 100 should also point to shared, got: {}", path_100
+    );
+
+    // Both should point to the same shared path
+    assert_eq!(path_200, path_100, "Both cases should point to same shared path");
+
+    // Original case files should be deleted
+    assert!(!data_dir.join("case/200/assets/photo.png").exists());
+    assert!(!data_dir.join("case/100/assets/photo.png").exists());
+
+    // Shared file should exist
+    assert!(data_dir.join(path_200).exists(), "Shared file should exist on disk");
+}
+
+#[test]
+fn test_dedup_prefers_existing_defaults_over_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path();
+
+    // Create a defaults/ file
+    let content = b"shared sprite content";
+    let defaults_dir = data_dir.join("defaults/images/chars/Test");
+    fs::create_dir_all(&defaults_dir).unwrap();
+    fs::write(defaults_dir.join("1.gif"), content).unwrap();
+
+    // Create a case with the same content
+    make_case_with_asset(data_dir, 300, "sprite.gif", content);
+
+    // Run dedup — should prefer defaults/ over promoting to shared
+    let (count, _) = dedup_case_assets(300, data_dir).unwrap();
+    assert_eq!(count, 1, "Should dedup 1 file");
+
+    let manifest = read_manifest(&data_dir.join("case/300")).unwrap();
+    let path = &manifest.asset_map["http://example.com/sprite.gif"];
+    assert!(
+        path.starts_with("defaults/images/"),
+        "Should point to existing defaults/, not shared. Got: {}", path
+    );
+}
+
+#[test]
+fn test_find_by_hash_prefers_defaults() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = DedupIndex::open(dir.path()).unwrap();
+
+    let hash: u64 = 12345;
+    let size: u64 = 100;
+    index.register("case/1/assets/file.png", size, hash).unwrap();
+    index.register("defaults/images/bg/room.png", size, hash).unwrap();
+
+    let result = index.find_by_hash(size, "png", hash, None);
+    assert_eq!(result, Some("defaults/images/bg/room.png".to_string()));
+}
+
+#[test]
+fn test_find_by_hash_excludes_self() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = DedupIndex::open(dir.path()).unwrap();
+
+    let hash: u64 = 67890;
+    let size: u64 = 50;
+    index.register("case/1/assets/only.png", size, hash).unwrap();
+
+    // With exclude = self, should return None
+    let result = index.find_by_hash(size, "png", hash, Some("case/1/assets/only.png"));
+    assert_eq!(result, None, "Should exclude self-match");
+
+    // Without exclude, should find it
+    let result = index.find_by_hash(size, "png", hash, None);
+    assert_eq!(result, Some("case/1/assets/only.png".to_string()));
+}
+
+#[test]
+fn test_promote_to_shared_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path();
+
+    // Create a source file
+    let content = b"file to promote";
+    let source = data_dir.join("source.png");
+    fs::write(&source, content).unwrap();
+    let hash = xxh3_64(content);
+
+    let index = DedupIndex::open(data_dir).unwrap();
+
+    // First promotion
+    let path1 = promote_to_shared(data_dir, &source, hash, &index).unwrap();
+    assert!(path1.starts_with("defaults/shared/"));
+    assert!(data_dir.join(&path1).exists());
+
+    // Second promotion — should return same path, no error
+    let path2 = promote_to_shared(data_dir, &source, hash, &index).unwrap();
+    assert_eq!(path1, path2, "Idempotent: same path returned");
+}

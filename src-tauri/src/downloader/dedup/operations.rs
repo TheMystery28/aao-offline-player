@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::helpers::rewrite_value_recursive;
+use super::helpers::{hash_file, normalize_ext, rewrite_value_recursive};
 use super::index::DedupIndex;
 use crate::downloader::manifest::{read_manifest, write_manifest};
 use crate::downloader::paths::normalize_path;
@@ -51,7 +51,7 @@ pub fn finalize_batch_import(case_ids: &[u32], data_dir: &Path) -> (usize, u64) 
     (total_count, total_bytes)
 }
 
-/// Dedup a single case's assets against the shared defaults pool.
+/// Dedup a single case's assets against all indexed files (defaults + other cases).
 /// Opens its own DedupIndex. For use from download/import pipelines.
 pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), String> {
     let case_dir = data_dir.join("case").join(case_id.to_string());
@@ -59,17 +59,16 @@ pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), 
     if !assets_dir.is_dir() {
         return Ok((0, 0));
     }
-    let defaults_dir = data_dir.join("defaults");
-    if !defaults_dir.is_dir() {
-        return Ok((0, 0));
-    }
     let index = DedupIndex::open(data_dir)?;
+    // Scan both defaults and case assets so cross-case lookups work
     index.scan_and_register(data_dir, "defaults")?;
+    index.scan_and_register_cases(data_dir)?;
     dedup_case_assets_with_index(case_id, data_dir, &index)
 }
 
 /// Dedup a single case's assets using a pre-opened index.
-/// Avoids opening a second DedupIndex when called from optimize_all_cases.
+/// Matches against ALL indexed files (defaults + other cases).
+/// Cross-case matches are promoted to defaults/shared/ and the other case is rewritten.
 pub fn dedup_case_assets_with_index(
     case_id: u32,
     data_dir: &Path,
@@ -81,8 +80,11 @@ pub fn dedup_case_assets_with_index(
         return Ok((0, 0));
     }
 
-    // Read manifest
-    let mut manifest = read_manifest(&case_dir)?;
+    // Read manifest (if missing, nothing to dedup — manifest tracks what URLs point where)
+    let mut manifest = match read_manifest(&case_dir) {
+        Ok(m) => m,
+        Err(_) => return Ok((0, 0)),
+    };
 
     // Read trial_data.json for URL rewriting
     let trial_data_path = case_dir.join("trial_data.json");
@@ -115,58 +117,78 @@ pub fn dedup_case_assets_with_index(
             Ok(m) => m.len(),
             Err(_) => continue,
         };
+        let asset_filename = match file_path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
 
-        // Check if this file has a duplicate in defaults/ (skip matches against other case assets)
-        if let Some(default_relative_path) = index.find_duplicate(&file_path, data_dir) {
-            if !default_relative_path.starts_with("defaults/") {
-                continue; // Only dedup against defaults, not other case assets
-            }
-            let asset_filename = match file_path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            let old_local_path = format!("assets/{}", asset_filename);
+        // Compute hash for index lookup
+        let content_hash = match hash_file(&file_path) {
+            Ok(h) => h,
+            Err(_) => continue,
+        };
+        let ext = file_path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| normalize_ext(e))
+            .unwrap_or_default();
 
-            // Find the URL(s) in asset_map that point to this assets/ path
-            let urls_to_update: Vec<String> = manifest
-                .asset_map
-                .iter()
-                .filter(|(_, v)| **v == old_local_path)
-                .map(|(k, _)| k.clone())
-                .collect();
+        // Exclude self from matches
+        let self_reg_key = format!("case/{}/assets/{}", case_id, asset_filename);
+        let match_path = match index.find_by_hash(file_size, &ext, content_hash, Some(&self_reg_key)) {
+            Some(p) => p,
+            None => continue, // No duplicate found
+        };
 
-            if urls_to_update.is_empty() {
-                continue; // No manifest entry points here, skip
-            }
-
-            // Verify the default file actually exists on disk before deleting the case copy
-            let default_full_path = data_dir.join(&default_relative_path);
-            if !default_full_path.is_file() {
+        // Determine target path: use defaults/ directly, or promote case/ to shared
+        let target_path = if match_path.starts_with("defaults/") {
+            // Verify the default file actually exists on disk
+            if !data_dir.join(&match_path).is_file() {
                 continue;
             }
-
-            // Update manifest
-            for url in &urls_to_update {
-                manifest
-                    .asset_map
-                    .insert(url.clone(), default_relative_path.clone());
+            match_path
+        } else {
+            // Cross-case match — promote to defaults/shared/
+            let source = data_dir.join(&match_path);
+            if !source.is_file() {
+                continue;
             }
+            let shared_path = promote_to_shared(data_dir, &source, content_hash, index)?;
+            // Rewrite the other case to point to the shared copy
+            rewrite_other_case(data_dir, &match_path, &shared_path, index)?;
+            shared_path
+        };
 
-            // Rewrite references in trial_data.json
-            if let Some(ref mut td) = trial_data {
-                let old_server_path = format!("case/{}/{}", case_id, old_local_path);
-                rewrite_value_recursive(td, &old_server_path, &default_relative_path);
-                trial_data_modified = true;
-            }
+        let old_local_path = format!("assets/{}", asset_filename);
 
-            // Delete the duplicate file
-            if fs::remove_file(&file_path).is_ok() {
-                // Unregister case asset from the persistent index
-                let reg_key = format!("case/{}/assets/{}", case_id, asset_filename);
-                let _ = index.unregister(&reg_key);
-                deduped_count += 1;
-                bytes_saved += file_size;
-            }
+        // Find the URL(s) in asset_map that point to this assets/ path
+        let urls_to_update: Vec<String> = manifest
+            .asset_map
+            .iter()
+            .filter(|(_, v)| **v == old_local_path)
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        if urls_to_update.is_empty() {
+            continue; // No manifest entry points here, skip
+        }
+
+        // Update manifest
+        for url in &urls_to_update {
+            manifest.asset_map.insert(url.clone(), target_path.clone());
+        }
+
+        // Rewrite references in trial_data.json
+        if let Some(ref mut td) = trial_data {
+            let old_server_path = format!("case/{}/{}", case_id, old_local_path);
+            rewrite_value_recursive(td, &old_server_path, &target_path);
+            trial_data_modified = true;
+        }
+
+        // Delete this case's duplicate file
+        if fs::remove_file(&file_path).is_ok() {
+            let _ = index.unregister(&self_reg_key);
+            deduped_count += 1;
+            bytes_saved += file_size;
         }
     }
 
@@ -187,6 +209,109 @@ pub fn dedup_case_assets_with_index(
     }
 
     Ok((deduped_count, bytes_saved))
+}
+
+/// Promote a file to defaults/shared/ using hash-based naming.
+/// Idempotent: if destination already exists, skip copy but still return path.
+/// Returns the new relative path (e.g., "defaults/shared/a1b2/a1b2c3d4e5f67890.png").
+pub(crate) fn promote_to_shared(
+    data_dir: &Path,
+    source_path: &Path,
+    content_hash: u64,
+    index: &DedupIndex,
+) -> Result<String, String> {
+    let ext = source_path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+    let hash_hex = format!("{:016x}", content_hash);
+    let subdir = &hash_hex[0..4];
+    let shared_relative = if ext.is_empty() {
+        format!("defaults/shared/{}/{}", subdir, hash_hex)
+    } else {
+        format!("defaults/shared/{}/{}.{}", subdir, hash_hex, ext)
+    };
+    let dest = data_dir.join(&shared_relative);
+
+    if !dest.is_file() {
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create shared dir: {}", e))?;
+        }
+        fs::copy(source_path, &dest)
+            .map_err(|e| format!("Failed to promote to shared: {}", e))?;
+    }
+
+    // Register (or re-register) the shared path in the index
+    let size = dest.metadata().map(|m| m.len()).unwrap_or(0);
+    let _ = index.register(&shared_relative, size, content_hash);
+
+    Ok(shared_relative)
+}
+
+/// Rewrite another case's manifest and trial_data to point to a promoted shared path.
+/// Deletes the old file and unregisters it from the index.
+/// Silently skips if the case directory or manifest doesn't exist (case may have been deleted).
+pub(crate) fn rewrite_other_case(
+    data_dir: &Path,
+    old_case_relative: &str,  // "case/{id}/assets/{filename}"
+    new_shared_path: &str,    // "defaults/shared/a1b2/a1b2c3d4.png"
+    index: &DedupIndex,
+) -> Result<(), String> {
+    // Parse case ID from the path
+    let parts: Vec<&str> = old_case_relative.splitn(4, '/').collect();
+    if parts.len() < 4 || parts[0] != "case" {
+        return Ok(()); // Not a case path, skip
+    }
+    let other_case_id: u32 = match parts[1].parse() {
+        Ok(id) => id,
+        Err(_) => return Ok(()),
+    };
+    let other_case_dir = data_dir.join("case").join(other_case_id.to_string());
+    if !other_case_dir.is_dir() {
+        return Ok(()); // Case was deleted
+    }
+    let old_local_path = format!("assets/{}", parts[3]); // "assets/filename.png"
+
+    // Rewrite manifest
+    if let Ok(mut manifest) = read_manifest(&other_case_dir) {
+        let urls_to_update: Vec<String> = manifest.asset_map.iter()
+            .filter(|(_, v)| **v == old_local_path)
+            .map(|(k, _)| k.clone())
+            .collect();
+        if !urls_to_update.is_empty() {
+            for url in &urls_to_update {
+                manifest.asset_map.insert(url.clone(), new_shared_path.to_string());
+            }
+            manifest.assets.total_downloaded = manifest.asset_map.len();
+            let _ = write_manifest(&manifest, &other_case_dir);
+        }
+    }
+
+    // Rewrite trial_data.json
+    let td_path = other_case_dir.join("trial_data.json");
+    if td_path.exists() {
+        if let Ok(text) = fs::read_to_string(&td_path) {
+            if let Ok(mut td) = serde_json::from_str::<serde_json::Value>(&text) {
+                let old_server_path = format!("case/{}/{}", other_case_id, old_local_path);
+                rewrite_value_recursive(&mut td, &old_server_path, new_shared_path);
+                if let Ok(json) = serde_json::to_string_pretty(&td) {
+                    let _ = fs::write(&td_path, json);
+                }
+            }
+        }
+    }
+
+    // Delete the other case's copy of the file
+    let other_file = data_dir.join(old_case_relative);
+    if other_file.is_file() {
+        let _ = fs::remove_file(&other_file);
+    }
+
+    // Unregister old path from the index
+    let _ = index.unregister(old_case_relative);
+
+    Ok(())
 }
 
 /// Clear default assets that are not referenced by any case manifest.

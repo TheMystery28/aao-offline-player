@@ -17,11 +17,6 @@ pub struct AppConfig {
     /// Blur asset filenames in download progress to avoid spoilers.
     #[serde(default = "default_blur_spoilers")]
     pub blur_spoilers: bool,
-    /// Keep shared default assets (sprites, backgrounds, sounds) in cache even when
-    /// no downloaded case references them. When false (default), deleting the last
-    /// case that uses a shared asset automatically cleans it up.
-    #[serde(default = "default_keep_shared_assets")]
-    pub keep_shared_assets: bool,
 }
 
 fn default_language() -> String {
@@ -36,9 +31,6 @@ fn default_auto_save() -> bool {
 fn default_blur_spoilers() -> bool {
     true
 }
-fn default_keep_shared_assets() -> bool {
-    true
-}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -47,7 +39,6 @@ impl Default for AppConfig {
             concurrent_downloads: default_concurrent_downloads(),
             auto_save: default_auto_save(),
             blur_spoilers: default_blur_spoilers(),
-            keep_shared_assets: default_keep_shared_assets(),
         }
     }
 }
@@ -179,7 +170,6 @@ mod tests {
             concurrent_downloads: 5,
             auto_save: true,
             blur_spoilers: false,
-            keep_shared_assets: false,
         };
         save_config(dir.path(), &config).unwrap();
         let loaded = load_config(dir.path());
@@ -211,7 +201,6 @@ mod tests {
             concurrent_downloads: 99,
             auto_save: true,
             blur_spoilers: true,
-            keep_shared_assets: false,
         };
         validate(&mut config);
         assert_eq!(config.concurrent_downloads, 10);
@@ -228,7 +217,6 @@ mod tests {
             concurrent_downloads: 3,
             auto_save: true,
             blur_spoilers: true,
-            keep_shared_assets: false,
         };
         validate(&mut config);
         assert_eq!(config.language, "en");
