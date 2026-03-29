@@ -374,7 +374,7 @@ async fn test_mock_concurrent_all_succeed() {
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        &tx, 3, cancel,
+        None, &tx, 3, cancel,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 5);
@@ -409,7 +409,7 @@ async fn test_mock_concurrent_mixed_results() {
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        &tx, 3, cancel,
+        None, &tx, 3, cancel,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 2, "2 should succeed");
@@ -428,7 +428,7 @@ async fn test_download_assets_empty_list() {
 
     let result = download_assets(
         &client, Vec::new(), &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        &tx, 3, cancel,
+        None, &tx, 3, cancel,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 0);
@@ -459,7 +459,7 @@ async fn test_download_assets_all_fail() {
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        &tx, 3, cancel,
+        None, &tx, 3, cancel,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 0, "None should succeed");
@@ -494,7 +494,7 @@ async fn test_cancel_flag_before_start() {
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        &tx, 3, cancel,
+        None, &tx, 3, cancel,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 0, "All should be cancelled, none downloaded");
@@ -541,7 +541,7 @@ async fn test_cancel_flag_stops_midway() {
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        &tx, 1, cancel, // concurrency=1 so assets are sequential
+        None, &tx, 1, cancel, // concurrency=1 so assets are sequential
     ).await.unwrap();
 
     assert!(
@@ -623,4 +623,57 @@ async fn test_mock_redirect_chain_2_levels() {
     ).await;
     assert!(result.is_ok(), "Should follow 2-level redirect chain: {:?}", result.err());
     assert_eq!(result.unwrap().size, 1);
+}
+
+// --- Dedup integration test ---
+
+#[tokio::test]
+async fn test_download_dedup_skips_existing_in_index() {
+    use crate::downloader::dedup::DedupIndex;
+
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path();
+    std::fs::create_dir_all(data_dir.join("assets")).unwrap();
+
+    // Content that will be downloaded
+    let content = vec![10, 20, 30, 40, 50];
+    let content_hash = xxhash_rust::xxh3::xxh3_64(&content);
+    let content_size = content.len() as u64;
+
+    Mock::given(method("GET")).and(path("/dup.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(content.clone()))
+        .mount(&mock_server).await;
+
+    // Pre-register a file in the index with the same hash
+    let existing_path = "defaults/images/bg/room.png";
+    std::fs::create_dir_all(data_dir.join("defaults/images/bg")).unwrap();
+    std::fs::write(data_dir.join(existing_path), &content).unwrap();
+
+    let index = DedupIndex::open(data_dir).unwrap();
+    index.register(existing_path, content_size, content_hash).unwrap();
+
+    let assets = vec![AssetRef {
+        url: format!("{}/dup.png", mock_server.uri()),
+        asset_type: "background".to_string(),
+        is_default: false,
+        local_path: String::new(),
+    }];
+
+    let client = test_client();
+    let tx = tauri::ipc::Channel::new(|_| Ok(()));
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let result = download_assets(
+        &client, assets,
+        &data_dir.to_path_buf(), &data_dir.to_path_buf(),
+        Some(&index), &tx, 3, cancel,
+    ).await.unwrap();
+
+    assert_eq!(result.downloaded.len(), 1);
+    let asset = &result.downloaded[0];
+    // Should point to the existing defaults/ path, not a newly saved file
+    assert_eq!(asset.local_path, existing_path, "Should reuse existing path from index");
+    // The just-saved file should have been deleted
+    // (it was saved to assets/{hash}.png then removed after dedup check)
 }

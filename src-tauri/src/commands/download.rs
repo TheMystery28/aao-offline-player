@@ -164,11 +164,13 @@ pub async fn download_sequence(
             to_download.retain(|a| !a.url.starts_with(downloader::AAONLINE_BASE));
         }
 
+        let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
         let result = downloader::asset_downloader::download_assets(
             &client,
             to_download,
             &case_dir,
             &data_dir,
+            dedup_index.as_ref(),
             &on_event,
             concurrency,
             cancel_flag.clone(),
@@ -202,7 +204,8 @@ pub async fn download_sequence(
         manifest.assets.total_downloaded = manifest.asset_map.len();
         downloader::manifest::write_manifest(&manifest, &case_dir)?;
 
-        // Register ALL downloaded assets in the persistent hash index
+        // Safety net: register assets that were skip-existing (not downloaded, so not registered
+        // during download). Assets that were actually downloaded are already registered by download_assets.
         if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
             for asset in &result.downloaded {
                 if !asset.local_path.is_empty() {
@@ -397,11 +400,13 @@ pub async fn download_case(
 
     debug_log!("Downloading {} assets ({} case-specific + {} missing defaults)...",
         to_download.len(), case_specific_count, missing_defaults_count);
+    let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
     let result = downloader::asset_downloader::download_assets(
         &client,
         to_download,
         &case_dir,
         &data_dir,
+        dedup_index.as_ref(),
         &on_event,
         concurrency,
         cancel_flag.clone(),
@@ -542,11 +547,13 @@ pub async fn retry_failed_assets(
         }
     }
 
+    let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
     let result = downloader::asset_downloader::download_assets(
         &client,
         assets_to_retry,
         &case_dir,
         &data_dir,
+        dedup_index.as_ref(),
         &on_event,
         concurrency,
         cancel_flag.clone(),
@@ -721,11 +728,13 @@ pub async fn update_case(
     );
 
     // 6. Download assets
+    let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
     let result = downloader::asset_downloader::download_assets(
         &client,
         to_download,
         &case_dir,
         &data_dir,
+        dedup_index.as_ref(),
         &on_event,
         concurrency,
         cancel_flag.clone(),

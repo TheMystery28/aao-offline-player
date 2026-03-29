@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io;
 use std::path::Path;
 
-use serde_json::Value;
-
+use crate::downloader::dedup::{DedupIndex, check_and_promote, hash_file, normalize_ext};
 use crate::downloader::manifest::{AssetSummary, CaseManifest, write_manifest};
 use crate::utils::format_timestamp;
 use super::shared::*;
@@ -51,6 +49,9 @@ pub fn import_aaoffline(
     fs::create_dir_all(&case_dir)
         .map_err(|e| format!("Failed to create case directory: {}", e))?;
 
+    // Open dedup index for pre-copy dedup checks
+    let dedup_index = DedupIndex::open(engine_dir).ok();
+
     // 3. Copy assets and rewrite paths
     let source_assets = source_dir.join("assets");
     let dest_assets = case_dir.join("assets");
@@ -77,6 +78,29 @@ pub fn import_aaoffline(
             let src_path = entry.path();
             let filename_str = entry.file_name().to_string_lossy().to_string();
             let safe_filename = sanitize_imported_filename(&filename_str);
+            let old_ref = format!("assets/{}", filename_str);
+
+            // Check dedup index before copying — skip if identical content already exists
+            if let Some(ref idx) = dedup_index {
+                if let Ok(hash) = hash_file(&src_path) {
+                    let size = src_path.metadata().map(|m| m.len()).unwrap_or(0);
+                    let ext = src_path.extension()
+                        .and_then(|e| e.to_str())
+                        .map(|e| normalize_ext(e))
+                        .unwrap_or_default();
+                    if let Some(existing) = check_and_promote(engine_dir, size, &ext, hash, idx, None) {
+                        // Duplicate found — skip copy, use existing path
+                        asset_count += 1;
+                        total_size += size;
+                        asset_map.insert(old_ref, existing);
+                        if let Some(cb) = &on_progress {
+                            cb(asset_count, total_files);
+                        }
+                        continue;
+                    }
+                }
+            }
+
             let dest_path = dest_assets.join(&safe_filename);
 
             // Copy file with sanitized name
@@ -84,11 +108,17 @@ pub fn import_aaoffline(
                 Ok(bytes) => {
                     total_size += bytes;
                     asset_count += 1;
-                    let old_ref = format!("assets/{}", filename_str);
                     let new_ref = format!("assets/{}", safe_filename);
                     asset_map.insert(old_ref.clone(), new_ref.clone());
                     if old_ref != new_ref {
                         rename_map.insert(old_ref, new_ref);
+                    }
+                    // Register new file in dedup index
+                    if let Some(ref idx) = dedup_index {
+                        if let Ok(hash) = hash_file(&dest_path) {
+                            let reg_key = format!("case/{}/assets/{}", case_id, safe_filename);
+                            let _ = idx.register(&reg_key, bytes, hash);
+                        }
                     }
                     if let Some(cb) = &on_progress {
                         cb(asset_count, total_files);

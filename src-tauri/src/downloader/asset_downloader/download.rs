@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,6 +11,7 @@ use super::log::DownloadLog;
 use super::url_encoding::encode_url;
 use super::utils::{check_skip_existing, generate_filename};
 use super::{DownloadEvent, DownloadResult, DownloadedAsset};
+use crate::downloader::dedup::{DedupIndex, check_and_promote, normalize_ext};
 use crate::downloader::manifest::FailedAsset;
 use crate::downloader::AssetRef;
 
@@ -27,6 +28,7 @@ pub async fn download_assets(
     assets: Vec<AssetRef>,
     case_dir: &PathBuf,
     engine_dir: &PathBuf,
+    dedup_index: Option<&DedupIndex>,
     on_event: &Channel<DownloadEvent>,
     concurrency: usize,
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
@@ -132,7 +134,34 @@ pub async fn download_assets(
                 }
 
                 match download_with_retry(&client, &url, &save_dir, &relative_path, &log, &asset_type).await {
-                    Ok(result) => {
+                    Ok(mut result) => {
+                        // Post-download dedup: check if identical content already exists
+                        if let Some(idx) = dedup_index {
+                            let ext = Path::new(&result.local_path)
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .map(|e| normalize_ext(e))
+                                .unwrap_or_default();
+                            if let Some(existing) = check_and_promote(
+                                &engine, result.size, &ext, result.content_hash, idx, None,
+                            ) {
+                                if existing != result.local_path {
+                                    let saved = save_dir.join(&result.local_path);
+                                    let _ = std::fs::remove_file(&saved);
+                                    log.log(&format!(
+                                        "  DEDUP_SKIP hash={:016x} reuse={} was={}",
+                                        result.content_hash, existing, result.local_path
+                                    ));
+                                    result.local_path = existing;
+                                }
+                            } else {
+                                // No match — register the new file in the index
+                                let _ = idx.register(
+                                    &result.local_path, result.size, result.content_hash,
+                                );
+                            }
+                        }
+
                         total_bytes.fetch_add(result.size, Ordering::Relaxed);
                         let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                         on_event

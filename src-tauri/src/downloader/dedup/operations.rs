@@ -211,6 +211,44 @@ pub fn dedup_case_assets_with_index(
     Ok((deduped_count, bytes_saved))
 }
 
+/// Check the dedup index for an existing copy of a file with the given hash.
+/// If a match is in defaults/: returns that path directly.
+/// If a match is in another case: promotes to defaults/shared/, rewrites other case, returns shared path.
+/// If no match: returns None.
+///
+/// Used by download and import pipelines to skip saving duplicate files.
+pub fn check_and_promote(
+    data_dir: &Path,
+    size: u64,
+    ext: &str,
+    content_hash: u64,
+    index: &DedupIndex,
+    exclude: Option<&str>,
+) -> Option<String> {
+    let match_path = index.find_by_hash(size, ext, content_hash, exclude)?;
+
+    if match_path.starts_with("defaults/") {
+        // Verify it still exists on disk
+        if data_dir.join(&match_path).is_file() {
+            return Some(match_path);
+        }
+        return None;
+    }
+
+    // Cross-case match — promote to defaults/shared/
+    let source = data_dir.join(&match_path);
+    if !source.is_file() {
+        return None;
+    }
+    match promote_to_shared(data_dir, &source, content_hash, index) {
+        Ok(shared_path) => {
+            let _ = rewrite_other_case(data_dir, &match_path, &shared_path, index);
+            Some(shared_path)
+        }
+        Err(_) => None,
+    }
+}
+
 /// Promote a file to defaults/shared/ using hash-based naming.
 /// Idempotent: if destination already exists, skip copy but still return path.
 /// Returns the new relative path (e.g., "defaults/shared/a1b2/a1b2c3d4e5f67890.png").
