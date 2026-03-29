@@ -1,8 +1,6 @@
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
-
 use super::helpers::{hash_file, rewrite_value_recursive};
 use super::index::DedupIndex;
 use crate::downloader::manifest::{read_manifest, write_manifest};
@@ -75,7 +73,7 @@ pub fn dedup_case_assets_with_index(
 
     // Read trial_data.json for URL rewriting
     let trial_data_path = case_dir.join("trial_data.json");
-    let mut trial_data: Option<Value> = if trial_data_path.exists() {
+    let mut trial_data: Option<serde_json::Value> = if trial_data_path.exists() {
         let text = fs::read_to_string(&trial_data_path)
             .map_err(|e| format!("Failed to read trial_data.json: {}", e))?;
         serde_json::from_str(&text)

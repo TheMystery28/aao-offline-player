@@ -16,7 +16,7 @@ pub fn import_aaoffline(
     source_dir: &Path,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<CaseManifest, String> {
+) -> Result<(CaseManifest, u64), String> {
     let index_path = source_dir.join("index.html");
     if !index_path.exists() {
         return Err(format!(
@@ -59,8 +59,7 @@ pub fn import_aaoffline(
     let mut total_size: u64 = 0;
     let mut asset_count: usize = 0;
 
-    // Maps original "assets/{name}" → sanitized "assets/{safe_name}" for URL rewriting
-    let mut rename_map: HashMap<String, String> = HashMap::new();
+    let mut dedup_saved_bytes: u64 = 0;
 
     if source_assets.is_dir() {
         fs::create_dir_all(&dest_assets)
@@ -88,6 +87,7 @@ pub fn import_aaoffline(
                         // Duplicate found — skip copy, use existing path
                         asset_count += 1;
                         total_size += size;
+                        dedup_saved_bytes += size;
                         asset_map.insert(old_ref, existing);
                         if let Some(cb) = &on_progress {
                             cb(asset_count, total_files);
@@ -105,10 +105,7 @@ pub fn import_aaoffline(
                     total_size += bytes;
                     asset_count += 1;
                     let new_ref = format!("assets/{}", safe_filename);
-                    asset_map.insert(old_ref.clone(), new_ref.clone());
-                    if old_ref != new_ref {
-                        rename_map.insert(old_ref, new_ref);
-                    }
+                    asset_map.insert(old_ref, new_ref);
                     // Register new file in dedup index
                     if let Some(ref idx) = dedup_index {
                         if let Ok(hash) = hash_file(&dest_path) {
@@ -187,12 +184,7 @@ pub fn import_aaoffline(
         }
     }
 
-    // 4. Rewrite asset paths in trial_data:
-    //    - "assets/x" → "case/{id}/assets/x" (path prefix)
-    //    - Apply rename_map for sanitized filenames (e.g. "assets/a+b.mp3" → "assets/a-b.mp3")
-    rewrite_imported_urls(&mut trial_data, case_id, &rename_map);
-
-    // 5. Save trial_info.json
+    // 4. Save trial_info.json
     let info_value = build_trial_info_json(&case_info);
     fs::write(
         case_dir.join("trial_info.json"),
@@ -201,15 +193,7 @@ pub fn import_aaoffline(
     )
     .map_err(|e| format!("Failed to write trial_info.json: {}", e))?;
 
-    // 6. Save trial_data.json
-    fs::write(
-        case_dir.join("trial_data.json"),
-        serde_json::to_string_pretty(&trial_data)
-            .map_err(|e| format!("Failed to serialize trial_data: {}", e))?,
-    )
-    .map_err(|e| format!("Failed to write trial_data.json: {}", e))?;
-
-    // 7. Build and save manifest
+    // 5. Build manifest FIRST — it's the single source of truth for asset paths
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -234,9 +218,20 @@ pub fn import_aaoffline(
         has_plugins: false,
         has_case_config: false,
     };
+
+    // 6. Rewrite trial_data from manifest — derives all paths from the single source of truth
+    crate::downloader::manifest::rewrite_trial_data_from_manifest(&mut trial_data, case_id, &manifest);
+
+    // 7. Save trial_data.json and manifest
+    fs::write(
+        case_dir.join("trial_data.json"),
+        serde_json::to_string_pretty(&trial_data)
+            .map_err(|e| format!("Failed to serialize trial_data: {}", e))?,
+    )
+    .map_err(|e| format!("Failed to write trial_data.json: {}", e))?;
     write_manifest(&manifest, &case_dir)?;
 
-    Ok(manifest)
+    Ok((manifest, dedup_saved_bytes))
 }
 
 /// Check if a directory is a parent folder containing aaoffline case subfolders.
@@ -294,6 +289,7 @@ pub fn import_aaoffline_batch(
     let mut batch_manifests: Vec<CaseManifest> = Vec::new();
     let mut batch_errors: Vec<String> = Vec::new();
     let mut imported_ids: Vec<u32> = Vec::new();
+    let mut total_dedup_saved: u64 = 0;
 
     for (i, case_dir) in case_dirs.iter().enumerate() {
         let folder_name = case_dir.file_name()
@@ -305,9 +301,10 @@ pub fn import_aaoffline_batch(
         }
 
         match import_aaoffline(case_dir, engine_dir, on_asset_progress) {
-            Ok(manifest) => {
+            Ok((manifest, dedup_bytes)) => {
                 imported_ids.push(manifest.case_id);
                 batch_manifests.push(manifest);
+                total_dedup_saved += dedup_bytes;
             }
             Err(e) => {
                 // "already exists" for a duplicate root/subfolder case is expected, not an error
@@ -367,5 +364,6 @@ pub fn import_aaoffline_batch(
         missing_defaults: 0,
         batch_manifests,
         batch_errors,
+        dedup_saved_bytes: total_dedup_saved,
     })
 }

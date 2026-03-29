@@ -100,6 +100,37 @@ pub fn write_manifest(manifest: &CaseManifest, case_dir: &Path) -> Result<(), St
     Ok(())
 }
 
+/// Rewrite asset paths in trial_data.json using the manifest as single source of truth.
+///
+/// For each entry in `asset_map`, computes the server-resolvable path and replaces
+/// occurrences in the trial_data JSON tree. This ensures trial_data always agrees
+/// with the manifest — no separate rewrite maps needed.
+pub fn rewrite_trial_data_from_manifest(
+    trial_data: &mut serde_json::Value,
+    case_id: u32,
+    manifest: &CaseManifest,
+) {
+    use crate::downloader::dedup::rewrite_value_recursive;
+
+    for (key, local_path) in &manifest.asset_map {
+        // Skip defaults/ entries that map to themselves (default sprites, voices, places)
+        if key == local_path && local_path.starts_with("defaults/") {
+            continue;
+        }
+
+        let server_path = if local_path.starts_with("defaults/") {
+            local_path.clone()
+        } else if local_path.starts_with("assets/") {
+            format!("case/{}/{}", case_id, local_path)
+        } else {
+            local_path.clone()
+        };
+
+        // Replace the key (original URL or "assets/filename") with the server path
+        rewrite_value_recursive(trial_data, key, &server_path);
+    }
+}
+
 /// Read manifest from disk.
 pub fn read_manifest(case_dir: &Path) -> Result<CaseManifest, String> {
     let data = std::fs::read_to_string(case_dir.join("manifest.json"))

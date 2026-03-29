@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -370,35 +369,6 @@ pub(super) fn extract_trial_data(html: &str) -> Result<Value, String> {
     let json_str = &html[json_start..end_pos];
     serde_json::from_str(json_str)
         .map_err(|e| format!("Failed to parse initial_trial_data JSON: {}", e))
-}
-
-/// Rewrite asset paths in trial_data from "assets/..." to "case/{id}/assets/...".
-///
-/// This walks all string values in the JSON and rewrites any that start with "assets/".
-/// Also applies filename renames from the `rename_map` (original → sanitized).
-pub(super) fn rewrite_imported_urls(value: &mut Value, case_id: u32, rename_map: &HashMap<String, String>) {
-    match value {
-        Value::String(s) => {
-            if s.starts_with("assets/") {
-                // Apply filename rename if needed (e.g. "assets/a+b.mp3" → "assets/a-b.mp3")
-                let after_rename = rename_map.get(s.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| s.clone());
-                *s = format!("case/{}/{}", case_id, after_rename);
-            }
-        }
-        Value::Array(arr) => {
-            for item in arr.iter_mut() {
-                rewrite_imported_urls(item, case_id, rename_map);
-            }
-        }
-        Value::Object(map) => {
-            for (_, v) in map.iter_mut() {
-                rewrite_imported_urls(v, case_id, rename_map);
-            }
-        }
-        _ => {}
-    }
 }
 
 /// Sanitize a filename for safe use in URLs and on disk.

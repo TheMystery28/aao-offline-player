@@ -502,3 +502,44 @@ fn test_promote_to_shared_idempotent() {
     let path2 = promote_to_shared(data_dir, &source, hash, &index).unwrap();
     assert_eq!(path1, path2, "Idempotent: same path returned");
 }
+
+#[test]
+fn test_dedup_manifest_trial_data_consistency() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path();
+
+    // Create defaults/ with a known file
+    let defaults_dir = data_dir.join("defaults/images/chars/Test");
+    fs::create_dir_all(&defaults_dir).unwrap();
+    fs::write(defaults_dir.join("1.gif"), b"sprite bytes here").unwrap();
+
+    // Create case with matching asset
+    make_case_with_asset(data_dir, 50, "sprite.gif", b"sprite bytes here");
+
+    // Run dedup — should replace case asset with defaults path
+    let (count, _) = dedup_case_assets(50, data_dir).unwrap();
+    assert!(count > 0, "Should dedup at least 1 file");
+
+    // Verify manifest and trial_data agree
+    let case_dir = data_dir.join("case/50");
+    assert_manifest_trial_data_agree(&case_dir, 50);
+}
+
+#[test]
+fn test_cross_case_dedup_manifest_trial_data_consistency() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path();
+
+    // Create two cases with identical custom assets
+    let content = b"shared custom image data";
+    make_case_with_asset(data_dir, 600, "photo.png", content);
+    make_case_with_asset(data_dir, 700, "photo.png", content);
+
+    // Dedup case 700 — promotes to shared, rewrites case 600 too
+    let (count, _) = dedup_case_assets(700, data_dir).unwrap();
+    assert!(count > 0, "Should dedup at least 1 file");
+
+    // Both cases must have consistent manifest + trial_data
+    assert_manifest_trial_data_agree(&data_dir.join("case/700"), 700);
+    assert_manifest_trial_data_agree(&data_dir.join("case/600"), 600);
+}

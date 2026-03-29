@@ -1,6 +1,5 @@
 use super::*;
 use crate::importer::aaoffline_helpers::*;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[test]
@@ -44,70 +43,6 @@ fn test_extract_trial_data_escaped_quotes() {
 }
 
 #[test]
-fn test_rewrite_imported_urls() {
-    let mut data = serde_json::json!({
-        "profiles": [0, {
-            "icon": "assets/icon-abc.png",
-            "custom_sprites": [0, {"url": "assets/sprite-def.gif"}]
-        }],
-        "places": [0, {
-            "background": {"image": "assets/bg-xyz.jpg"},
-            "name": "Courtroom"
-        }],
-        "evidence": [0, {"icon": "assets/ev-123.png"}]
-    });
-
-    let empty_renames = HashMap::new();
-    rewrite_imported_urls(&mut data, 102059, &empty_renames);
-
-    assert_eq!(
-        data["profiles"][1]["icon"].as_str().unwrap(),
-        "case/102059/assets/icon-abc.png"
-    );
-    assert_eq!(
-        data["profiles"][1]["custom_sprites"][1]["url"].as_str().unwrap(),
-        "case/102059/assets/sprite-def.gif"
-    );
-    assert_eq!(
-        data["places"][1]["background"]["image"].as_str().unwrap(),
-        "case/102059/assets/bg-xyz.jpg"
-    );
-    // "Courtroom" should not be rewritten
-    assert_eq!(
-        data["places"][1]["name"].as_str().unwrap(),
-        "Courtroom"
-    );
-}
-
-#[test]
-fn test_rewrite_imported_urls_with_renames() {
-    let mut data = serde_json::json!({
-        "profiles": [0, {
-            "icon": "assets/pioggia+car-123.png",
-            "custom_sprites": [0, {"url": "assets/normal-456.gif"}]
-        }]
-    });
-
-    let mut renames = HashMap::new();
-    renames.insert(
-        "assets/pioggia+car-123.png".to_string(),
-        "assets/pioggia-car-123.png".to_string(),
-    );
-    rewrite_imported_urls(&mut data, 99999, &renames);
-
-    // Renamed file should use sanitized name
-    assert_eq!(
-        data["profiles"][1]["icon"].as_str().unwrap(),
-        "case/99999/assets/pioggia-car-123.png"
-    );
-    // Non-renamed file should be unchanged (just prefixed)
-    assert_eq!(
-        data["profiles"][1]["custom_sprites"][1]["url"].as_str().unwrap(),
-        "case/99999/assets/normal-456.gif"
-    );
-}
-
-#[test]
 fn test_import_aaoffline_with_default_sprites() {
     let source = tempfile::tempdir().unwrap();
     let engine = tempfile::tempdir().unwrap();
@@ -135,7 +70,7 @@ return 'data:image/gif;base64,'
     fs::write(assets_dir.join("1-bbb.gif"), b"still1").unwrap();
     fs::write(assets_dir.join("2-ccc.gif"), b"talking2").unwrap();
 
-    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let (manifest, _) = import_aaoffline(source.path(), engine.path(), None).unwrap();
     assert_eq!(manifest.case_id, 77777);
     assert_eq!(manifest.assets.shared_defaults, 3, "Should have 3 default sprites");
     assert_eq!(manifest.assets.case_specific, 4); // icon + 3 sprite files in assets/
@@ -152,7 +87,7 @@ return 'data:image/gif;base64,'
 #[test]
 fn test_import_aaoffline_missing_index() {
     let dir = tempfile::tempdir().unwrap();
-    let result = import_aaoffline(dir.path(), dir.path(), None);
+    let result: Result<(CaseManifest, u64), String> = import_aaoffline(dir.path(), dir.path(), None);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("No index.html found"));
 }
@@ -177,7 +112,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
     fs::write(assets_dir.join("icon.png"), "fake png data").unwrap();
     fs::write(assets_dir.join("bg.jpg"), "fake jpg data").unwrap();
 
-    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let (manifest, _) = import_aaoffline(source.path(), engine.path(), None).unwrap();
 
     assert_eq!(manifest.case_id, 99999);
     assert_eq!(manifest.title, "Import Test");
@@ -246,7 +181,7 @@ fn test_parse_real_aaoffline_download() {
 
     // Full import test into a temp dir
     let engine = tempfile::tempdir().unwrap();
-    let manifest = import_aaoffline(&source_dir, engine.path(), None).unwrap();
+    let (manifest, _) = import_aaoffline(&source_dir, engine.path(), None).unwrap();
     assert_eq!(manifest.case_id, 102059);
     assert!(manifest.assets.total_downloaded > 300, "Expected 300+ assets, got {}", manifest.assets.total_downloaded);
     assert!(manifest.assets.total_size_bytes > 10_000_000, "Expected 10MB+ of assets");
@@ -272,7 +207,7 @@ var initial_trial_data = {"frames":[0]};
     fs::write(source.path().join("index.html"), html).unwrap();
 
     // First import succeeds
-    import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let _ = import_aaoffline(source.path(), engine.path(), None).unwrap();
 
     // Second import should fail (duplicate)
     let result = import_aaoffline(source.path(), engine.path(), None);
@@ -302,7 +237,7 @@ var initial_trial_data = {"frames":[0],"profiles":[0,{"icon":"assets/pioggia+car
     fs::write(assets_dir.join("file#with&special-456.mp3"), "audio data").unwrap();
     fs::write(assets_dir.join("normal-file-789.gif"), "gif data").unwrap();
 
-    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let (manifest, _) = import_aaoffline(source.path(), engine.path(), None).unwrap();
     let case_dir = engine.path().join("case/55555");
 
     // Sanitized files should exist (+ -> -, # -> -, & -> -)
@@ -462,7 +397,7 @@ fn test_import_aaoffline_batch_skips_existing() {
 
     // Import case1 first
     make_aaoffline_case(&source.path().join("case1"), 70010, "Already There");
-    import_aaoffline(&source.path().join("case1"), engine.path(), None).unwrap();
+    let _ = import_aaoffline(&source.path().join("case1"), engine.path(), None).unwrap();
 
     // Now batch import case1 + case2
     make_aaoffline_case(&source.path().join("case2"), 70011, "New Case");

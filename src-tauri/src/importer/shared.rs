@@ -24,6 +24,9 @@ pub struct ImportResult {
     /// For batch imports: errors for individual cases that failed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub batch_errors: Vec<String>,
+    /// Bytes saved by dedup during import (skipped duplicate files).
+    #[serde(default)]
+    pub dedup_saved_bytes: u64,
 }
 
 /// Metadata extracted from trial_information.

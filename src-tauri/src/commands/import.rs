@@ -85,8 +85,8 @@ pub async fn import_case(
         } else if path.join("index.html").exists() {
             // Single aaoffline case folder (no subfolders)
             let _ = on_event.send(DownloadEvent::Started { total: 0 });
-            let manifest = importer::import_aaoffline(&path, &data_dir, Some(&progress_cb))?;
-            importer::ImportResult { manifest, saves: None, missing_defaults: 0, batch_manifests: Vec::new(), batch_errors: Vec::new() }
+            let (manifest, dedup_bytes) = importer::import_aaoffline(&path, &data_dir, Some(&progress_cb))?;
+            importer::ImportResult { manifest, saves: None, missing_defaults: 0, batch_manifests: Vec::new(), batch_errors: Vec::new(), dedup_saved_bytes: dedup_bytes }
         } else {
             return Err(format!(
                 "No index.html found in {} and no subfolders with cases found either.",
@@ -133,7 +133,7 @@ pub async fn import_case(
         downloaded: total_downloaded,
         failed: 0,
         total_bytes,
-        dedup_saved_bytes: 0,
+        dedup_saved_bytes: import_result.dedup_saved_bytes,
     });
 
     debug_log!(

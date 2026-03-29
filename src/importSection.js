@@ -56,7 +56,8 @@ export function initImport(ctx) {
         progressBarInner.style.width = "100%";
         progressPhase.textContent = "Import complete!";
         dedupSavedBytes = msg.data.dedup_saved_bytes || 0;
-        var finishedText = msg.data.downloaded + " assets (" + formatBytes(msg.data.total_bytes) + ")";
+        var actualBytes = msg.data.total_bytes - dedupSavedBytes;
+        var finishedText = msg.data.downloaded + " assets (" + formatBytes(actualBytes) + ")";
         if (dedupSavedBytes > 0) {
           finishedText += " — saved " + formatBytes(dedupSavedBytes) + " by dedup";
         }
@@ -112,9 +113,10 @@ export function initImport(ctx) {
               totalAssets += result.batch_manifests[i].assets.total_downloaded;
               totalBytes += result.batch_manifests[i].assets.total_size_bytes;
             }
+            var actualBatchBytes = totalBytes - dedupSavedBytes;
             var dedupInfo = dedupSavedBytes > 0 ? ' — saved ' + formatBytes(dedupSavedBytes) + ' by dedup' : '';
             var html = '<strong>' + result.batch_manifests.length + ' cases imported</strong> (' +
-              totalAssets + ' assets, ' + formatBytes(totalBytes) + savesInfo + dedupInfo + ')';
+              totalAssets + ' assets, ' + formatBytes(actualBatchBytes) + savesInfo + dedupInfo + ')';
             if (result.batch_errors && result.batch_errors.length > 0) {
               html += '<br><span style="color:#e8a030;">' + result.batch_errors.length +
                 ' case(s) skipped: ' + escapeHtml(result.batch_errors.join("; ")) + '</span>';
