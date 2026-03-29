@@ -767,6 +767,75 @@
   padding: 1rem 0;
 }
 
+.storage-details {
+  margin-top: 0.3rem;
+}
+
+.storage-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+  color: var(--text-secondary);
+  font-size: var(--font-md);
+}
+
+.storage-row.storage-total {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: var(--font-lg);
+  padding-bottom: 0.3rem;
+}
+
+.storage-sub {
+  padding-left: 1rem;
+  color: var(--text-muted);
+  font-size: var(--font-md-sm);
+}
+
+.storage-sub-deep {
+  padding-left: 2.5rem;
+  color: var(--text-muted);
+  font-size: var(--font-md-sm);
+}
+
+.storage-toggle.storage-sub {
+  padding-left: 1.5rem;
+}
+
+.storage-toggle {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+  padding: 0.15rem 0;
+  text-align: left;
+  transition: color 0.2s;
+}
+
+.storage-toggle:hover {
+  color: var(--text-hover);
+}
+
+.storage-toggle::before {
+  content: "\25B8 ";
+  font-size: 0.7em;
+}
+
+.storage-toggle.open::before {
+  content: "\25BE ";
+}
+
+.storage-collapse {
+  display: none;
+}
+
+.storage-collapse.open {
+  display: block;
+}
+
 .settings-group {
   margin-bottom: 1.25rem;
 }

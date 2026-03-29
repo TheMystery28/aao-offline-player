@@ -90,7 +90,20 @@ pub struct StorageInfo {
     pub data_dir: String,
     pub cases_count: usize,
     pub cases_size_bytes: u64,
+    pub cases_assets_bytes: u64,
+    pub cases_metadata_bytes: u64,
+    pub cases_plugins_bytes: u64,
     pub defaults_size_bytes: u64,
+    pub defaults_sprites_bytes: u64,
+    pub defaults_music_bytes: u64,
+    pub defaults_sounds_bytes: u64,
+    pub defaults_voices_bytes: u64,
+    pub defaults_shared_bytes: u64,
+    pub defaults_shared_count: usize,
+    pub defaults_shared_images_bytes: u64,
+    pub defaults_shared_audio_bytes: u64,
+    pub defaults_shared_other_bytes: u64,
+    pub defaults_other_bytes: u64,
     pub total_size_bytes: u64,
 }
 
@@ -99,40 +112,122 @@ pub fn compute_storage_info(engine_dir: &Path) -> StorageInfo {
     let cases_dir = engine_dir.join("case");
     let defaults_dir = engine_dir.join("defaults");
 
-    let (cases_count, cases_size) = if cases_dir.exists() {
+    let (cases_count, cases_size, cases_assets, cases_metadata, cases_plugins) = if cases_dir.exists() {
         count_cases_and_size(&cases_dir)
     } else {
-        (0, 0)
+        (0, 0u64, 0u64, 0u64, 0u64)
     };
 
-    let defaults_size = if defaults_dir.exists() {
-        dir_size(&defaults_dir)
-    } else {
-        0
-    };
+    // Break down defaults by category
+    let mut sprites: u64 = 0;
+    let mut music: u64 = 0;
+    let mut sounds: u64 = 0;
+    let mut voices: u64 = 0;
+    let mut shared: u64 = 0;
+    let mut shared_count: usize = 0;
+    let mut shared_images: u64 = 0;
+    let mut shared_audio: u64 = 0;
+    let mut shared_other_sub: u64 = 0;
+    let mut other: u64 = 0;
+
+    if defaults_dir.exists() {
+        let images_dir = defaults_dir.join("images");
+        if images_dir.exists() {
+            sprites = dir_size(&images_dir);
+        }
+        let music_dir = defaults_dir.join("music");
+        if music_dir.exists() {
+            music = dir_size(&music_dir);
+        }
+        let sounds_dir = defaults_dir.join("sounds");
+        if sounds_dir.exists() {
+            sounds = dir_size(&sounds_dir);
+        }
+        let voices_dir = defaults_dir.join("voices");
+        if voices_dir.exists() {
+            voices = dir_size(&voices_dir);
+        }
+        let shared_dir = defaults_dir.join("shared");
+        if shared_dir.exists() {
+            shared = dir_size(&shared_dir);
+            // Break down shared by file type
+            fn classify_shared(dir: &std::path::Path, count: &mut usize, images: &mut u64, audio: &mut u64, other: &mut u64) {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            classify_shared(&path, count, images, audio, other);
+                        } else if path.is_file() {
+                            let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+                            *count += 1;
+                            let ext = path.extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("")
+                                .to_lowercase();
+                            match ext.as_str() {
+                                "gif" | "png" | "jpg" | "jpeg" | "webp" | "bmp" | "svg" => *images += size,
+                                "mp3" | "ogg" | "opus" | "wav" | "m4a" | "flac" | "aac" => *audio += size,
+                                _ => *other += size,
+                            }
+                        }
+                    }
+                }
+            }
+            classify_shared(&shared_dir, &mut shared_count, &mut shared_images, &mut shared_audio, &mut shared_other_sub);
+        }
+        let known = sprites + music + sounds + voices + shared;
+        let total_defaults = dir_size(&defaults_dir);
+        other = total_defaults.saturating_sub(known);
+    }
+
+    let defaults_size = sprites + music + sounds + voices + shared + other;
 
     StorageInfo {
         data_dir: engine_dir.to_string_lossy().to_string(),
         cases_count,
         cases_size_bytes: cases_size,
+        cases_assets_bytes: cases_assets,
+        cases_metadata_bytes: cases_metadata,
+        cases_plugins_bytes: cases_plugins,
         defaults_size_bytes: defaults_size,
+        defaults_sprites_bytes: sprites,
+        defaults_music_bytes: music,
+        defaults_sounds_bytes: sounds,
+        defaults_voices_bytes: voices,
+        defaults_shared_bytes: shared,
+        defaults_shared_count: shared_count,
+        defaults_shared_images_bytes: shared_images,
+        defaults_shared_audio_bytes: shared_audio,
+        defaults_shared_other_bytes: shared_other_sub,
+        defaults_other_bytes: other,
         total_size_bytes: cases_size + defaults_size,
     }
 }
 
-fn count_cases_and_size(cases_dir: &Path) -> (usize, u64) {
+fn count_cases_and_size(cases_dir: &Path) -> (usize, u64, u64, u64, u64) {
     let mut count = 0usize;
     let mut size = 0u64;
+    let mut assets_total = 0u64;
+    let mut metadata_total = 0u64;
+    let mut plugins_total = 0u64;
     if let Ok(entries) = std::fs::read_dir(cases_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() && path.join("manifest.json").exists() {
                 count += 1;
-                size += dir_size(&path);
+                let case_size = dir_size(&path);
+                size += case_size;
+                let assets_dir = path.join("assets");
+                let a = if assets_dir.exists() { dir_size(&assets_dir) } else { 0 };
+                let plugins_dir = path.join("plugins");
+                let p = if plugins_dir.exists() { dir_size(&plugins_dir) } else { 0 };
+                assets_total += a;
+                plugins_total += p;
+                metadata_total += case_size.saturating_sub(a + p);
             }
         }
     }
-    (count, size)
+    (count, size, assets_total, metadata_total, plugins_total)
 }
 
 /// Recursively compute total file size of a directory.

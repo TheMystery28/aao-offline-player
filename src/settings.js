@@ -84,19 +84,70 @@ export function initSettings(invoke, Channel, statusMsg) {
   if (settingsAutoSave) settingsAutoSave.addEventListener("change", debounceSave);
   if (settingsBlurSpoilers) settingsBlurSpoilers.addEventListener("change", debounceSave);
 
+  function buildStorageSection(label, size, parts, indent) {
+    var cls = indent ? "storage-toggle storage-sub" : "storage-toggle";
+    var html = '<button class="' + cls + '" onclick="this.classList.toggle(\'open\');this.nextElementSibling.classList.toggle(\'open\')">';
+    html += label + " — " + formatBytes(size) + "</button>";
+    html += '<div class="storage-collapse">';
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].length > 2 && parts[i][2]) {
+        // Nested collapsible section: [label, size, subParts]
+        html += buildStorageSection(parts[i][0], parts[i][1], parts[i][2], true);
+      } else {
+        var subCls = indent ? "storage-row storage-sub-deep" : "storage-row storage-sub";
+        html += '<div class="' + subCls + '"><span>' + parts[i][0] + '</span><span>' + formatBytes(parts[i][1]) + '</span></div>';
+      }
+    }
+    html += "</div>";
+    return html;
+  }
+
   function loadStorageInfo() {
     invoke("get_storage_info").then(function (info) {
       dataDirPath.textContent = info.data_dir;
-      var casesSize = formatBytes(info.cases_size_bytes);
-      var defaultsSize = formatBytes(info.defaults_size_bytes);
-      var totalSize = formatBytes(info.total_size_bytes);
-      storageText.textContent =
-        info.cases_count + " case" + (info.cases_count !== 1 ? "s" : "") +
-        " (" + casesSize + ") + defaults cache (" + defaultsSize + ") = " + totalSize + " total";
-      storageText.className = "";
+      var storageEl = document.getElementById("storage-info");
+
+      var html = '<div class="storage-details">';
+      html += '<div class="storage-row storage-total"><span>Total</span><span>' + formatBytes(info.total_size_bytes) + '</span></div>';
+
+      // Cases — collapsible
+      var caseParts = [];
+      if (info.cases_assets_bytes > 0) caseParts.push(["Assets", info.cases_assets_bytes]);
+      if (info.cases_metadata_bytes > 0) caseParts.push(["Metadata", info.cases_metadata_bytes]);
+      if (info.cases_plugins_bytes > 0) caseParts.push(["Plugins", info.cases_plugins_bytes]);
+      var casesLabel = info.cases_count + " case" + (info.cases_count !== 1 ? "s" : "");
+      html += buildStorageSection(casesLabel, info.cases_size_bytes, caseParts, false);
+
+      // Default assets — collapsible
+      if (info.defaults_size_bytes > 0) {
+        var defaultParts = [];
+        if (info.defaults_sprites_bytes > 0) defaultParts.push(["Sprites", info.defaults_sprites_bytes]);
+        if (info.defaults_music_bytes > 0) defaultParts.push(["Music", info.defaults_music_bytes]);
+        if (info.defaults_sounds_bytes > 0) defaultParts.push(["Sounds", info.defaults_sounds_bytes]);
+        if (info.defaults_voices_bytes > 0) defaultParts.push(["Voices", info.defaults_voices_bytes]);
+        if (info.defaults_shared_bytes > 0) {
+          var sharedSub = [];
+          var sharedLabel = info.defaults_shared_count + " file" + (info.defaults_shared_count !== 1 ? "s" : "");
+          if (info.defaults_shared_images_bytes > 0) sharedSub.push(["Images", info.defaults_shared_images_bytes]);
+          if (info.defaults_shared_audio_bytes > 0) sharedSub.push(["Audio", info.defaults_shared_audio_bytes]);
+          if (info.defaults_shared_other_bytes > 0) sharedSub.push(["Other", info.defaults_shared_other_bytes]);
+          if (sharedSub.length > 0) {
+            defaultParts.push(["Shared — " + sharedLabel, info.defaults_shared_bytes, sharedSub]);
+          } else {
+            defaultParts.push(["Shared — " + sharedLabel, info.defaults_shared_bytes]);
+          }
+        }
+        if (info.defaults_other_bytes > 0) defaultParts.push(["Other", info.defaults_other_bytes]);
+        html += buildStorageSection("Default assets", info.defaults_size_bytes, defaultParts, false);
+      }
+
+      html += "</div>";
+      storageEl.innerHTML = html;
+      storageEl.className = "";
     }).catch(function (e) {
       console.error("[SETTINGS] Failed to load storage info:", e);
-      storageText.textContent = "Unable to compute storage info.";
+      var storageEl = document.getElementById("storage-info");
+      storageEl.textContent = "Unable to compute storage info.";
     });
   }
 
