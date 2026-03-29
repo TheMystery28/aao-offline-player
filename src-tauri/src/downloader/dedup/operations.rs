@@ -38,19 +38,6 @@ pub fn finalize_case_import(case_id: u32, data_dir: &Path) -> (usize, u64) {
     }
 }
 
-/// Batch version: run post-import processing for multiple cases.
-/// Used after batch aaoffline imports and multi-case .aaocase imports.
-pub fn finalize_batch_import(case_ids: &[u32], data_dir: &Path) -> (usize, u64) {
-    let mut total_count = 0;
-    let mut total_bytes = 0;
-    for &case_id in case_ids {
-        let (c, b) = finalize_case_import(case_id, data_dir);
-        total_count += c;
-        total_bytes += b;
-    }
-    (total_count, total_bytes)
-}
-
 /// Dedup a single case's assets against all indexed files (defaults + other cases).
 /// Opens its own DedupIndex. For use from download/import pipelines.
 pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), String> {

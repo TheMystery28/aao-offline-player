@@ -105,27 +105,8 @@ pub async fn import_case(
         let _ = fs::remove_file(&temp);
     }
 
-    // Post-import finalization: register in dedup index + deduplicate assets.
-    let _ = on_event.send(DownloadEvent::Progress {
-        completed: 0, total: 1,
-        current_url: "Optimizing storage...".to_string(),
-        bytes_downloaded: 0, elapsed_ms: 0,
-    });
-    let mut total_dedup_count = 0usize;
-    let mut total_dedup_bytes = 0u64;
+    // Re-read manifests for accurate post-dedup sizes (dedup runs inside import functions)
     if !import_result.batch_manifests.is_empty() {
-        let case_ids: Vec<u32> = import_result.batch_manifests.iter().map(|m| m.case_id).collect();
-        for (i, &cid) in case_ids.iter().enumerate() {
-            let _ = on_event.send(DownloadEvent::Progress {
-                completed: i, total: case_ids.len(),
-                current_url: format!("Dedup case {} ({}/{})", cid, i + 1, case_ids.len()),
-                bytes_downloaded: 0, elapsed_ms: 0,
-            });
-            let (c, b) = crate::downloader::dedup::finalize_case_import(cid, &data_dir);
-            total_dedup_count += c;
-            total_dedup_bytes += b;
-        }
-        // Re-read manifests to get post-dedup sizes
         for m in import_result.batch_manifests.iter_mut() {
             let case_dir = data_dir.join("case").join(m.case_id.to_string());
             if let Ok(updated) = crate::downloader::manifest::read_manifest(&case_dir) {
@@ -133,10 +114,6 @@ pub async fn import_case(
             }
         }
     } else {
-        let (c, b) = crate::downloader::dedup::finalize_case_import(import_result.manifest.case_id, &data_dir);
-        total_dedup_count += c;
-        total_dedup_bytes += b;
-        // Re-read manifest to get post-dedup size
         let case_dir = data_dir.join("case").join(import_result.manifest.case_id.to_string());
         if let Ok(updated) = crate::downloader::manifest::read_manifest(&case_dir) {
             import_result.manifest = updated;
@@ -156,7 +133,7 @@ pub async fn import_case(
         downloaded: total_downloaded,
         failed: 0,
         total_bytes,
-        dedup_saved_bytes: total_dedup_bytes,
+        dedup_saved_bytes: 0,
     });
 
     debug_log!(
