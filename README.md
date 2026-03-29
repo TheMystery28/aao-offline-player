@@ -23,6 +23,8 @@ Assets are split into two categories:
 - **Shared defaults** (standard AAO sprites, backgrounds, music), downloaded once to a shared cache. If you download 20 cases that all use Phoenix Wright, the sprite is stored once.
 - **Case-specific assets** (custom images/music hosted externally by the case author), stored per case.
 
+**Universal deduplication** runs automatically during download and import. Every asset is hashed (xxh3) and checked against a persistent index before saving to disk. If identical content already exists — whether from another case, shared defaults, or a previous download — the duplicate is skipped and the existing file is reused. When two cases share the same custom asset, it's automatically promoted to a shared location (`defaults/shared/`) and both cases point there. Unused shared assets are cleaned up when the last referencing case is deleted.
+
 Downloads run in parallel (configurable 1–10 concurrent), with automatic retry on failure. A manifest tracks every asset: what succeeded, what failed, and where it's stored. Failed assets can be retried later without re-downloading the whole case. Cases can also be updated to pick up changes the author made, downloading only new or modified assets.
 
 The aaoffline project was a helpful reference for understanding how to approach offline case downloading. However, the code was written from scratch and the downloading issues I encountered while testing on Windows and Android were fixed along the way. The export/import system and its `.aaocase` format are also an original addition with a focus on practicality.

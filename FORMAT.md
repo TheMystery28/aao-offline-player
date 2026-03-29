@@ -16,6 +16,7 @@ MyCase.aaocase
 │   ├── plugin.js        Plugin code
 │   └── assets/          Plugin assets (flat folder — fonts, sounds, images)
 ├── case_config.json     (optional) Plugin config overrides
+├── plugin_params.json   (optional) Plugin parameter overrides (by_sequence/by_collection scopes)
 └── saves.json           (optional) Game progress / save data
 ```
 
@@ -27,6 +28,7 @@ MySequence.aaocase
 ├── 99990/               Part 1 (manifest + data + assets)
 ├── 99991/               Part 2 (manifest + data + assets)
 ├── defaults/            Shared assets (deduplicated across all parts)
+├── plugin_params.json   (optional) Plugin parameter overrides (by_sequence scope)
 └── saves.json           (optional) Saves for all parts
 ```
 
@@ -40,10 +42,37 @@ MyCollection.aaocase
 ├── 99081/               Sequence part 2
 ├── ...                  All cases in the collection, standalone or sequenced
 ├── defaults/            Shared assets (deduplicated across everything)
+├── plugin_params.json   (optional) Plugin parameter overrides (by_sequence + by_collection scopes)
 └── saves.json           (optional) Saves for all cases
 ```
 
 The `collection.json` distinguishes this from a regular sequence export. It contains the collection title and an ordered list of items — each item is either a standalone case (by ID) or a sequence (by title). On import, all cases are restored and the collection grouping is recreated automatically.
+
+## plugin_params.json (optional)
+
+When a `.aaocase` includes plugins with parameter overrides scoped to a specific sequence or collection, those overrides are stored in `plugin_params.json` at the ZIP root:
+
+```json
+{
+    "by_sequence": {
+        "A Turnabout Called Justice": {
+            "my_plugin.js": {
+                "font_size": 18,
+                "show_timer": true
+            }
+        }
+    },
+    "by_collection": {
+        "My Favorites": {
+            "my_plugin.js": {
+                "theme": "dark"
+            }
+        }
+    }
+}
+```
+
+Plugin parameters cascade at runtime: plugin defaults → global overrides → collection overrides → sequence overrides → per-case overrides. The `plugin_params.json` captures the sequence and collection layers so they survive export/import.
 
 Sharing a case is as simple as exporting it and sending the `.aaocase` file. The recipient imports it into their app — no internet connection needed, no re-downloading. Save data can be optionally included, so players can share their progress.
 
@@ -81,7 +110,9 @@ The `manifest.json` declares the plugin's scripts and assets:
 }
 ```
 
-When importing a `.aaoplug`, the user selects which existing downloaded case(s) to attach it to. The plugin files are extracted to `case/{id}/plugins/`. If the manifest declares external asset URLs, they are downloaded during import. At runtime, all assets are local — the plugin engine never fetches from the internet.
+When importing a `.aaoplug`, the plugin is installed globally (available to all cases). The user can then configure its scope — enabling or disabling it for specific cases, sequences, or collections. The plugin code is stored in `plugins/` and parameter descriptors are automatically extracted from the source to enable type-aware editing in the UI.
+
+If the manifest declares external asset URLs, they are downloaded during import. At runtime, all assets are local — the plugin engine never fetches from the internet.
 
 ## Plugin Assets
 
