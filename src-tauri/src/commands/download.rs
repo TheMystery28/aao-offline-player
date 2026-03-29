@@ -219,15 +219,17 @@ pub async fn download_sequence(
             }
         }
 
-        // Post-download finalization: register + dedup
-        let _ = on_event.send(DownloadEvent::Progress {
-            completed: 0, total: 1,
-            current_url: "Optimizing storage...".to_string(),
-            bytes_downloaded: 0, elapsed_ms: 0,
-        });
-        let (dedup_count, _) = downloader::dedup::finalize_case_import(case_id, &data_dir);
-        if dedup_count > 0 {
-            manifest = downloader::manifest::read_manifest(&case_dir)?;
+        // Post-download finalization: only needed when inline dedup wasn't available
+        if dedup_index.is_none() {
+            let _ = on_event.send(DownloadEvent::Progress {
+                completed: 0, total: 1,
+                current_url: "Optimizing storage...".to_string(),
+                bytes_downloaded: 0, elapsed_ms: 0,
+            });
+            let (dedup_count, _) = downloader::dedup::finalize_case_import(case_id, &data_dir);
+            if dedup_count > 0 {
+                manifest = downloader::manifest::read_manifest(&case_dir)?;
+            }
         }
 
         manifests.push(manifest);
@@ -472,15 +474,17 @@ pub async fn download_case(
         }
     }
 
-    // Post-download finalization: register + dedup
-    let _ = on_event.send(DownloadEvent::Progress {
-        completed: 0, total: 1,
-        current_url: "Optimizing storage...".to_string(),
-        bytes_downloaded: 0, elapsed_ms: 0,
-    });
-    let (dedup_count, _dedup_bytes) = downloader::dedup::finalize_case_import(case_id, &data_dir);
-    if dedup_count > 0 {
-        manifest = downloader::manifest::read_manifest(&case_dir)?;
+    // Post-download finalization: only needed when inline dedup wasn't available
+    if dedup_index.is_none() {
+        let _ = on_event.send(DownloadEvent::Progress {
+            completed: 0, total: 1,
+            current_url: "Optimizing storage...".to_string(),
+            bytes_downloaded: 0, elapsed_ms: 0,
+        });
+        let (dedup_count, _dedup_bytes) = downloader::dedup::finalize_case_import(case_id, &data_dir);
+        if dedup_count > 0 {
+            manifest = downloader::manifest::read_manifest(&case_dir)?;
+        }
     }
 
     Ok(manifest)

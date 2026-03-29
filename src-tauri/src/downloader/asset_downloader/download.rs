@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,7 +11,7 @@ use super::log::DownloadLog;
 use super::url_encoding::encode_url;
 use super::utils::{check_skip_existing, generate_filename};
 use super::{DownloadEvent, DownloadResult, DownloadedAsset};
-use crate::downloader::dedup::{DedupIndex, check_and_promote, normalize_ext};
+use crate::downloader::dedup::{DedupIndex, check_and_promote};
 use crate::downloader::manifest::FailedAsset;
 use crate::downloader::AssetRef;
 
@@ -137,13 +137,8 @@ pub async fn download_assets(
                     Ok(mut result) => {
                         // Post-download dedup: check if identical content already exists
                         if let Some(idx) = dedup_index {
-                            let ext = Path::new(&result.local_path)
-                                .extension()
-                                .and_then(|e| e.to_str())
-                                .map(|e| normalize_ext(e))
-                                .unwrap_or_default();
                             if let Some(existing) = check_and_promote(
-                                &engine, result.size, &ext, result.content_hash, idx, None,
+                                &engine, result.content_hash, idx, None,
                             ) {
                                 if existing != result.local_path {
                                     let saved = save_dir.join(&result.local_path);

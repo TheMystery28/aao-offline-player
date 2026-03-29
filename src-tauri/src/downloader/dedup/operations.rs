@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::helpers::{hash_file, normalize_ext, rewrite_value_recursive};
+use super::helpers::{hash_file, rewrite_value_recursive};
 use super::index::DedupIndex;
 use crate::downloader::manifest::{read_manifest, write_manifest};
 use crate::downloader::paths::normalize_path;
@@ -127,14 +127,10 @@ pub fn dedup_case_assets_with_index(
             Ok(h) => h,
             Err(_) => continue,
         };
-        let ext = file_path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| normalize_ext(e))
-            .unwrap_or_default();
 
         // Exclude self from matches
         let self_reg_key = format!("case/{}/assets/{}", case_id, asset_filename);
-        let match_path = match index.find_by_hash(file_size, &ext, content_hash, Some(&self_reg_key)) {
+        let match_path = match index.find_by_hash(content_hash, Some(&self_reg_key)) {
             Some(p) => p,
             None => continue, // No duplicate found
         };
@@ -219,13 +215,11 @@ pub fn dedup_case_assets_with_index(
 /// Used by download and import pipelines to skip saving duplicate files.
 pub fn check_and_promote(
     data_dir: &Path,
-    size: u64,
-    ext: &str,
     content_hash: u64,
     index: &DedupIndex,
     exclude: Option<&str>,
 ) -> Option<String> {
-    let match_path = index.find_by_hash(size, ext, content_hash, exclude)?;
+    let match_path = index.find_by_hash(content_hash, exclude)?;
 
     if match_path.starts_with("defaults/") {
         // Verify it still exists on disk

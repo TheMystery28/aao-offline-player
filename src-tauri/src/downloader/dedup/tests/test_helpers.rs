@@ -133,7 +133,7 @@ fn test_dedup_empty_file() {
 }
 
 #[test]
-fn test_dedup_same_size_different_extension_no_match() {
+fn test_dedup_same_content_different_extension_matches() {
     let dir = tempfile::tempdir().unwrap();
     let index = DedupIndex::open(dir.path()).unwrap();
 
@@ -141,27 +141,22 @@ fn test_dedup_same_size_different_extension_no_match() {
     let hash = xxh3_64(b"five!");
     index.register("defaults/images/sprite.gif", 5, hash).unwrap();
 
-    // Create a .png file with same content (same size, same hash, different ext)
-    let candidate = dir.path().join("candidate.png");
-    fs::write(&candidate, b"five!").unwrap();
-
-    // Different extension → different (size, ext) key → no match in lookup
-    let result = index.find_duplicate(&candidate, dir.path());
-    assert!(result.is_none(), "Same content but different extension should NOT match");
+    // With hash-keyed lookup, same content matches regardless of extension
+    let result = index.find_by_hash(hash, None);
+    assert!(result.is_some(), "Same content should match via hash lookup");
 }
 
 #[test]
-fn test_dedup_same_size_same_ext_different_content() {
+fn test_dedup_different_content_no_match() {
     let dir = tempfile::tempdir().unwrap();
     let index = DedupIndex::open(dir.path()).unwrap();
 
     // Register a file
-    let hash = xxh3_64(b"AAAAA");
-    index.register("defaults/images/a.gif", 5, hash).unwrap();
+    let hash_a = xxh3_64(b"AAAAA");
+    index.register("defaults/images/a.gif", 5, hash_a).unwrap();
 
-    // Same size (5 bytes), same extension (.gif), but different content
-    let candidate = dir.path().join("b.gif");
-    fs::write(&candidate, b"BBBBB").unwrap();
-    let result = index.find_duplicate(&candidate, dir.path());
-    assert!(result.is_none(), "Same size+ext but different content should NOT match");
+    // Different content → different hash → no match
+    let hash_b = xxh3_64(b"BBBBB");
+    let result = index.find_by_hash(hash_b, None);
+    assert!(result.is_none(), "Different content should not match");
 }

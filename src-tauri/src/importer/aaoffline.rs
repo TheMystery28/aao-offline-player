@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::downloader::dedup::{DedupIndex, check_and_promote, hash_file, normalize_ext};
+use crate::downloader::dedup::{DedupIndex, check_and_promote, hash_file};
 use crate::downloader::manifest::{AssetSummary, CaseManifest, write_manifest};
 use crate::utils::format_timestamp;
 use super::shared::*;
@@ -84,11 +84,7 @@ pub fn import_aaoffline(
             if let Some(ref idx) = dedup_index {
                 if let Ok(hash) = hash_file(&src_path) {
                     let size = src_path.metadata().map(|m| m.len()).unwrap_or(0);
-                    let ext = src_path.extension()
-                        .and_then(|e| e.to_str())
-                        .map(|e| normalize_ext(e))
-                        .unwrap_or_default();
-                    if let Some(existing) = check_and_promote(engine_dir, size, &ext, hash, idx, None) {
+                    if let Some(existing) = check_and_promote(engine_dir, hash, idx, None) {
                         // Duplicate found — skip copy, use existing path
                         asset_count += 1;
                         total_size += size;

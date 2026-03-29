@@ -10,9 +10,10 @@ use crate::downloader::paths::normalize_path;
 const HASH_BY_PATH: TableDefinition<&str, (u64, u64)> =
     TableDefinition::new("hash_by_path");
 
-/// Secondary lookup: "{size}:{normalized_ext}" → relative_path (multimap)
-const PATHS_BY_SIZE_EXT: MultimapTableDefinition<&str, &str> =
-    MultimapTableDefinition::new("paths_by_size_ext");
+/// Secondary lookup: "{hash}" → relative_path (multimap)
+/// Keyed by content hash for direct O(log n) lookups without per-candidate comparison.
+const PATHS_BY_HASH: MultimapTableDefinition<&str, &str> =
+    MultimapTableDefinition::new("paths_by_hash");
 
 /// Persistent dedup index backed by redb.
 /// Stores xxh3 hashes of default/shared assets for O(log n) duplicate lookups
@@ -39,15 +40,10 @@ impl DedupIndex {
     }
 
     /// Register a file in the index.
-    /// Inserts into both hash_by_path and paths_by_size_ext in one transaction.
+    /// Inserts into both hash_by_path and paths_by_hash in one transaction.
     pub fn register(&self, relative_path: &str, size: u64, hash: u64) -> Result<(), String> {
         let relative_path = normalize_path(relative_path);
-        let ext = Path::new(&*relative_path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(normalize_ext)
-            .unwrap_or_default();
-        let size_ext_key = format!("{}:{}", size, ext);
+        let hash_key = format!("{}", hash);
 
         let txn = self.db.begin_write()
             .map_err(|e| format!("Failed to begin write: {}", e))?;
@@ -57,9 +53,9 @@ impl DedupIndex {
             hash_table.insert(&*relative_path, (size, hash))
                 .map_err(|e| format!("Failed to insert hash: {}", e))?;
 
-            let mut lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT)
+            let mut lookup_table = txn.open_multimap_table(PATHS_BY_HASH)
                 .map_err(|e| format!("Failed to open lookup table: {}", e))?;
-            lookup_table.insert(&*size_ext_key, &*relative_path)
+            lookup_table.insert(&*hash_key, &*relative_path)
                 .map_err(|e| format!("Failed to insert lookup: {}", e))?;
         }
         txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
@@ -67,10 +63,9 @@ impl DedupIndex {
     }
 
     /// Remove a file from the index.
-    /// Reads old entry to reconstruct the size+ext key, then removes from both tables.
+    /// Reads old entry to get hash for the secondary key, then removes from both tables.
     pub fn unregister(&self, relative_path: &str) -> Result<(), String> {
         let relative_path = normalize_path(relative_path);
-        // Read old entry to get size for the secondary key
         let old_entry = {
             let txn = self.db.begin_read()
                 .map_err(|e| format!("Failed to begin read: {}", e))?;
@@ -82,13 +77,8 @@ impl DedupIndex {
             }
         };
 
-        if let Some((size, _hash)) = old_entry {
-            let ext = Path::new(&*relative_path)
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(normalize_ext)
-                .unwrap_or_default();
-            let size_ext_key = format!("{}:{}", size, ext);
+        if let Some((_size, hash)) = old_entry {
+            let hash_key = format!("{}", hash);
 
             let txn = self.db.begin_write()
                 .map_err(|e| format!("Failed to begin write: {}", e))?;
@@ -97,60 +87,23 @@ impl DedupIndex {
                     .map_err(|e| format!("Failed to open hash table: {}", e))?;
                 let _ = hash_table.remove(&*relative_path);
 
-                let mut lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT)
+                let mut lookup_table = txn.open_multimap_table(PATHS_BY_HASH)
                     .map_err(|e| format!("Failed to open lookup table: {}", e))?;
-                let _ = lookup_table.remove(&*size_ext_key, &*relative_path);
+                let _ = lookup_table.remove(&*hash_key, &*relative_path);
             }
             txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
         }
         Ok(())
     }
 
-    /// Find a duplicate in the index for the given file.
-    /// 1. Compute "{size}:{ext}" key from the candidate file
-    /// 2. Look up candidates in paths_by_size_ext (B-tree, O(log n))
-    /// 3. For each candidate, compare xxh3 hashes
-    /// Returns the matching default's relative path if identical content found.
-    pub fn find_duplicate(&self, file_path: &Path, base_dir: &Path) -> Option<String> {
-        let size = file_path.metadata().ok()?.len();
-        let ext = file_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(normalize_ext)
-            .unwrap_or_default();
-        let size_ext_key = format!("{}:{}", size, ext);
-
-        let txn = self.db.begin_read().ok()?;
-        let lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT).ok()?;
-        let candidates = lookup_table.get(&*size_ext_key).ok()?;
-
-        let hash_table = txn.open_table(HASH_BY_PATH).ok()?;
-        let file_hash = hash_file(file_path).ok()?;
-
-        for candidate in candidates.flatten() {
-            let candidate_path = candidate.value().to_string();
-            if let Ok(Some(entry)) = hash_table.get(&*candidate_path) {
-                let (_size, candidate_hash) = entry.value();
-                if candidate_hash == file_hash {
-                    // Verify the candidate file still exists on disk (defense against stale entries)
-                    if base_dir.join(&candidate_path).is_file() {
-                        return Some(candidate_path);
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    /// Find any file in the index matching the given size, extension, and content hash.
+    /// Find any file in the index matching the given content hash.
     /// Prefers defaults/ matches over case/ matches. Returns None if no match.
     /// If `exclude` is provided, skip that exact path (used to avoid self-matches).
-    pub fn find_by_hash(&self, size: u64, ext: &str, hash: u64, exclude: Option<&str>) -> Option<String> {
-        let size_ext_key = format!("{}:{}", size, normalize_ext(ext));
+    pub fn find_by_hash(&self, hash: u64, exclude: Option<&str>) -> Option<String> {
+        let hash_key = format!("{}", hash);
         let txn = self.db.begin_read().ok()?;
-        let lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT).ok()?;
-        let candidates = lookup_table.get(&*size_ext_key).ok()?;
-        let hash_table = txn.open_table(HASH_BY_PATH).ok()?;
+        let table = txn.open_multimap_table(PATHS_BY_HASH).ok()?;
+        let candidates = table.get(&*hash_key).ok()?;
 
         let mut best: Option<String> = None;
         for candidate in candidates.flatten() {
@@ -160,16 +113,11 @@ impl DedupIndex {
                     continue;
                 }
             }
-            if let Ok(Some(entry)) = hash_table.get(&*path) {
-                let (_, candidate_hash) = entry.value();
-                if candidate_hash == hash {
-                    if path.starts_with("defaults/") {
-                        return Some(path); // Prefer defaults/ — return immediately
-                    }
-                    if best.is_none() {
-                        best = Some(path);
-                    }
-                }
+            if path.starts_with("defaults/") {
+                return Some(path); // Prefer defaults/ — return immediately
+            }
+            if best.is_none() {
+                best = Some(path);
             }
         }
         best
@@ -232,12 +180,7 @@ impl DedupIndex {
                     Ok(h) => h,
                     Err(_) => continue,
                 };
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(normalize_ext)
-                    .unwrap_or_default();
-                let size_ext_key = format!("{}:{}", size, ext);
+                let hash_key = format!("{}", hash);
 
                 let txn = db.begin_write()
                     .map_err(|e| format!("Failed to begin write: {}", e))?;
@@ -247,9 +190,9 @@ impl DedupIndex {
                     hash_table.insert(&*relative, (size, hash))
                         .map_err(|e| format!("Failed to insert: {}", e))?;
 
-                    let mut lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT)
+                    let mut lookup_table = txn.open_multimap_table(PATHS_BY_HASH)
                         .map_err(|e| format!("Failed to open lookup table: {}", e))?;
-                    lookup_table.insert(&*size_ext_key, &*relative)
+                    lookup_table.insert(&*hash_key, &*relative)
                         .map_err(|e| format!("Failed to insert lookup: {}", e))?;
                 }
                 txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
@@ -334,7 +277,7 @@ impl DedupIndex {
     /// Uses B-tree sorted range scan. Returns count of removed entries.
     pub fn unregister_prefix(&self, prefix: &str) -> Result<usize, String> {
         // Collect entries to remove (read transaction)
-        let to_remove: Vec<(String, u64, String)> = {
+        let to_remove: Vec<(String, u64)> = {
             let txn = self.db.begin_read()
                 .map_err(|e| format!("Failed to begin read: {}", e))?;
             let table = match txn.open_table(HASH_BY_PATH) {
@@ -348,13 +291,8 @@ impl DedupIndex {
                     if !path.starts_with(prefix) {
                         break; // Sorted, no more matches
                     }
-                    let (size, _hash) = item.1.value();
-                    let ext = Path::new(&path)
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .map(normalize_ext)
-                        .unwrap_or_default();
-                    entries.push((path, size, ext));
+                    let (_size, hash) = item.1.value();
+                    entries.push((path, hash));
                 }
             }
             entries
@@ -370,12 +308,12 @@ impl DedupIndex {
         {
             let mut hash_table = txn.open_table(HASH_BY_PATH)
                 .map_err(|e| format!("Failed to open hash table: {}", e))?;
-            let mut lookup_table = txn.open_multimap_table(PATHS_BY_SIZE_EXT)
+            let mut lookup_table = txn.open_multimap_table(PATHS_BY_HASH)
                 .map_err(|e| format!("Failed to open lookup table: {}", e))?;
-            for (path, size, ext) in &to_remove {
+            for (path, hash) in &to_remove {
                 let _ = hash_table.remove(&**path);
-                let size_ext_key = format!("{}:{}", size, ext);
-                let _ = lookup_table.remove(&*size_ext_key, &**path);
+                let hash_key = format!("{}", hash);
+                let _ = lookup_table.remove(&*hash_key, &**path);
             }
         }
         txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
@@ -383,7 +321,7 @@ impl DedupIndex {
     }
 
     /// Query all case asset entries from the index.
-    /// Returns `(path, case_id, filename, size, hash)` for all `case/*/assets/*` entries.
+    /// Returns `(case_id, filename, size, ext, hash)` for all `case/*/assets/*` entries.
     pub fn query_case_assets(&self) -> Result<Vec<(u32, String, u64, String, u64)>, String> {
         let txn = self.db.begin_read()
             .map_err(|e| format!("Failed to begin read: {}", e))?;

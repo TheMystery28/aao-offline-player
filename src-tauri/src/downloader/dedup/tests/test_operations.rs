@@ -263,18 +263,16 @@ fn test_clear_unused_defaults_updates_index() {
 
     // Verify the index was updated: unused entry should be gone
     let fresh_index = DedupIndex::open(data_dir).unwrap();
-    let candidate_unused = dir.path().join("match_unused.gif");
-    fs::write(&candidate_unused, b"unused content").unwrap();
+    let unused_hash = xxh3_64(b"unused content");
     assert!(
-        fresh_index.find_duplicate(&candidate_unused, data_dir).is_none(),
+        fresh_index.find_by_hash(unused_hash, None).is_none(),
         "Unused entry should be removed from index after clear"
     );
 
     // Used entry should still be in the index
-    let candidate_used = dir.path().join("match_used.gif");
-    fs::write(&candidate_used, b"used content").unwrap();
+    let used_hash = xxh3_64(b"used content");
     assert!(
-        fresh_index.find_duplicate(&candidate_used, data_dir).is_some(),
+        fresh_index.find_by_hash(used_hash, None).is_some(),
         "Used entry should remain in index after clear"
     );
 }
@@ -460,7 +458,7 @@ fn test_find_by_hash_prefers_defaults() {
     index.register("case/1/assets/file.png", size, hash).unwrap();
     index.register("defaults/images/bg/room.png", size, hash).unwrap();
 
-    let result = index.find_by_hash(size, "png", hash, None);
+    let result = index.find_by_hash(hash, None);
     assert_eq!(result, Some("defaults/images/bg/room.png".to_string()));
 }
 
@@ -474,11 +472,11 @@ fn test_find_by_hash_excludes_self() {
     index.register("case/1/assets/only.png", size, hash).unwrap();
 
     // With exclude = self, should return None
-    let result = index.find_by_hash(size, "png", hash, Some("case/1/assets/only.png"));
+    let result = index.find_by_hash(hash, Some("case/1/assets/only.png"));
     assert_eq!(result, None, "Should exclude self-match");
 
     // Without exclude, should find it
-    let result = index.find_by_hash(size, "png", hash, None);
+    let result = index.find_by_hash(hash, None);
     assert_eq!(result, Some("case/1/assets/only.png".to_string()));
 }
 
