@@ -1,13 +1,43 @@
 pub mod asset_downloader;
+pub mod asset_paths;
 pub mod asset_resolver;
 pub mod case_fetcher;
 pub mod dedup;
 pub mod manifest;
 pub mod paths;
+pub mod vfs;
 
 use serde::{Deserialize, Serialize};
 
 pub const AAONLINE_BASE: &str = "https://aaonline.fr";
+
+/// Typed error for the downloader module. Eliminates .map_err(|e| format!(...)) boilerplate.
+/// Callers outside the module convert to String via .to_string() or the From impl.
+#[derive(thiserror::Error, Debug)]
+pub enum DownloaderError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("Database error: {0}")]
+    Db(#[from] redb::Error),
+    #[error("Database storage error: {0}")]
+    DbStorage(#[from] redb::StorageError),
+    #[error("Database table error: {0}")]
+    DbTable(#[from] redb::TableError),
+    #[error("Database commit error: {0}")]
+    DbCommit(#[from] redb::CommitError),
+    #[error("Database transaction error: {0}")]
+    DbTransaction(#[from] redb::TransactionError),
+    #[error("{0}")]
+    Other(String),
+}
+
+impl From<DownloaderError> for String {
+    fn from(e: DownloaderError) -> String {
+        e.to_string()
+    }
+}
 
 /// Site paths extracted from AAO's bridge.js.php cfg variable.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -121,7 +121,7 @@ pub fn rewrite_trial_data_from_manifest(
         let server_path = if local_path.starts_with("defaults/") {
             local_path.clone()
         } else if local_path.starts_with("assets/") {
-            format!("case/{}/{}", case_id, local_path)
+            super::asset_paths::case_relative(case_id, local_path)
         } else {
             local_path.clone()
         };

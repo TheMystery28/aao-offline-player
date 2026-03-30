@@ -1,12 +1,7 @@
 /**
  * Player module: manages the game iframe, toolbar, and save backup/restore.
  *
- * @param {Object} ctx
- *   invoke        - Tauri invoke function
- *   statusMsg     - #status-msg DOM element
- *   loadLibrary   - function to reload the library view
- *   writeGameSaves - function(savesJson) => Promise
- *   nextBridgeId  - function() => unique bridge id string
+ * @param {AppContext} ctx
  */
 export function initPlayer(ctx) {
   var invoke = ctx.invoke;
@@ -112,26 +107,67 @@ export function initPlayer(ctx) {
       }
     } catch (e) {}
 
-    // Auto-save before quitting (if enabled in settings).
-    // The iframe is cross-origin (localhost vs tauri.localhost), so use postMessage.
-    if (!settingsAutoSave || settingsAutoSave.checked) {
-      try {
-        if (gameFrame.contentWindow && gameFrame.src !== "about:blank") {
-          gameFrame.contentWindow.postMessage({ type: "auto_save" }, "*");
-        }
-      } catch (e) {
-        console.warn("[PLAYER] Auto-save failed:", e.message);
-      }
-    }
-    // Small delay to let the save complete, then close and back up saves
-    setTimeout(function () {
+    // Close iframe and back up saves. If we received save data directly from the
+    // engine (via auto_save_complete), write it to disk immediately. Otherwise
+    // fall back to reading via the bridge iframe.
+    function finishQuit(savesDataString) {
       gameFrame.src = "about:blank";
       playerContainer.classList.add("hidden");
       launcher.classList.remove("hidden");
       statusMsg.textContent = "";
-      // Back up all saves to file after leaving the player
-      backupSavesToFile();
-    }, 100);
+
+      if (savesDataString) {
+        try {
+          var parsed = JSON.parse(savesDataString);
+          invoke("backup_saves", { saves: parsed }).then(function () {
+            console.log("[SAVE] Auto-save backed up directly to disk");
+          }).catch(function (e) {
+            console.warn("[SAVE] Direct backup failed:", e);
+            backupSavesToFile();
+          });
+        } catch (e) {
+          console.warn("[SAVE] Failed to parse direct save data:", e);
+          backupSavesToFile();
+        }
+      } else {
+        backupSavesToFile();
+      }
+    }
+
+    // Auto-save before quitting (if enabled in settings).
+    // Uses event-driven handshake: engine posts auto_save_complete with save data,
+    // so we don't rely on localStorage flush timing (critical on Android).
+    if (!settingsAutoSave || settingsAutoSave.checked) {
+      if (gameFrame.contentWindow && gameFrame.src !== "about:blank") {
+        var saveTimeout;
+        var onSaveComplete = function (event) {
+          if (event.data && event.data.type === "auto_save_complete") {
+            window.removeEventListener("message", onSaveComplete);
+            clearTimeout(saveTimeout);
+            finishQuit(event.data.data);
+          }
+        };
+        window.addEventListener("message", onSaveComplete);
+        try {
+          gameFrame.contentWindow.postMessage({ type: "auto_save" }, "*");
+        } catch (e) {
+          console.warn("[PLAYER] Auto-save postMessage failed:", e.message);
+          window.removeEventListener("message", onSaveComplete);
+          finishQuit(null);
+          return;
+        }
+        // Fallback timeout if engine doesn't respond (1s is safe)
+        saveTimeout = setTimeout(function () {
+          window.removeEventListener("message", onSaveComplete);
+          console.warn("[PLAYER] Auto-save timed out");
+          finishQuit(null);
+        }, 1000);
+      } else {
+        finishQuit(null);
+      }
+    } else {
+      finishQuit(null);
+    }
   }
 
   backBtn.addEventListener("click", showLauncher);
@@ -259,6 +295,21 @@ export function initPlayer(ctx) {
 
   // Restore saves on startup
   restoreSavesFromBackup();
+
+  // Catch manual save/delete events from the engine and back up to disk immediately.
+  // This bypasses the localStorage flush race on Android — saves go straight to Rust.
+  window.addEventListener("message", function (event) {
+    if (event.data && event.data.type === "save_data_changed" && event.data.data) {
+      try {
+        var parsed = JSON.parse(event.data.data);
+        invoke("backup_saves", { saves: parsed }).then(function () {
+          console.log("[SAVE] Save change backed up to disk");
+        });
+      } catch (e) {
+        console.error("[SAVE] Failed to parse save data:", e);
+      }
+    }
+  });
 
   return { showPlayer: showPlayer, showLauncher: showLauncher };
 }

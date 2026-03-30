@@ -16,7 +16,7 @@ pub fn import_aaoffline(
     source_dir: &Path,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<(CaseManifest, u64), String> {
+) -> Result<super::shared::ImportOutput, String> {
     let index_path = source_dir.join("index.html");
     if !index_path.exists() {
         return Err(format!(
@@ -109,7 +109,7 @@ pub fn import_aaoffline(
                     // Register new file in dedup index
                     if let Some(ref idx) = dedup_index {
                         if let Ok(hash) = hash_file(&dest_path) {
-                            let reg_key = format!("case/{}/assets/{}", case_id, safe_filename);
+                            let reg_key = crate::downloader::asset_paths::case_asset(case_id, &safe_filename);
                             let _ = idx.register(&reg_key, bytes, hash);
                         }
                     }
@@ -231,7 +231,11 @@ pub fn import_aaoffline(
     .map_err(|e| format!("Failed to write trial_data.json: {}", e))?;
     write_manifest(&manifest, &case_dir)?;
 
-    Ok((manifest, dedup_saved_bytes))
+    Ok(super::shared::ImportOutput {
+        manifest,
+        collection: None,
+        dedup_saved_bytes,
+    })
 }
 
 /// Check if a directory is a parent folder containing aaoffline case subfolders.
@@ -301,10 +305,10 @@ pub fn import_aaoffline_batch(
         }
 
         match import_aaoffline(case_dir, engine_dir, on_asset_progress) {
-            Ok((manifest, dedup_bytes)) => {
-                imported_ids.push(manifest.case_id);
-                batch_manifests.push(manifest);
-                total_dedup_saved += dedup_bytes;
+            Ok(output) => {
+                imported_ids.push(output.manifest.case_id);
+                total_dedup_saved += output.dedup_saved_bytes;
+                batch_manifests.push(output.manifest);
             }
             Err(e) => {
                 // "already exists" for a duplicate root/subfolder case is expected, not an error

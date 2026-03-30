@@ -1,5 +1,11 @@
 import { formatBytes, showConfirmModal } from './helpers.js';
 
+/**
+ * @param {function(string, Object=): Promise} invoke
+ * @param {new(): {onmessage: function}} Channel
+ * @param {HTMLElement} statusMsg
+ * @returns {{ loadSettings: function, loadStorageInfo: function }}
+ */
 export function initSettings(invoke, Channel, statusMsg) {
   var settingsToggle = document.getElementById("settings-toggle");
   var settingsPanel = document.getElementById("settings-panel");

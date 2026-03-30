@@ -4,6 +4,7 @@ import { escapeHtml, base64DecodeUtf8, showConfirmModal, formatBytes } from './h
 
 var bridgeIdCounter = 0;
 
+/** @param {AppContext} ctx */
 export function initSaves(ctx) {
   var invoke = ctx.invoke;
   var statusMsg = ctx.statusMsg;

@@ -5,7 +5,7 @@ import { showNewCollectionModal, showEditCollectionModal } from './modals.js';
 /**
  * Initialise the Collections section: collection rendering, modals, and actions.
  *
- * @param {object} ctx - Shared context bag. Functions from other modules
+ * @param {AppContext} ctx - Shared context bag. Functions from other modules
  *   (library, plugins, download, saves, player) are accessed through ctx
  *   at call-time, so they may be attached after this init runs.
  *

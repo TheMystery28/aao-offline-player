@@ -7,7 +7,7 @@ use crate::importer;
 
 /// Import a .aaoplug plugin file into one or more existing cases.
 #[tauri::command]
-pub fn import_plugin(
+pub async fn import_plugin(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
     target_case_ids: Vec<u32>,
@@ -17,7 +17,7 @@ pub fn import_plugin(
         s.data_dir.clone()
     };
     let path = std::path::PathBuf::from(&source_path);
-    importer::import_aaoplug(&path, &target_case_ids, &data_dir)
+    importer::import_aaoplug(&path, &target_case_ids, &data_dir).await
 }
 
 /// Import a .aaoplug ZIP as a global plugin.

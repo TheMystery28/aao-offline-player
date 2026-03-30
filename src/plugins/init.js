@@ -7,6 +7,7 @@ import { showPluginParamsModal } from './paramsEditor.js';
 import { showAttachCodeModal } from './attachCode.js';
 import { initPluginPanel } from './pluginPanel.js';
 
+/** @param {AppContext} ctx */
 export function initPlugins(ctx) {
   // Wire cross-references onto ctx
   ctx.showPluginParamsModal = function(f,l,lv,k) { showPluginParamsModal(ctx,f,l,lv,k); };

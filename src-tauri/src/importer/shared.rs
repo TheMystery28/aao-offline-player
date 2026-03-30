@@ -29,6 +29,15 @@ pub struct ImportResult {
     pub dedup_saved_bytes: u64,
 }
 
+/// Internal return type for import functions.
+/// Consolidates the manifest + optional collection + dedup stats.
+#[derive(Debug)]
+pub(crate) struct ImportOutput {
+    pub(crate) manifest: CaseManifest,
+    pub(crate) collection: Option<crate::collections::Collection>,
+    pub(crate) dedup_saved_bytes: u64,
+}
+
 /// Metadata extracted from trial_information.
 pub(super) struct ImportedCaseInfo {
     pub(super) id: u32,

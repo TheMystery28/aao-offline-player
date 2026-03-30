@@ -3,11 +3,7 @@ import { formatBytes, escapeHtml, showPromptModal } from './helpers.js';
 /**
  * Initialise the Import section UI and event listeners.
  *
- * @param {object} ctx - Context bag from the main closure:
- *   invoke, Channel, statusMsg, loadLibrary, showPasteSaveModal,
- *   writeGameSaves, doImportSave, doImportPlugin,
- *   progressContainer, progressPhase, progressBarInner, progressText,
- *   isDownloadInProgress  (getter function returning boolean)
+ * @param {AppContext} ctx - Context bag from the main closure
  */
 export function initImport(ctx) {
   var invoke = ctx.invoke;

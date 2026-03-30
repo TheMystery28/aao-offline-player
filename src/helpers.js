@@ -1,6 +1,8 @@
 /**
  * Parse a case ID from user input.
  * Accepts: numeric ID, or full/partial AAO URL containing trial_id=N or id_proces=N.
+ * @param {string} input
+ * @returns {number|null}
  */
 export function parseCaseId(input) {
   var trimmed = input.trim();
@@ -15,6 +17,7 @@ export function parseCaseId(input) {
   return null;
 }
 
+/** @param {number} bytes @returns {string} */
 export function formatBytes(bytes) {
   if (bytes === 0) return "0 B";
   var units = ["B", "KB", "MB", "GB"];
@@ -27,6 +30,7 @@ export function formatBytes(bytes) {
   return b.toFixed(i > 0 ? 1 : 0) + " " + units[i];
 }
 
+/** @param {number} ms @returns {string} */
 export function formatDuration(ms) {
   var secs = Math.round(ms / 1000);
   if (secs < 60) return secs + "s";
@@ -38,6 +42,7 @@ export function formatDuration(ms) {
   return hrs + "h " + remainMins + "m";
 }
 
+/** @param {string} isoStr @returns {string} */
 export function formatDate(isoStr) {
   if (!isoStr) return "";
   var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -49,6 +54,7 @@ export function formatDate(isoStr) {
   return months[m] + " " + d + ", " + y;
 }
 
+/** @param {string} text @returns {string} */
 export function escapeHtml(text) {
   if (!text) return "";
   var div = document.createElement("div");
@@ -56,6 +62,7 @@ export function escapeHtml(text) {
   return div.innerHTML;
 }
 
+/** @param {string} str @returns {string} */
 export function base64DecodeUtf8(str) {
   var raw = atob(str);
   var bytes = new Uint8Array(raw.length);
@@ -65,6 +72,11 @@ export function base64DecodeUtf8(str) {
   return new TextDecoder().decode(bytes);
 }
 
+/**
+ * @param {string} titleHtml
+ * @param {{ body?: HTMLElement|string, footer?: HTMLElement|string, className?: string, onClose?: function }} [options]
+ * @returns {{ overlay: HTMLElement, modal: HTMLElement, close: function }}
+ */
 export function createModal(titleHtml, options) {
   var overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -85,6 +97,7 @@ export function createModal(titleHtml, options) {
 
 // --- Modal Helpers ---
 
+/** @param {Array<{url: string, error: string}>} failedAssets */
 export function showFailedAssetsModal(failedAssets) {
   var overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -127,6 +140,7 @@ export function showFailedAssetsModal(failedAssets) {
   document.body.appendChild(overlay);
 }
 
+/** @param {string} message @param {string} btn1Label @param {string} btn2Label @param {function(string): void} callback */
 export function showUpdateModal(message, btn1Label, btn2Label, callback) {
   var overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -160,6 +174,7 @@ export function showUpdateModal(message, btn1Label, btn2Label, callback) {
   document.body.appendChild(overlay);
 }
 
+/** @param {string} message @param {string} confirmLabel @param {function(): void} onConfirm @param {function(): void} [onCancel] */
 export function showConfirmModal(message, confirmLabel, onConfirm, onCancel) {
   var overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -190,6 +205,7 @@ export function showConfirmModal(message, confirmLabel, onConfirm, onCancel) {
   document.body.appendChild(overlay);
 }
 
+/** @param {string} message @param {string} inputLabel @param {string} defaultValue @param {string} confirmLabel @param {function(string): void} onConfirm */
 export function showPromptModal(message, inputLabel, defaultValue, confirmLabel, onConfirm) {
   var overlay = document.createElement("div");
   overlay.className = "modal-overlay";

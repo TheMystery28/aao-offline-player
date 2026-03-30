@@ -99,6 +99,7 @@ pub fn export_aaocase(
     // Add shared default assets (sprites, backgrounds, music, sounds, voices)
     for default_path in &default_files {
         let full_path = engine_dir.join(default_path);
+        let full_path = crate::downloader::vfs::resolve_path(&full_path, engine_dir, engine_dir);
         let data = fs::read(&full_path)
             .map_err(|e| format!("Failed to read default asset {}: {}", default_path, e))?;
         zip.start_file(default_path.as_str(), options)
@@ -410,6 +411,7 @@ pub fn export_collection(
     }
     for default_path in &seen_defaults {
         let full_path = engine_dir.join(default_path);
+        let full_path = crate::downloader::vfs::resolve_path(&full_path, engine_dir, engine_dir);
         if let Ok(data) = fs::read(&full_path) {
             let _ = zip.start_file(default_path.as_str(), options);
             let _ = io::Write::write_all(&mut zip, &data);
@@ -636,6 +638,7 @@ pub fn export_sequence(
     }
     for default_path in &seen_defaults {
         let full_path = engine_dir.join(default_path);
+        let full_path = crate::downloader::vfs::resolve_path(&full_path, engine_dir, engine_dir);
         if let Ok(data) = fs::read(&full_path) {
             let _ = zip.start_file(default_path.as_str(), options);
             let _ = io::Write::write_all(&mut zip, &data);

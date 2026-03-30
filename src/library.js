@@ -3,7 +3,7 @@ import { formatBytes, formatDate, escapeHtml, showFailedAssetsModal, showUpdateM
 /**
  * Initialise the Library section: case list rendering, search/sort, and case actions.
  *
- * @param {object} ctx - Shared context bag. Functions from other modules
+ * @param {AppContext} ctx - Shared context bag. Functions from other modules
  *   (collections, plugins, download, saves, player, settings) are accessed
  *   through ctx at call-time, so they may be attached after this init runs.
  *

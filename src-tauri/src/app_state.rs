@@ -29,6 +29,8 @@ pub(crate) struct AppState {
     pub(crate) config: config::AppConfig,
     /// Cancel flag for in-progress downloads. Checked per-asset in the download loop.
     pub(crate) cancel_flag: Arc<AtomicBool>,
+    /// Shared HTTP client — reuses connection pool across all download commands.
+    pub(crate) http_client: reqwest::Client,
 }
 
 /// Extract engine files from the embedded binary data to the writable filesystem.

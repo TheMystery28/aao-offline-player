@@ -70,7 +70,7 @@ return 'data:image/gif;base64,'
     fs::write(assets_dir.join("1-bbb.gif"), b"still1").unwrap();
     fs::write(assets_dir.join("2-ccc.gif"), b"talking2").unwrap();
 
-    let (manifest, _) = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap().manifest;
     assert_eq!(manifest.case_id, 77777);
     assert_eq!(manifest.assets.shared_defaults, 3, "Should have 3 default sprites");
     assert_eq!(manifest.assets.case_specific, 4); // icon + 3 sprite files in assets/
@@ -87,7 +87,7 @@ return 'data:image/gif;base64,'
 #[test]
 fn test_import_aaoffline_missing_index() {
     let dir = tempfile::tempdir().unwrap();
-    let result: Result<(CaseManifest, u64), String> = import_aaoffline(dir.path(), dir.path(), None);
+    let result = import_aaoffline(dir.path(), dir.path(), None);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("No index.html found"));
 }
@@ -112,7 +112,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
     fs::write(assets_dir.join("icon.png"), "fake png data").unwrap();
     fs::write(assets_dir.join("bg.jpg"), "fake jpg data").unwrap();
 
-    let (manifest, _) = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap().manifest;
 
     assert_eq!(manifest.case_id, 99999);
     assert_eq!(manifest.title, "Import Test");
@@ -181,7 +181,7 @@ fn test_parse_real_aaoffline_download() {
 
     // Full import test into a temp dir
     let engine = tempfile::tempdir().unwrap();
-    let (manifest, _) = import_aaoffline(&source_dir, engine.path(), None).unwrap();
+    let manifest = import_aaoffline(&source_dir, engine.path(), None).unwrap().manifest;
     assert_eq!(manifest.case_id, 102059);
     assert!(manifest.assets.total_downloaded > 300, "Expected 300+ assets, got {}", manifest.assets.total_downloaded);
     assert!(manifest.assets.total_size_bytes > 10_000_000, "Expected 10MB+ of assets");
@@ -237,7 +237,7 @@ var initial_trial_data = {"frames":[0],"profiles":[0,{"icon":"assets/pioggia+car
     fs::write(assets_dir.join("file#with&special-456.mp3"), "audio data").unwrap();
     fs::write(assets_dir.join("normal-file-789.gif"), "gif data").unwrap();
 
-    let (manifest, _) = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap().manifest;
     let case_dir = engine.path().join("case/55555");
 
     // Sanitized files should exist (+ -> -, # -> -, & -> -)
@@ -590,4 +590,180 @@ fn test_export_import_collections_roundtrip() {
                 "{} case {} trial_data should exist after import", folder, id);
         }
     }
+}
+
+// --- Integration test: import then verify all assets exist on disk ---
+
+/// Walk a JSON value collecting all string values that look like server asset paths.
+fn collect_asset_paths(value: &serde_json::Value, paths: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(s) => {
+            if s.starts_with("case/") || s.starts_with("defaults/") {
+                paths.push(s.clone());
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr { collect_asset_paths(item, paths); }
+        }
+        serde_json::Value::Object(map) => {
+            for (_, v) in map { collect_asset_paths(v, paths); }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn test_import_aaoffline_all_trial_data_assets_exist_on_disk() {
+    let source = tempfile::tempdir().unwrap();
+    let engine = tempfile::tempdir().unwrap();
+
+    // Create an aaoffline source with multiple asset types in trial_data
+    let html = r#"<html>
+<script>
+var trial_information = {"author":"IntegrationTester","author_id":1,"can_read":true,"can_write":false,"format":"Def6","id":80001,"language":"en","last_edit_date":1000000,"sequence":null,"title":"Integration Test"};
+var initial_trial_data = {
+    "profiles":[0,{
+        "icon":"assets/icon-abc.png",
+        "short_name":"Hero",
+        "custom_sprites":[{"talking":"assets/sprite-def.gif","still":"","startup":""}]
+    }],
+    "music":[0,{"path":"assets/track-ghi.mp3","external":"1"}],
+    "sounds":[0,{"path":"assets/sfx-jkl.wav","external":"1"}],
+    "frames":[0],
+    "evidence":[0],
+    "places":[0],
+    "cross_examinations":[0]
+};
+</script>
+</html>"#;
+    fs::write(source.path().join("index.html"), html).unwrap();
+
+    // Create actual asset files
+    let assets_dir = source.path().join("assets");
+    fs::create_dir_all(&assets_dir).unwrap();
+    fs::write(assets_dir.join("icon-abc.png"), b"fake png data 1").unwrap();
+    fs::write(assets_dir.join("sprite-def.gif"), b"fake gif data 2").unwrap();
+    fs::write(assets_dir.join("track-ghi.mp3"), b"fake mp3 data 3").unwrap();
+    fs::write(assets_dir.join("sfx-jkl.wav"), b"fake wav data 4").unwrap();
+
+    // Import
+    let output = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    assert_eq!(output.manifest.case_id, 80001);
+    assert_eq!(output.manifest.assets.total_downloaded, 4);
+
+    // Read the imported trial_data.json
+    let case_dir = engine.path().join("case/80001");
+    let td_text = fs::read_to_string(case_dir.join("trial_data.json")).unwrap();
+    let td: serde_json::Value = serde_json::from_str(&td_text).unwrap();
+
+    // Collect all server paths from trial_data
+    let mut asset_paths = Vec::new();
+    collect_asset_paths(&td, &mut asset_paths);
+
+    assert!(!asset_paths.is_empty(), "trial_data should contain asset paths");
+
+    // Every path referenced in trial_data must exist on disk
+    for path in &asset_paths {
+        assert!(
+            engine.path().join(path).is_file(),
+            "Asset path '{}' from trial_data does not exist on disk at '{}'",
+            path,
+            engine.path().join(path).display()
+        );
+    }
+}
+
+#[test]
+fn test_import_aaoffline_deduped_assets_exist_on_disk() {
+    let source = tempfile::tempdir().unwrap();
+    let engine = tempfile::tempdir().unwrap();
+
+    // Pre-create an existing case with a matching asset (to trigger dedup)
+    let existing_content = b"shared audio content";
+    let existing_case_dir = engine.path().join("case/79999");
+    fs::create_dir_all(existing_case_dir.join("assets")).unwrap();
+    fs::write(existing_case_dir.join("assets/shared-sound.mp3"), existing_content).unwrap();
+
+    // Create a minimal manifest for the existing case
+    let manifest = crate::downloader::manifest::CaseManifest {
+        case_id: 79999,
+        title: "Existing".to_string(),
+        author: "Test".to_string(),
+        language: "en".to_string(),
+        download_date: "2025-01-01".to_string(),
+        format: "v6".to_string(),
+        sequence: None,
+        assets: crate::downloader::manifest::AssetSummary {
+            case_specific: 1, shared_defaults: 0, total_downloaded: 1, total_size_bytes: 20,
+        },
+        asset_map: {
+            let mut m = std::collections::HashMap::new();
+            m.insert("http://example.com/shared-sound.mp3".to_string(), "assets/shared-sound.mp3".to_string());
+            m
+        },
+        failed_assets: vec![],
+        has_plugins: false,
+        has_case_config: false,
+    };
+    crate::downloader::manifest::write_manifest(&manifest, &existing_case_dir).unwrap();
+    fs::write(existing_case_dir.join("trial_data.json"), r#"{"frames":[0],"profiles":[0,{"custom_sprites":[{"talking":"case/79999/assets/shared-sound.mp3","still":"","startup":""}]}]}"#).unwrap();
+
+    // Register existing case asset in dedup index, then drop to release write lock
+    {
+        let index = crate::downloader::dedup::DedupIndex::open(engine.path()).unwrap();
+        let hash = xxhash_rust::xxh3::xxh3_64(existing_content);
+        index.register("case/79999/assets/shared-sound.mp3", existing_content.len() as u64, hash).unwrap();
+    }
+
+    // Create aaoffline source with an asset that matches the existing one
+    let html = r#"<html>
+<script>
+var trial_information = {"author":"DedupTester","author_id":1,"can_read":true,"can_write":false,"format":"Def6","id":80002,"language":"en","last_edit_date":1000000,"sequence":null,"title":"Dedup Integration Test"};
+var initial_trial_data = {
+    "profiles":[0,{
+        "icon":"",
+        "short_name":"Hero",
+        "custom_sprites":[{"talking":"assets/shared-sound.mp3","still":"","startup":""}]
+    }],
+    "frames":[0],
+    "evidence":[0],
+    "places":[0],
+    "cross_examinations":[0]
+};
+</script>
+</html>"#;
+    fs::write(source.path().join("index.html"), html).unwrap();
+    let assets_dir = source.path().join("assets");
+    fs::create_dir_all(&assets_dir).unwrap();
+    fs::write(assets_dir.join("shared-sound.mp3"), existing_content).unwrap();
+
+    // Import — should trigger dedup (same content as existing case)
+    let output = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    assert_eq!(output.manifest.case_id, 80002);
+    assert!(output.dedup_saved_bytes > 0, "Should have deduped at least 1 file");
+
+    // Read trial_data and verify all referenced paths exist on disk
+    let case_dir = engine.path().join("case/80002");
+    let td_text = fs::read_to_string(case_dir.join("trial_data.json")).unwrap();
+    let td: serde_json::Value = serde_json::from_str(&td_text).unwrap();
+
+    let mut asset_paths = Vec::new();
+    collect_asset_paths(&td, &mut asset_paths);
+
+    for path in &asset_paths {
+        assert!(
+            engine.path().join(path).is_file(),
+            "Deduped asset path '{}' from trial_data does not exist on disk at '{}'",
+            path,
+            engine.path().join(path).display()
+        );
+    }
+
+    // The deduped asset should point to defaults/shared/, not case/80002/assets/
+    let manifest = crate::downloader::manifest::read_manifest(&case_dir).unwrap();
+    let shared_path = &manifest.asset_map["assets/shared-sound.mp3"];
+    assert!(
+        shared_path.starts_with("defaults/shared/"),
+        "Deduped asset should point to defaults/shared/, got: {}", shared_path
+    );
 }

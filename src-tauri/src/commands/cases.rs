@@ -64,7 +64,7 @@ pub fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<()
 
     // Remove case entries from the persistent hash index before deleting files
     if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
-        let _ = index.unregister_prefix(&format!("case/{}/", case_id));
+        let _ = index.unregister_prefix(&downloader::asset_paths::case_prefix(case_id));
     }
 
     fs::remove_dir_all(&case_dir)

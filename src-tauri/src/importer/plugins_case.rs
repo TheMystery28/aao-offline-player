@@ -17,7 +17,7 @@ use super::shared::read_zip_text;
 /// assets/              Pre-bundled assets (flat folder)
 /// case_config.json     Optional config overrides
 /// ```
-pub fn import_aaoplug(
+pub async fn import_aaoplug(
     zip_path: &Path,
     target_case_ids: &[u32],
     engine_dir: &Path,
@@ -79,7 +79,7 @@ pub fn import_aaoplug(
                 let assets_dir = plugins_dir.join("assets");
                 fs::create_dir_all(&assets_dir).ok();
 
-                let client = reqwest::blocking::Client::builder()
+                let client = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(30))
                     .build()
                     .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
@@ -94,10 +94,10 @@ pub fn import_aaoplug(
                         fs::create_dir_all(parent).ok();
                     }
 
-                    match client.get(url).send() {
+                    match client.get(url).send().await {
                         Ok(resp) => {
                             if resp.status().is_success() {
-                                if let Ok(bytes) = resp.bytes() {
+                                if let Ok(bytes) = resp.bytes().await {
                                     let _ = fs::write(&dest, &bytes);
                                     eprintln!("[IMPORT_PLUGIN] Downloaded external asset: {} → {}", url, dest.display());
                                 }

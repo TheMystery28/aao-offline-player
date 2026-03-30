@@ -5,10 +5,65 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::downloader::manifest::{CaseManifest, read_manifest, write_manifest};
+use crate::downloader::dedup::DedupIndex;
 
 // Cross-module calls (merge_plugin_param_overrides, etc.)
 use super::*;
-use super::shared::{ImportedCaseInfo, ImportResult, read_zip_text};
+use super::shared::{ImportResult, read_zip_text};
+
+/// Result of writing + dedup-checking a single ZIP entry.
+enum ExtractResult {
+    /// File written to disk and registered in index.
+    Written,
+    /// File was a duplicate — deleted from disk, returns (index_key, existing_path, size).
+    Deduped { index_key: String, existing_path: String, size: u64 },
+    /// Skipped (JSON metadata or directory).
+    Skipped,
+}
+
+/// Write a ZIP entry to disk, then check the dedup index.
+/// If a duplicate exists, delete the just-written file and return Deduped.
+/// If new, register in index and return Written.
+/// JSON files and directories return Skipped.
+fn extract_and_dedup(
+    dest_path: &std::path::Path,
+    entry_name: &str,
+    index_key: &str,
+    dedup_index: Option<&DedupIndex>,
+    engine_dir: &std::path::Path,
+) -> ExtractResult {
+    if entry_name.ends_with(".json") {
+        return ExtractResult::Skipped;
+    }
+    // Reject VFS pointer files from ZIP imports (defensive — shouldn't happen with fixed exporter)
+    if let Some(target) = crate::downloader::vfs::read_vfs_pointer(dest_path) {
+        eprintln!(
+            "[IMPORT WARN] Rejected VFS pointer in ZIP: {} -> {}. Asset may be missing.",
+            dest_path.display(), target
+        );
+        let _ = fs::remove_file(dest_path);
+        return ExtractResult::Skipped;
+    }
+    if let Some(idx) = dedup_index {
+        if let Ok(hash) = crate::downloader::dedup::hash_file(dest_path) {
+            let size = dest_path.metadata().map(|m| m.len()).unwrap_or(0);
+            if let Some(existing) = crate::downloader::dedup::check_and_promote(
+                engine_dir, hash, idx, None,
+            ) {
+                if existing != index_key {
+                    let _ = fs::remove_file(dest_path);
+                    return ExtractResult::Deduped {
+                        index_key: index_key.to_string(),
+                        existing_path: existing,
+                        size,
+                    };
+                }
+            }
+            let _ = idx.register(index_key, size, hash);
+        }
+    }
+    ExtractResult::Written
+}
 
 /// Import a case from a .aaocase ZIP file.
 ///
@@ -47,22 +102,24 @@ pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, on_progress: Optio
 
     // Check for collection format: presence of collection.json
     if let Ok(coll_json) = read_zip_text(&mut archive, "collection.json") {
-        let ((manifest, collection), dedup_bytes) = import_collection_zip(&mut archive, &coll_json, engine_dir, on_progress)?;
+        let output = import_collection_zip(&mut archive, &coll_json, engine_dir, on_progress)?;
 
         // Create the collection in the collections store
-        let mut coll_data = crate::collections::load_collections(engine_dir);
-        coll_data.collections.push(collection);
-        crate::collections::save_collections(engine_dir, &coll_data)?;
+        if let Some(collection) = output.collection {
+            let mut coll_data = crate::collections::load_collections(engine_dir);
+            coll_data.collections.push(collection);
+            crate::collections::save_collections(engine_dir, &coll_data)?;
+        }
 
-        let missing_defaults = manifest.asset_map.values()
+        let missing_defaults = output.manifest.asset_map.values()
             .filter(|p| p.starts_with("defaults/") && !engine_dir.join(p).is_file())
             .count();
 
-        return Ok(ImportResult { manifest, saves, missing_defaults, batch_manifests: Vec::new(), batch_errors: Vec::new(), dedup_saved_bytes: dedup_bytes });
+        return Ok(ImportResult { manifest: output.manifest, saves, missing_defaults, batch_manifests: Vec::new(), batch_errors: Vec::new(), dedup_saved_bytes: output.dedup_saved_bytes });
     }
 
     // Check for multi-case format: presence of sequence.json
-    let (manifest, dedup_bytes) = if let Ok(seq_json) = read_zip_text(&mut archive, "sequence.json") {
+    let output = if let Ok(seq_json) = read_zip_text(&mut archive, "sequence.json") {
         import_multi_case_zip(&mut archive, &seq_json, engine_dir, on_progress)?
     } else {
         // Single-case format (legacy)
@@ -70,11 +127,11 @@ pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, on_progress: Optio
     };
 
     // Count missing defaults from manifest's asset_map.
-    let missing_defaults = manifest.asset_map.values()
+    let missing_defaults = output.manifest.asset_map.values()
         .filter(|p| p.starts_with("defaults/") && !engine_dir.join(p).is_file())
         .count();
 
-    Ok(ImportResult { manifest, saves, missing_defaults, batch_manifests: Vec::new(), batch_errors: Vec::new(), dedup_saved_bytes: dedup_bytes })
+    Ok(ImportResult { manifest: output.manifest, saves, missing_defaults, batch_manifests: Vec::new(), batch_errors: Vec::new(), dedup_saved_bytes: output.dedup_saved_bytes })
 }
 
 /// Import all cases from a multi-case ZIP with sequence.json.
@@ -84,7 +141,7 @@ fn import_multi_case_zip(
     seq_json: &str,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<(CaseManifest, u64), String> {
+) -> Result<super::shared::ImportOutput, String> {
     let seq_value: Value = serde_json::from_str(seq_json)
         .map_err(|e| format!("Failed to parse sequence.json: {}", e))?;
 
@@ -159,29 +216,18 @@ fn import_multi_case_zip(
                 .map_err(|e| format!("Failed to write {}: {}", entry_name, e))?;
             drop(outfile);
 
-            // Inline dedup for non-JSON files
             let index_key = crate::downloader::paths::normalize_path(
-                &format!("case/{}/{}", case_id, relative)
+                &crate::downloader::asset_paths::case_relative(case_id, relative)
             );
-            if !relative.ends_with(".json") {
-                if let Some(ref idx) = dedup_index {
-                    if let Ok(hash) = crate::downloader::dedup::hash_file(&dest_path) {
-                        let size = dest_path.metadata().map(|m| m.len()).unwrap_or(0);
-                        if let Some(existing) = crate::downloader::dedup::check_and_promote(
-                            engine_dir, hash, idx, None,
-                        ) {
-                            if existing != index_key {
-                                dedup_saved_bytes += size;
-                                let _ = fs::remove_file(&dest_path);
-                                deduped_assets.push((case_id, index_key, existing));
-                                progress_count += 1;
-                                if let Some(cb) = &on_progress { cb(progress_count, total_entries); }
-                                continue;
-                            }
-                        }
-                        let _ = idx.register(&index_key, size, hash);
-                    }
+            match extract_and_dedup(&dest_path, relative, &index_key, dedup_index.as_ref(), engine_dir) {
+                ExtractResult::Deduped { index_key, existing_path, size } => {
+                    dedup_saved_bytes += size;
+                    deduped_assets.push((case_id, index_key, existing_path));
+                    progress_count += 1;
+                    if let Some(cb) = &on_progress { cb(progress_count, total_entries); }
+                    continue;
                 }
+                _ => {}
             }
 
             progress_count += 1;
@@ -249,7 +295,7 @@ fn import_multi_case_zip(
         let case_dir = engine_dir.join("case").join(case_id.to_string());
         if let Ok(mut manifest) = read_manifest(&case_dir) {
             for (_, old_key, new_path) in &case_deduped {
-                let old_local = old_key.strip_prefix(&format!("case/{}/", case_id))
+                let old_local = old_key.strip_prefix(&crate::downloader::asset_paths::case_prefix(case_id))
                     .unwrap_or(old_key);
                 let urls: Vec<String> = manifest.asset_map.iter()
                     .filter(|(_, v)| v.as_str() == old_local)
@@ -266,9 +312,9 @@ fn import_multi_case_zip(
                 if let Ok(text) = fs::read_to_string(&td_path) {
                     if let Ok(mut td) = serde_json::from_str::<Value>(&text) {
                         for (cid, old_key, new_path) in &case_deduped {
-                            let old_local = old_key.strip_prefix(&format!("case/{}/", cid))
+                            let old_local = old_key.strip_prefix(&crate::downloader::asset_paths::case_prefix(*cid))
                                 .unwrap_or(old_key);
-                            let old_server = format!("case/{}/{}", cid, old_local);
+                            let old_server = crate::downloader::asset_paths::case_relative(*cid, old_local);
                             crate::downloader::dedup::rewrite_value_recursive(&mut td, &old_server, new_path);
                         }
                         if let Ok(json) = serde_json::to_string_pretty(&td) {
@@ -288,7 +334,7 @@ fn import_multi_case_zip(
     }
 
     let manifest = first_manifest.ok_or_else(|| "No cases were imported from the multi-case ZIP".to_string())?;
-    Ok((manifest, dedup_saved_bytes))
+    Ok(super::shared::ImportOutput { manifest, collection: None, dedup_saved_bytes })
 }
 
 /// Import all cases from a collection ZIP with collection.json.
@@ -298,7 +344,7 @@ fn import_collection_zip(
     coll_json: &str,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<((CaseManifest, crate::collections::Collection), u64), String> {
+) -> Result<super::shared::ImportOutput, String> {
     let coll_value: Value = serde_json::from_str(coll_json)
         .map_err(|e| format!("Failed to parse collection.json: {}", e))?;
 
@@ -390,27 +436,17 @@ fn import_collection_zip(
             drop(outfile);
 
             let index_key = crate::downloader::paths::normalize_path(
-                &format!("case/{}/{}", case_id, relative)
+                &crate::downloader::asset_paths::case_relative(case_id, relative)
             );
-            if !relative.ends_with(".json") {
-                if let Some(ref idx) = dedup_index {
-                    if let Ok(hash) = crate::downloader::dedup::hash_file(&dest_path) {
-                        let size = dest_path.metadata().map(|m| m.len()).unwrap_or(0);
-                        if let Some(existing) = crate::downloader::dedup::check_and_promote(
-                            engine_dir, hash, idx, None,
-                        ) {
-                            if existing != index_key {
-                                dedup_saved_bytes += size;
-                                let _ = fs::remove_file(&dest_path);
-                                deduped_assets.push((case_id, index_key, existing));
-                                progress_count += 1;
-                                if let Some(cb) = &on_progress { cb(progress_count, total_entries); }
-                                continue;
-                            }
-                        }
-                        let _ = idx.register(&index_key, size, hash);
-                    }
+            match extract_and_dedup(&dest_path, relative, &index_key, dedup_index.as_ref(), engine_dir) {
+                ExtractResult::Deduped { index_key, existing_path, size } => {
+                    dedup_saved_bytes += size;
+                    deduped_assets.push((case_id, index_key, existing_path));
+                    progress_count += 1;
+                    if let Some(cb) = &on_progress { cb(progress_count, total_entries); }
+                    continue;
                 }
+                _ => {}
             }
 
             progress_count += 1;
@@ -481,7 +517,7 @@ fn import_collection_zip(
         let case_dir = engine_dir.join("case").join(case_id.to_string());
         if let Ok(mut manifest) = read_manifest(&case_dir) {
             for (_, old_key, new_path) in &case_deduped {
-                let old_local = old_key.strip_prefix(&format!("case/{}/", case_id))
+                let old_local = old_key.strip_prefix(&crate::downloader::asset_paths::case_prefix(case_id))
                     .unwrap_or(old_key);
                 let urls: Vec<String> = manifest.asset_map.iter()
                     .filter(|(_, v)| v.as_str() == old_local)
@@ -498,9 +534,9 @@ fn import_collection_zip(
                 if let Ok(text) = fs::read_to_string(&td_path) {
                     if let Ok(mut td) = serde_json::from_str::<Value>(&text) {
                         for (cid, old_key, new_path) in &case_deduped {
-                            let old_local = old_key.strip_prefix(&format!("case/{}/", cid))
+                            let old_local = old_key.strip_prefix(&crate::downloader::asset_paths::case_prefix(*cid))
                                 .unwrap_or(old_key);
-                            let old_server = format!("case/{}/{}", cid, old_local);
+                            let old_server = crate::downloader::asset_paths::case_relative(*cid, old_local);
                             crate::downloader::dedup::rewrite_value_recursive(&mut td, &old_server, new_path);
                         }
                         if let Ok(json) = serde_json::to_string_pretty(&td) {
@@ -529,7 +565,7 @@ fn import_collection_zip(
         created_date: crate::collections::now_iso8601(),
     };
 
-    Ok(((manifest, collection), dedup_saved_bytes))
+    Ok(super::shared::ImportOutput { manifest, collection: Some(collection), dedup_saved_bytes })
 }
 
 
@@ -538,7 +574,7 @@ fn import_single_case_zip(
     archive: &mut zip::ZipArchive<fs::File>,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<(CaseManifest, u64), String> {
+) -> Result<super::shared::ImportOutput, String> {
     // 1. Read manifest.json from ZIP to get case_id
     let manifest_json = read_zip_text(archive, "manifest.json")?;
     let zip_manifest: CaseManifest = serde_json::from_str(&manifest_json)
@@ -599,30 +635,19 @@ fn import_single_case_zip(
             .map_err(|e| format!("Failed to write {}: {}", entry_name, e))?;
         drop(outfile);
 
-        // Inline dedup: hash the just-written file and check the index
         let index_key = if is_default {
             crate::downloader::paths::normalize_path(&entry_name)
         } else {
-            crate::downloader::paths::normalize_path(&format!("case/{}/{}", case_id, entry_name))
+            crate::downloader::paths::normalize_path(&crate::downloader::asset_paths::case_relative(case_id, &entry_name))
         };
-        if !entry_name.ends_with(".json") {
-            if let Some(ref idx) = dedup_index {
-                if let Ok(hash) = crate::downloader::dedup::hash_file(&dest_path) {
-                    let size = dest_path.metadata().map(|m| m.len()).unwrap_or(0);
-                    if let Some(existing) = crate::downloader::dedup::check_and_promote(
-                        engine_dir, hash, idx, None,
-                    ) {
-                        if existing != index_key {
-                            dedup_saved_bytes += size;
-                            let _ = fs::remove_file(&dest_path);
-                            deduped_assets.push((index_key, existing));
-                            if let Some(cb) = &on_progress { cb(i + 1, total); }
-                            continue;
-                        }
-                    }
-                    let _ = idx.register(&index_key, size, hash);
-                }
+        match extract_and_dedup(&dest_path, &entry_name, &index_key, dedup_index.as_ref(), engine_dir) {
+            ExtractResult::Deduped { index_key, existing_path, size } => {
+                dedup_saved_bytes += size;
+                deduped_assets.push((index_key, existing_path));
+                if let Some(cb) = &on_progress { cb(i + 1, total); }
+                continue;
             }
+            _ => {}
         }
 
         if let Some(cb) = &on_progress { cb(i + 1, total); }
@@ -658,7 +683,7 @@ fn import_single_case_zip(
     // Rewrite manifest and trial_data for any assets deduped during extraction
     if !deduped_assets.is_empty() {
         for (old_key, new_path) in &deduped_assets {
-            let old_local = old_key.strip_prefix(&format!("case/{}/", case_id))
+            let old_local = old_key.strip_prefix(&crate::downloader::asset_paths::case_prefix(case_id))
                 .unwrap_or(old_key);
             let urls: Vec<String> = manifest.asset_map.iter()
                 .filter(|(_, v)| v.as_str() == old_local)
@@ -675,9 +700,9 @@ fn import_single_case_zip(
             if let Ok(text) = fs::read_to_string(&td_path) {
                 if let Ok(mut td) = serde_json::from_str::<Value>(&text) {
                     for (old_key, new_path) in &deduped_assets {
-                        let old_local = old_key.strip_prefix(&format!("case/{}/", case_id))
+                        let old_local = old_key.strip_prefix(&crate::downloader::asset_paths::case_prefix(case_id))
                             .unwrap_or(old_key);
-                        let old_server = format!("case/{}/{}", case_id, old_local);
+                        let old_server = crate::downloader::asset_paths::case_relative(case_id, old_local);
                         crate::downloader::dedup::rewrite_value_recursive(&mut td, &old_server, new_path);
                     }
                     if let Ok(json) = serde_json::to_string_pretty(&td) {
@@ -688,5 +713,5 @@ fn import_single_case_zip(
         }
     }
 
-    Ok((manifest, dedup_saved_bytes))
+    Ok(super::shared::ImportOutput { manifest, collection: None, dedup_saved_bytes })
 }

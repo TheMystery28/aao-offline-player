@@ -3,9 +3,7 @@ import { parseCaseId, formatBytes, formatDuration, escapeHtml, showConfirmModal,
 /**
  * Initialise the Download section UI and event listeners.
  *
- * @param {object} ctx - Context bag from the main closure:
- *   invoke, Channel, statusMsg, loadLibrary,
- *   getKnownCaseIds (getter function returning array)
+ * @param {AppContext} ctx - Context bag from the main closure
  */
 export function initDownload(ctx) {
   var invoke = ctx.invoke;

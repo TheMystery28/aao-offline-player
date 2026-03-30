@@ -2,7 +2,7 @@ use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
 
-use super::{CaseInfo, SitePaths, AAONLINE_BASE};
+use super::{CaseInfo, DownloaderError, SitePaths, AAONLINE_BASE};
 
 /// Quick check if aaonline.fr is reachable (HEAD with short timeout).
 pub async fn is_aaonline_reachable(client: &Client) -> bool {
@@ -88,21 +88,20 @@ fn extract_json_parse_arg(text: &str, var_name: &str) -> Option<String> {
 
 /// Parse bridge.js.php response text into SitePaths.
 /// Extracted for testability — the HTTP fetch is separate.
-pub(crate) fn parse_bridge_js_response(text: &str) -> Result<SitePaths, String> {
+pub(crate) fn parse_bridge_js_response(text: &str) -> Result<SitePaths, DownloaderError> {
     let re = Regex::new(r"(?s)var cfg = (\{.+?\});")
-        .map_err(|e| format!("Regex error: {}", e))?;
+        .map_err(|e| DownloaderError::Other(format!("Regex error: {}", e)))?;
 
     let captures = re
         .captures(text)
-        .ok_or("Could not find cfg variable in bridge.js.php")?;
+        .ok_or_else(|| DownloaderError::Other("Could not find cfg variable in bridge.js.php".to_string()))?;
 
     let cfg_json = captures
         .get(1)
-        .ok_or("Could not extract cfg JSON")?
+        .ok_or_else(|| DownloaderError::Other("Could not extract cfg JSON".to_string()))?
         .as_str();
 
-    let cfg: Value = serde_json::from_str(cfg_json)
-        .map_err(|e| format!("Failed to parse cfg JSON: {}", e))?;
+    let cfg: Value = serde_json::from_str(cfg_json)?;
 
     Ok(SitePaths {
         picture_dir: cfg["picture_dir"].as_str().unwrap_or("").to_string(),
@@ -157,17 +156,16 @@ pub async fn fetch_site_paths(client: &Client) -> Result<SitePaths, String> {
         .await
         .map_err(|e| format!("Failed to read bridge.js.php response: {}", e))?;
 
-    parse_bridge_js_response(&text)
+    Ok(parse_bridge_js_response(&text)?)
 }
 
 /// Parse trial.js.php response text into (CaseInfo, trial_data, raw_info_json, raw_data_json).
 /// Extracted for testability — the HTTP fetch is separate.
-pub(crate) fn parse_trial_js_response(text: &str, fallback_id: u32) -> Result<(CaseInfo, Value, String, String), String> {
+pub(crate) fn parse_trial_js_response(text: &str, fallback_id: u32) -> Result<(CaseInfo, Value, String, String), DownloaderError> {
     let info_json = extract_json_parse_arg(text, "trial_information")
-        .ok_or("Could not find trial_information in response")?;
+        .ok_or_else(|| DownloaderError::Other("Could not find trial_information in response".to_string()))?;
 
-    let info_value: Value = serde_json::from_str(&info_json)
-        .map_err(|e| format!("Failed to parse trial_information: {}", e))?;
+    let info_value: Value = serde_json::from_str(&info_json)?;
 
     let case_info = CaseInfo {
         id: info_value["id"].as_u64().unwrap_or(fallback_id as u64) as u32,
@@ -192,10 +190,9 @@ pub(crate) fn parse_trial_js_response(text: &str, fallback_id: u32) -> Result<(C
     };
 
     let data_json = extract_json_parse_arg(text, "initial_trial_data")
-        .ok_or("Could not find initial_trial_data in response")?;
+        .ok_or_else(|| DownloaderError::Other("Could not find initial_trial_data in response".to_string()))?;
 
-    let trial_data: Value = serde_json::from_str(&data_json)
-        .map_err(|e| format!("Failed to parse initial_trial_data: {}", e))?;
+    let trial_data: Value = serde_json::from_str(&data_json)?;
 
     Ok((case_info, trial_data, info_json, data_json))
 }
@@ -216,7 +213,7 @@ pub async fn fetch_case(
         .await
         .map_err(|e| format!("Failed to read trial.js.php response: {}", e))?;
 
-    parse_trial_js_response(&text, case_id)
+    Ok(parse_trial_js_response(&text, case_id)?)
 }
 
 #[cfg(test)]
@@ -243,7 +240,7 @@ var cfg = {"picture_dir":"Ressources/Images/","icon_subdir":"persos/","talking_s
     fn test_parse_bridge_js_malformed() {
         let result = parse_bridge_js_response("this is not valid JS");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Could not find cfg"));
+        assert!(result.unwrap_err().to_string().contains("Could not find cfg"));
     }
 
     #[test]
@@ -267,7 +264,7 @@ var initial_trial_data = JSON.parse("{\"profiles\":[0],\"frames\":[0],\"evidence
     fn test_parse_trial_js_malformed() {
         let result = parse_trial_js_response("garbage text no JSON here", 0);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Could not find trial_information"));
+        assert!(result.unwrap_err().to_string().contains("Could not find trial_information"));
     }
 
     #[test]
