@@ -6,6 +6,20 @@ use serde_json::Value;
 
 use super::shared::ImportedCaseInfo;
 
+/// Check if a destination asset file truly exists — follows VFS pointers.
+/// Returns true if the file is a real asset or a VFS pointer with a valid target.
+fn dest_asset_exists(dest: &Path, engine_dir: &Path) -> bool {
+    if !dest.exists() {
+        return false;
+    }
+    match crate::downloader::vfs::read_vfs_pointer(dest) {
+        Some(_) => {
+            let resolved = crate::downloader::vfs::resolve_path(dest, engine_dir, engine_dir);
+            resolved.is_file() && resolved != dest
+        }
+        None => true,
+    }
+}
 
 /// A single default sprite mapping extracted from the aaoffline `getDefaultSpriteUrl` override.
 pub(super) struct DefaultSpriteMapping {
@@ -61,7 +75,7 @@ pub(super) fn copy_default_sprites(
         let dest_dir = engine_dir.join("defaults").join("images").join(subdir).join(&m.base);
         let dest_file = dest_dir.join(format!("{}.gif", m.sprite_id));
 
-        if dest_file.exists() {
+        if dest_asset_exists(&dest_file, engine_dir) {
             continue;
         }
 
@@ -108,7 +122,7 @@ pub(super) fn copy_default_sprites_from_multiple_dirs(
         let dest_dir = engine_dir.join("defaults").join("images").join(subdir).join(&m.base);
         let dest_file = dest_dir.join(format!("{}.gif", m.sprite_id));
 
-        if dest_file.exists() {
+        if dest_asset_exists(&dest_file, engine_dir) {
             continue;
         }
 
@@ -172,7 +186,7 @@ pub(super) fn copy_voice_assets(mappings: &[VoiceMapping], source_dir: &Path, en
 
     for m in mappings {
         let dest_file = dest_dir.join(format!("voice_singleblip_{}.{}", m.voice_id, m.ext));
-        if dest_file.exists() { continue; }
+        if dest_asset_exists(&dest_file, engine_dir) { continue; }
 
         let src_file = source_dir.join(&m.asset_path);
         if !src_file.exists() { continue; }
@@ -254,7 +268,7 @@ pub(super) fn copy_place_assets(mappings: &[PlaceAssetMapping], source_dir: &Pat
 
     for m in mappings {
         let dest_file = engine_dir.join(&m.dest_path);
-        if dest_file.exists() { continue; }
+        if dest_asset_exists(&dest_file, engine_dir) { continue; }
 
         let src_file = source_dir.join(&m.asset_path);
         if !src_file.exists() { continue; }

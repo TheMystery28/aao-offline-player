@@ -1,9 +1,10 @@
 use std::fs;
 use std::path::Path;
 
-use redb::{Database, MultimapTableDefinition, TableDefinition};
+use redb::{Database, MultimapTableDefinition, ReadableDatabase, TableDefinition};
 
 use super::helpers::{hash_file, normalize_ext};
+use crate::downloader::DownloaderError;
 use crate::downloader::paths::normalize_path;
 
 /// Primary index: relative_path → (file_size, xxh3_hash)
@@ -62,36 +63,49 @@ impl DedupIndex {
         Ok(())
     }
 
+    /// Register multiple files in the index in a single transaction.
+    /// More efficient than calling register() per file.
+    pub fn register_batch(&self, entries: &[(&str, u64, u64)]) -> Result<(), DownloaderError> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let txn = self.db.begin_write()?;
+        {
+            let mut hash_table = txn.open_table(HASH_BY_PATH)?;
+            let mut lookup_table = txn.open_multimap_table(PATHS_BY_HASH)?;
+            for &(path, size, hash) in entries {
+                let normalized = normalize_path(path);
+                let hash_key = format!("{}", hash);
+                hash_table.insert(&*normalized, (size, hash))?;
+                lookup_table.insert(&*hash_key, &*normalized)?;
+            }
+        }
+        txn.commit()?;
+        Ok(())
+    }
+
     /// Remove a file from the index.
     /// Reads old entry to get hash for the secondary key, then removes from both tables.
-    pub fn unregister(&self, relative_path: &str) -> Result<(), String> {
+    pub fn unregister(&self, relative_path: &str) -> Result<(), DownloaderError> {
         let relative_path = normalize_path(relative_path);
         let old_entry = {
-            let txn = self.db.begin_read()
-                .map_err(|e| format!("Failed to begin read: {}", e))?;
+            let txn = self.db.begin_read()?;
             match txn.open_table(HASH_BY_PATH) {
-                Ok(table) => table.get(&*relative_path)
-                    .map_err(|e| format!("Failed to read: {}", e))?
-                    .map(|v| v.value()),
+                Ok(table) => table.get(&*relative_path)?.map(|v| v.value()),
                 Err(_) => None,
             }
         };
 
         if let Some((_size, hash)) = old_entry {
             let hash_key = format!("{}", hash);
-
-            let txn = self.db.begin_write()
-                .map_err(|e| format!("Failed to begin write: {}", e))?;
+            let txn = self.db.begin_write()?;
             {
-                let mut hash_table = txn.open_table(HASH_BY_PATH)
-                    .map_err(|e| format!("Failed to open hash table: {}", e))?;
+                let mut hash_table = txn.open_table(HASH_BY_PATH)?;
                 let _ = hash_table.remove(&*relative_path);
-
-                let mut lookup_table = txn.open_multimap_table(PATHS_BY_HASH)
-                    .map_err(|e| format!("Failed to open lookup table: {}", e))?;
+                let mut lookup_table = txn.open_multimap_table(PATHS_BY_HASH)?;
                 let _ = lookup_table.remove(&*hash_key, &*relative_path);
             }
-            txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
+            txn.commit()?;
         }
         Ok(())
     }
@@ -126,22 +140,29 @@ impl DedupIndex {
     /// Scan a directory and register all files not already in the db.
     /// Used on first run or when the index is out of date.
     /// Returns the count of newly registered files.
-    pub fn scan_and_register(&self, data_dir: &Path, prefix: &str) -> Result<usize, String> {
+    pub fn scan_and_register(&self, data_dir: &Path, prefix: &str) -> Result<usize, DownloaderError> {
         let dir = data_dir.join(prefix);
         if !dir.is_dir() {
             return Ok(0);
         }
-        let mut count = 0;
-        Self::walk_and_register(&dir, data_dir, &self.db, &mut count)?;
+        let mut pending: Vec<(String, u64, u64)> = Vec::new();
+        Self::collect_unregistered(&dir, data_dir, &self.db, &mut pending)?;
+        let count = pending.len();
+        if !pending.is_empty() {
+            let refs: Vec<(&str, u64, u64)> = pending.iter()
+                .map(|(p, s, h)| (p.as_str(), *s, *h))
+                .collect();
+            self.register_batch(&refs)?;
+        }
         Ok(count)
     }
 
-    fn walk_and_register(
+    fn collect_unregistered(
         dir: &Path,
         base_dir: &Path,
         db: &Database,
-        count: &mut usize,
-    ) -> Result<(), String> {
+        pending: &mut Vec<(String, u64, u64)>,
+    ) -> Result<(), DownloaderError> {
         let read_dir = match fs::read_dir(dir) {
             Ok(rd) => rd,
             Err(_) => return Ok(()),
@@ -149,21 +170,17 @@ impl DedupIndex {
         for entry in read_dir.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                Self::walk_and_register(&path, base_dir, db, count)?;
+                Self::collect_unregistered(&path, base_dir, db, pending)?;
             } else if path.is_file() {
                 let relative = match path.strip_prefix(base_dir) {
                     Ok(r) => normalize_path(&r.to_string_lossy()),
                     Err(_) => continue,
                 };
 
-                // Check if already registered
                 let already_exists = {
-                    let txn = db.begin_read()
-                        .map_err(|e| format!("Failed to begin read: {}", e))?;
+                    let txn = db.begin_read()?;
                     match txn.open_table(HASH_BY_PATH) {
-                        Ok(table) => table.get(&*relative)
-                            .map_err(|e| format!("Failed to read: {}", e))?
-                            .is_some(),
+                        Ok(table) => table.get(&*relative)?.is_some(),
                         Err(_) => false,
                     }
                 };
@@ -172,31 +189,25 @@ impl DedupIndex {
                     continue;
                 }
 
-                let size = match path.metadata() {
-                    Ok(m) => m.len(),
-                    Err(_) => continue,
+                // If the file is a VFS pointer, hash the target (not the 50-byte pointer text)
+                let (actual_path, actual_size) = if let Some(target_rel) = crate::downloader::vfs::read_vfs_pointer(&path) {
+                    let target = base_dir.join(&target_rel);
+                    match target.metadata() {
+                        Ok(m) if m.len() > 0 => (target, m.len()),
+                        _ => continue, // Broken pointer — skip
+                    }
+                } else {
+                    let size = match path.metadata() {
+                        Ok(m) => m.len(),
+                        Err(_) => continue,
+                    };
+                    (path.clone(), size)
                 };
-                let hash = match hash_file(&path) {
+                let hash = match hash_file(&actual_path) {
                     Ok(h) => h,
                     Err(_) => continue,
                 };
-                let hash_key = format!("{}", hash);
-
-                let txn = db.begin_write()
-                    .map_err(|e| format!("Failed to begin write: {}", e))?;
-                {
-                    let mut hash_table = txn.open_table(HASH_BY_PATH)
-                        .map_err(|e| format!("Failed to open hash table: {}", e))?;
-                    hash_table.insert(&*relative, (size, hash))
-                        .map_err(|e| format!("Failed to insert: {}", e))?;
-
-                    let mut lookup_table = txn.open_multimap_table(PATHS_BY_HASH)
-                        .map_err(|e| format!("Failed to open lookup table: {}", e))?;
-                    lookup_table.insert(&*hash_key, &*relative)
-                        .map_err(|e| format!("Failed to insert lookup: {}", e))?;
-                }
-                txn.commit().map_err(|e| format!("Failed to commit: {}", e))?;
-                *count += 1;
+                pending.push((relative.to_string(), actual_size, hash));
             }
         }
         Ok(())
@@ -204,14 +215,13 @@ impl DedupIndex {
 
     /// Scan all case asset directories and register files not already indexed.
     /// Keys: `case/{id}/assets/{filename}`. Used for migrating pre-existing downloads.
-    pub fn scan_and_register_cases(&self, data_dir: &Path) -> Result<usize, String> {
+    pub fn scan_and_register_cases(&self, data_dir: &Path) -> Result<usize, DownloaderError> {
         let cases_dir = data_dir.join("case");
         if !cases_dir.is_dir() {
             return Ok(0);
         }
         let mut count = 0;
-        let entries = fs::read_dir(&cases_dir)
-            .map_err(|e| format!("Failed to read case directory: {}", e))?;
+        let entries = fs::read_dir(&cases_dir)?;
         for entry in entries.flatten() {
             let case_dir = entry.path();
             if !case_dir.is_dir() {
@@ -241,16 +251,12 @@ impl DedupIndex {
                     Some(n) => n.to_string(),
                     None => continue,
                 };
-                let reg_key = format!("case/{}/assets/{}", case_id, filename);
+                let reg_key = crate::downloader::asset_paths::case_asset(case_id, &filename);
 
-                // Check if already registered
                 let already_exists = {
-                    let txn = self.db.begin_read()
-                        .map_err(|e| format!("Failed to begin read: {}", e))?;
+                    let txn = self.db.begin_read()?;
                     match txn.open_table(HASH_BY_PATH) {
-                        Ok(table) => table.get(&*reg_key)
-                            .map_err(|e| format!("Failed to read: {}", e))?
-                            .is_some(),
+                        Ok(table) => table.get(&*reg_key)?.is_some(),
                         Err(_) => false,
                     }
                 };
@@ -266,7 +272,9 @@ impl DedupIndex {
                     Ok(h) => h,
                     Err(_) => continue,
                 };
-                self.register(&reg_key, size, hash)?;
+                // register() returns String error — convert at boundary
+                self.register(&reg_key, size, hash)
+                    .map_err(|e| DownloaderError::Other(e))?;
                 count += 1;
             }
         }
@@ -322,9 +330,8 @@ impl DedupIndex {
 
     /// Query all case asset entries from the index.
     /// Returns `(case_id, filename, size, ext, hash)` for all `case/*/assets/*` entries.
-    pub fn query_case_assets(&self) -> Result<Vec<(u32, String, u64, String, u64)>, String> {
-        let txn = self.db.begin_read()
-            .map_err(|e| format!("Failed to begin read: {}", e))?;
+    pub fn query_case_assets(&self) -> Result<Vec<(u32, String, u64, String, u64)>, DownloaderError> {
+        let txn = self.db.begin_read()?;
         let table = match txn.open_table(HASH_BY_PATH) {
             Ok(t) => t,
             Err(_) => return Ok(Vec::new()),
