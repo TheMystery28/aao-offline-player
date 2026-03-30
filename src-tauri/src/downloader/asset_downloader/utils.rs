@@ -9,6 +9,16 @@ pub fn check_skip_existing(save_dir: &std::path::Path, relative_path: &str) -> O
     if file_path.exists() {
         let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
         if size > 0 {
+            // Reject imgur's "removed" placeholder — treat as if file doesn't exist
+            // so the downloader re-attempts (and fails properly via content hash check).
+            if size == 503 {
+                if let Ok(bytes) = std::fs::read(&file_path) {
+                    if xxhash_rust::xxh3::xxh3_64(&bytes) == 0x38da9bd2e10a4bc8 {
+                        let _ = std::fs::remove_file(&file_path); // Clean up the placeholder
+                        return None;
+                    }
+                }
+            }
             return Some(size);
         }
     }
