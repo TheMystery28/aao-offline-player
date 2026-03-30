@@ -20,10 +20,6 @@ use commands::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Install ring as the rustls crypto provider (required before any TLS connections).
-    // This avoids the rustls-platform-verifier panic on Android.
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
