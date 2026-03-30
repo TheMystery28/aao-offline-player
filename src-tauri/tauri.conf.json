@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "identifier": "fr.aaonline.offline-player",
   "build": {
-    "frontendDist": "../src"
+    "frontendDist": "../src",
+    "removeUnusedCommands": true
   },
   "app": {
     "withGlobalTauri": true,
@@ -22,7 +23,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["nsis", "deb", "rpm", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -33,11 +34,33 @@
     "resources": {
       "../engine/player.html": "engine/player.html",
       "../engine/localstorage_bridge.html": "engine/localstorage_bridge.html",
+      "../engine/localstorage_migrate.html": "engine/localstorage_migrate.html",
       "../engine/bridge.js": "engine/bridge.js",
       "../engine/Javascript/": "engine/Javascript/",
       "../engine/CSS/": "engine/CSS/",
       "../engine/Languages/": "engine/Languages/",
       "../engine/img/": "engine/img/"
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": [
+          "libgstreamer1.0-0",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "libwebkit2gtk-4.1-0"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "gstreamer1",
+          "gstreamer1-plugins-base",
+          "gstreamer1-plugins-good",
+          "webkit2gtk4.1"
+        ]
+      }
     },
     "windows": {
       "webviewInstallMode": {

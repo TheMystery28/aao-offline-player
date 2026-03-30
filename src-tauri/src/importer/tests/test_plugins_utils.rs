@@ -166,23 +166,6 @@ fn test_duplicate_whitespace_trimmed() {
 }
 
 #[test]
-fn test_set_scope_updates_manifest() {
-    let dir = tempfile::tempdir().unwrap();
-    let engine_dir = dir.path();
-    std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
-    std::fs::write(engine_dir.join("plugins/manifest.json"),
-        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false},"params":{}}}}"#).unwrap();
-
-    let new_scope = serde_json::json!({"all": true, "case_ids": [1,2,3]});
-    set_global_plugin_scope("a.js", &new_scope, engine_dir).unwrap();
-
-    let text = std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["plugins"]["a.js"]["scope"]["all"], true);
-    assert_eq!(val["plugins"]["a.js"]["scope"]["case_ids"].as_array().unwrap().len(), 3);
-}
-
-#[test]
 fn test_set_params_default() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();

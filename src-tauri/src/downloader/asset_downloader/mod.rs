@@ -3,12 +3,15 @@ mod log;
 mod url_encoding;
 mod utils;
 pub use download::download_assets;
-pub use utils::check_skip_existing;
-// Visible to submodules and tests
+// Used by test submodules via `use super::*`
+#[cfg(test)]
 use download::{download_single_asset, download_with_retry, PER_ASSET_TIMEOUT};
+#[cfg(test)]
 use log::DownloadLog;
+#[cfg(test)]
 use url_encoding::encode_url;
-use utils::generate_filename;
+#[cfg(test)]
+use utils::{check_skip_existing, generate_filename};
 
 use serde::Serialize;
 
@@ -36,6 +39,7 @@ pub enum DownloadEvent {
         dedup_saved_bytes: u64,
     },
     #[serde(rename = "error")]
+    #[allow(dead_code)] // Part of JS API contract — download.js handles "error" events
     Error { message: String },
     #[serde(rename = "sequence_progress")]
     SequenceProgress {

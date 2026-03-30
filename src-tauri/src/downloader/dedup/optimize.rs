@@ -56,7 +56,7 @@ pub fn optimize_all_cases(
         }
 
         // Determine shared path
-        let shared_relative = format!("defaults/shared/{:016x}.{}", hash, ext);
+        let shared_relative = crate::downloader::asset_paths::shared_asset_flat(*hash, ext);
         let shared_full = data_dir.join(&shared_relative);
 
         // Copy first available source to shared location (if not already there)
@@ -128,7 +128,7 @@ pub fn optimize_all_cases(
                 if let Ok(text) = fs::read_to_string(&trial_data_path) {
                     if let Ok(mut td) = serde_json::from_str::<Value>(&text) {
                         let old_server_path =
-                            format!("case/{}/{}", case_id, old_local_path);
+                            crate::downloader::asset_paths::case_relative(*case_id, &old_local_path);
                         rewrite_value_recursive(&mut td, &old_server_path, &shared_relative);
                         if let Ok(json) = serde_json::to_string_pretty(&td) {
                             let _ = fs::write(&trial_data_path, json);
@@ -140,7 +140,7 @@ pub fn optimize_all_cases(
             // Delete the case-specific copy
             if fs::remove_file(&asset_path).is_ok() {
                 // Unregister from the persistent index
-                let reg_key = format!("case/{}/assets/{}", case_id, filename);
+                let reg_key = crate::downloader::asset_paths::case_asset(*case_id, filename);
                 let _ = index.unregister(&reg_key);
                 total_deduped += 1;
                 group_deleted += 1;

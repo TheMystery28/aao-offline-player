@@ -3,9 +3,9 @@ mod defaults;
 mod extractors;
 mod rewriter;
 
+#[cfg(test)]
 use helpers::*;
 use extractors::*;
-pub use helpers::sanitize_path;
 pub use defaults::{extract_default_sprite_assets, extract_default_place_assets};
 pub use rewriter::rewrite_external_urls;
 

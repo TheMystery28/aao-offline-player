@@ -1,5 +1,4 @@
 use std::fs;
-use std::io;
 use std::path::Path;
 
 // Cross-module calls (remove_plugin, migrate_global_manifest, etc.)
@@ -120,20 +119,6 @@ pub fn check_plugin_duplicate(code: &str, data_dir: &Path) -> Vec<DuplicateMatch
     }
 
     matches
-}
-
-/// Set the scope for a global plugin in the manifest.
-pub fn set_global_plugin_scope(filename: &str, scope: &serde_json::Value, engine_dir: &Path) -> Result<(), String> {
-    migrate_global_manifest(engine_dir)?;
-    with_global_manifest(engine_dir, |val| {
-        let plugins = val.get_mut("plugins")
-            .and_then(|p| p.as_object_mut())
-            .ok_or_else(|| "No plugins config in manifest".to_string())?;
-        let entry = plugins.entry(filename.to_string())
-            .or_insert(serde_json::json!({ "scope": {}, "params": {} }));
-        entry.as_object_mut().unwrap().insert("scope".to_string(), scope.clone());
-        Ok(())
-    })
 }
 
 /// Set params for a global plugin at a specific level.

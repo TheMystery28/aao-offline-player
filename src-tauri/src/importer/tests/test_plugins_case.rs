@@ -1,7 +1,7 @@
 use super::*;
 
-#[test]
-fn test_import_aaoplug_extracts_to_case() {
+#[tokio::test]
+async fn test_import_aaoplug_extracts_to_case() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
 
@@ -49,7 +49,7 @@ fn test_import_aaoplug_extracts_to_case() {
     }
 
     // Import the plugin
-    let result = import_aaoplug(&plug_path, &[99999], engine_dir);
+    let result = import_aaoplug(&plug_path, &[99999], engine_dir).await;
     assert!(result.is_ok(), "import_aaoplug should succeed");
     let imported = result.unwrap();
     assert_eq!(imported, vec![99999]);
@@ -64,17 +64,17 @@ fn test_import_aaoplug_extracts_to_case() {
     assert!(updated_manifest.has_plugins);
 }
 
-#[test]
-fn test_import_aaoplug_invalid_zip() {
+#[tokio::test]
+async fn test_import_aaoplug_invalid_zip() {
     let dir = tempfile::tempdir().unwrap();
     let bad_path = dir.path().join("bad.aaoplug");
     std::fs::write(&bad_path, "not a zip").unwrap();
-    let result = import_aaoplug(&bad_path, &[1], dir.path());
+    let result = import_aaoplug(&bad_path, &[1], dir.path()).await;
     assert!(result.is_err());
 }
 
-#[test]
-fn test_import_aaoplug_nonexistent_case() {
+#[tokio::test]
+async fn test_import_aaoplug_nonexistent_case() {
     let dir = tempfile::tempdir().unwrap();
     let plug_path = dir.path().join("test.aaoplug");
     {
@@ -85,7 +85,7 @@ fn test_import_aaoplug_nonexistent_case() {
         std::io::Write::write_all(&mut zip, b"{}").unwrap();
         zip.finish().unwrap();
     }
-    let result = import_aaoplug(&plug_path, &[99998], dir.path());
+    let result = import_aaoplug(&plug_path, &[99998], dir.path()).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_empty(), "Should skip non-existent case");
 }
