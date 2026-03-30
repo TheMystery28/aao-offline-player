@@ -815,3 +815,207 @@ fn test_export_import_plugin_params_with_collection() {
         "by_collection override should be merged on import"
     );
 }
+
+// =====================================================================
+// VFS pointer export/import roundtrip tests
+// =====================================================================
+
+/// Export must include VFS pointer paths as real files (not pointer text).
+/// When dedup creates a VFS pointer (charsStill → chars), the manifest only
+/// records the target path. The export must scan for pointers and include both.
+#[test]
+fn test_export_includes_vfs_pointer_defaults() {
+    let engine1 = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let gif_data = b"GIF89a fake sprite data for Apollo 3";
+
+    // Create case with manifest referencing ONLY the talking sprite (dedup rewrote still → talking)
+    let case_dir = engine1.path().join("case/99001");
+    fs::create_dir_all(case_dir.join("assets")).unwrap();
+    let manifest = CaseManifest {
+        case_id: 99001,
+        title: "VFS Export Test".to_string(),
+        author: "Tester".to_string(),
+        language: "en".to_string(),
+        download_date: "2026-01-01".to_string(),
+        format: "Def6".to_string(),
+        sequence: None,
+        assets: AssetSummary { case_specific: 0, shared_defaults: 1, total_downloaded: 1, total_size_bytes: gif_data.len() as u64 },
+        asset_map: {
+            let mut m = HashMap::new();
+            // Manifest only has the talking path (dedup rewrote still entry to point here)
+            m.insert("https://aaonline.fr/persos/Apollo/3.gif".to_string(), "defaults/images/chars/Apollo/3.gif".to_string());
+            m
+        },
+        failed_assets: vec![],
+        has_plugins: false,
+        has_case_config: false,
+    };
+    write_manifest(&manifest, &case_dir).unwrap();
+    fs::write(case_dir.join("trial_info.json"), r#"{"id":99001}"#).unwrap();
+    fs::write(case_dir.join("trial_data.json"), r#"{"frames":[0],"profiles":[0],"evidence":[0],"places":[0]}"#).unwrap();
+
+    // Create the REAL talking sprite
+    let chars_dir = engine1.path().join("defaults/images/chars/Apollo");
+    fs::create_dir_all(&chars_dir).unwrap();
+    fs::write(chars_dir.join("3.gif"), gif_data).unwrap();
+
+    // Create a VFS pointer for the still sprite (this is what dedup does)
+    let still_dir = engine1.path().join("defaults/images/charsStill/Apollo");
+    fs::create_dir_all(&still_dir).unwrap();
+    crate::downloader::vfs::write_vfs_pointer(
+        &still_dir.join("3.gif"),
+        "defaults/images/chars/Apollo/3.gif",
+    ).unwrap();
+
+    // Export
+    let zip_path = tmp.path().join("vfs_test.aaocase");
+    export_aaocase(99001, engine1.path(), &zip_path, None, None, false).unwrap();
+
+    // Verify ZIP contains BOTH the talking and still sprites as real data
+    let file = fs::File::open(&zip_path).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
+
+    // Talking sprite (from manifest)
+    let talking_data = {
+        let mut entry = archive.by_name("defaults/images/chars/Apollo/3.gif").unwrap();
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut buf).unwrap();
+        buf
+    };
+    assert_eq!(talking_data, gif_data, "Talking sprite should be real GIF data");
+
+    // Still sprite (from VFS pointer scan)
+    let still_data = {
+        let mut entry = archive.by_name("defaults/images/charsStill/Apollo/3.gif").unwrap();
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut buf).unwrap();
+        buf
+    };
+    assert_eq!(still_data, gif_data, "Still sprite should be real GIF data, not VFS pointer text");
+    assert_eq!(talking_data, still_data, "Both sprites should have identical content");
+}
+
+/// Full roundtrip: export with VFS pointers → import into clean dir → both sprites exist.
+#[test]
+fn test_export_import_roundtrip_vfs_sprites() {
+    let engine1 = tempfile::tempdir().unwrap();
+    let engine2 = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let gif_data = b"GIF89a identical sprite for roundtrip test";
+
+    // Setup: case + real talking sprite + VFS pointer for still sprite
+    let case_dir = engine1.path().join("case/99002");
+    fs::create_dir_all(case_dir.join("assets")).unwrap();
+    let manifest = CaseManifest {
+        case_id: 99002,
+        title: "VFS Roundtrip".to_string(),
+        author: "Tester".to_string(),
+        language: "en".to_string(),
+        download_date: "2026-01-01".to_string(),
+        format: "Def6".to_string(),
+        sequence: None,
+        assets: AssetSummary { case_specific: 0, shared_defaults: 1, total_downloaded: 1, total_size_bytes: gif_data.len() as u64 },
+        asset_map: {
+            let mut m = HashMap::new();
+            m.insert("https://aaonline.fr/persos/Juge/3.gif".to_string(), "defaults/images/chars/Juge/3.gif".to_string());
+            m
+        },
+        failed_assets: vec![],
+        has_plugins: false,
+        has_case_config: false,
+    };
+    write_manifest(&manifest, &case_dir).unwrap();
+    fs::write(case_dir.join("trial_info.json"), r#"{"id":99002}"#).unwrap();
+    fs::write(case_dir.join("trial_data.json"), r#"{"frames":[0],"profiles":[0],"evidence":[0],"places":[0]}"#).unwrap();
+
+    // Real file + VFS pointer
+    let chars_dir = engine1.path().join("defaults/images/chars/Juge");
+    fs::create_dir_all(&chars_dir).unwrap();
+    fs::write(chars_dir.join("3.gif"), gif_data).unwrap();
+
+    let still_dir = engine1.path().join("defaults/images/charsStill/Juge");
+    fs::create_dir_all(&still_dir).unwrap();
+    crate::downloader::vfs::write_vfs_pointer(
+        &still_dir.join("3.gif"),
+        "defaults/images/chars/Juge/3.gif",
+    ).unwrap();
+
+    // Export → Import
+    let zip_path = tmp.path().join("roundtrip_vfs.aaocase");
+    export_aaocase(99002, engine1.path(), &zip_path, None, None, false).unwrap();
+    let result = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap();
+    assert_eq!(result.manifest.case_id, 99002);
+
+    // Both sprites should be resolvable after import.
+    // The import's dedup may create VFS pointers for identical content — that's fine,
+    // as long as resolve_path returns the real data for both paths.
+    let talking = engine2.path().join("defaults/images/chars/Juge/3.gif");
+    let still = engine2.path().join("defaults/images/charsStill/Juge/3.gif");
+    assert!(talking.is_file(), "Talking sprite must exist after import");
+    assert!(still.is_file(), "Still sprite must exist after import (as file or VFS pointer)");
+
+    // Both must resolve to real GIF data (resolve_path follows VFS pointers)
+    let talking_resolved = crate::downloader::vfs::resolve_path(&talking, engine2.path(), engine2.path());
+    let still_resolved = crate::downloader::vfs::resolve_path(&still, engine2.path(), engine2.path());
+    assert_eq!(fs::read(&talking_resolved).unwrap(), gif_data, "Talking must resolve to real GIF");
+    assert_eq!(fs::read(&still_resolved).unwrap(), gif_data, "Still must resolve to real GIF");
+}
+
+/// Export must resolve VFS pointers in case-specific assets (case/*/assets/).
+#[test]
+fn test_export_resolves_case_asset_vfs_pointers() {
+    let engine1 = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let real_data = b"the actual image content for deduped case asset";
+
+    // Create case with a VFS pointer in assets/
+    let case_dir = engine1.path().join("case/99003");
+    fs::create_dir_all(case_dir.join("assets")).unwrap();
+
+    // Real file at shared location
+    let shared_dir = engine1.path().join("defaults/shared/abcd");
+    fs::create_dir_all(&shared_dir).unwrap();
+    fs::write(shared_dir.join("abcd1234.gif"), real_data).unwrap();
+
+    // VFS pointer in case assets
+    crate::downloader::vfs::write_vfs_pointer(
+        &case_dir.join("assets/sprite.gif"),
+        "defaults/shared/abcd/abcd1234.gif",
+    ).unwrap();
+
+    let manifest = CaseManifest {
+        case_id: 99003,
+        title: "Case VFS Test".to_string(),
+        author: "Tester".to_string(),
+        language: "en".to_string(),
+        download_date: "2026-01-01".to_string(),
+        format: "Def6".to_string(),
+        sequence: None,
+        assets: AssetSummary { case_specific: 1, shared_defaults: 0, total_downloaded: 1, total_size_bytes: real_data.len() as u64 },
+        asset_map: {
+            let mut m = HashMap::new();
+            m.insert("http://example.com/sprite.gif".to_string(), "assets/sprite.gif".to_string());
+            m
+        },
+        failed_assets: vec![],
+        has_plugins: false,
+        has_case_config: false,
+    };
+    write_manifest(&manifest, &case_dir).unwrap();
+    fs::write(case_dir.join("trial_info.json"), r#"{"id":99003}"#).unwrap();
+    fs::write(case_dir.join("trial_data.json"), r#"{"frames":[0],"profiles":[0],"evidence":[0],"places":[0]}"#).unwrap();
+
+    // Export
+    let zip_path = tmp.path().join("case_vfs.aaocase");
+    export_aaocase(99003, engine1.path(), &zip_path, None, None, false).unwrap();
+
+    // Verify ZIP has real data, not pointer text
+    let file = fs::File::open(&zip_path).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
+    let mut entry = archive.by_name("assets/sprite.gif").unwrap();
+    let mut data = Vec::new();
+    std::io::Read::read_to_end(&mut entry, &mut data).unwrap();
+    assert_eq!(data, real_data, "Exported case asset should be real data, not VFS pointer text");
+    assert!(!String::from_utf8_lossy(&data).starts_with("AAO_VFS_ALIAS:"), "Must not be VFS pointer text");
+}

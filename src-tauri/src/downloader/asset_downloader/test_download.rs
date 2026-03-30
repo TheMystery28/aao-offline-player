@@ -3,6 +3,14 @@ use std::sync::Arc;
 use crate::downloader::AssetRef;
 use reqwest::Client;
 
+/// Ensure the rustls crypto provider is installed (once per process).
+fn init_tls() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 // --- DownloadEvent serialization regression tests ---
 // These ensure adding new variants doesn't break existing serialization.
 
@@ -203,6 +211,7 @@ use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path, path_regex};
 
 fn test_client() -> Client {
+    init_tls();
     Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())

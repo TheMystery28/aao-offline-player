@@ -51,7 +51,9 @@ fn extract_and_dedup(
                 engine_dir, hash, idx, None,
             ) {
                 if existing != index_key {
+                    // Write VFS pointer instead of deleting — server resolves it transparently
                     let _ = fs::remove_file(dest_path);
+                    let _ = crate::downloader::vfs::write_vfs_pointer(dest_path, &existing);
                     return ExtractResult::Deduped {
                         index_key: index_key.to_string(),
                         existing_path: existing,
