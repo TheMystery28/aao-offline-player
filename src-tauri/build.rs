@@ -59,6 +59,7 @@ fn generate_engine_embed() {
     println!("cargo:rerun-if-changed=../engine/player.html");
     println!("cargo:rerun-if-changed=../engine/bridge.js");
     println!("cargo:rerun-if-changed=../engine/localstorage_bridge.html");
+    println!("cargo:rerun-if-changed=../engine/localstorage_migrate.html");
     println!("cargo:rerun-if-changed=../engine/Javascript");
     println!("cargo:rerun-if-changed=../engine/CSS");
     println!("cargo:rerun-if-changed=../engine/Languages");

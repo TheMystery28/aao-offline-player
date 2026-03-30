@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html><head><title>Migration Bridge</title></head>
+<body><script>
+// One-time migration bridge: reads localStorage data from the old http://localhost origin
+// and posts it to the parent window (running under the new aao:// protocol origin).
+// This page is served by the legacy tiny_http server during the transition period.
+var migrationData = {
+  game_saves: null,
+  aao_engine_config: null
+};
+try {
+  migrationData.game_saves = localStorage.getItem("game_saves");
+  migrationData.aao_engine_config = localStorage.getItem("aao_engine_config");
+} catch (e) {
+  migrationData.error = e.message;
+}
+window.parent.postMessage({ type: "migration_data", data: migrationData }, "*");
+</script></body></html>

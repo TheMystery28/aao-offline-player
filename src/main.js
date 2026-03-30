@@ -1,3 +1,34 @@
+/**
+ * @typedef {Object} AppContext
+ * @property {function(string, Object=): Promise} invoke - Tauri invoke for calling Rust commands
+ * @property {new(): {onmessage: function}} Channel - Tauri Channel constructor for streaming events
+ * @property {HTMLElement} statusMsg - Status message element
+ * @property {HTMLElement} caseList - Case list container
+ * @property {HTMLElement} emptyLibrary - Empty library placeholder
+ * @property {HTMLElement} libraryLoading - Library loading indicator
+ * @property {Set<number>} knownCaseIds - Currently loaded case IDs
+ * @property {function(): Promise} loadLibrary - Refresh library UI
+ * @property {function(number): void} startDownload - Start downloading a case
+ * @property {function(number): void} startUpdate - Start updating a case
+ * @property {function(number, boolean): void} updateCase - Update case with redownload option
+ * @property {function(number): void} retryCase - Retry failed assets
+ * @property {function(Array<number>, string): void} startSequenceDownload - Download a sequence
+ * @property {function(): boolean} isDownloadInProgress - Check if download is active
+ * @property {function(number, string): void} playCase - Open case in player
+ * @property {function(number): void} deleteCase - Delete a case
+ * @property {function(number): void} exportCase - Export a case
+ * @property {function(): void} showLauncher - Return to launcher from player
+ * @property {function(Object): Promise} writeGameSaves - Write saves to localStorage
+ * @property {function(Object): Promise} readGameSaves - Read saves from localStorage
+ * @property {function(): void} showPasteSaveModal - Show paste-save modal
+ * @property {function(string): void} doImportSave - Import a save file
+ * @property {function(string): void} doImportPlugin - Import a plugin file
+ * @property {HTMLElement} progressContainer - Download progress container
+ * @property {HTMLElement} progressPhase - Download phase text
+ * @property {HTMLElement} progressBarInner - Progress bar fill element
+ * @property {HTMLElement} progressText - Progress text element
+ */
+
 const { invoke, Channel } = window.__TAURI__.core;
 // helpers.js imports are used by the extracted modules (library.js, collections.js), not directly here
 import { initSettings } from './settings.js';
@@ -9,7 +40,78 @@ import { initPlugins } from './plugins/init.js';
 import { initLibrary } from './library.js';
 import { initCollections } from './collections/init.js';
 
+/**
+ * One-time migration of localStorage data from the old http://localhost origin
+ * to the new aao:// protocol origin. Opens a hidden iframe to the legacy tiny_http
+ * server, reads game_saves and engine config, writes them to the current origin.
+ * Completes silently if no old data exists or if migration was already done.
+ */
+function migrateLocalStorage() {
+  return invoke("get_settings").then(function (settings) {
+    if (settings.migration_complete) return Promise.resolve();
+
+    return invoke("get_migration_server_url").then(function (oldUrl) {
+      return new Promise(function (resolve) {
+        var iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        var done = false;
+
+        function cleanup() {
+          if (iframe.parentNode) document.body.removeChild(iframe);
+        }
+
+        function onMsg(event) {
+          if (done || !event.data || event.data.type !== "migration_data") return;
+          done = true;
+          window.removeEventListener("message", onMsg);
+          cleanup();
+
+          var data = event.data.data;
+          if (data) {
+            if (data.game_saves) {
+              try { localStorage.setItem("game_saves", data.game_saves); }
+              catch (e) { console.warn("[MIGRATE] Failed to write game_saves:", e); }
+            }
+            if (data.aao_engine_config) {
+              try { localStorage.setItem("aao_engine_config", data.aao_engine_config); }
+              catch (e) { console.warn("[MIGRATE] Failed to write engine_config:", e); }
+            }
+            console.log("[MIGRATE] Migrated localStorage from old origin");
+          }
+
+          invoke("save_settings", {
+            settings: Object.assign({}, settings, { migration_complete: true })
+          }).then(resolve).catch(resolve);
+        }
+
+        window.addEventListener("message", onMsg);
+        setTimeout(function () {
+          if (!done) {
+            done = true;
+            window.removeEventListener("message", onMsg);
+            cleanup();
+            // Mark complete even on timeout (no old data or server unreachable)
+            invoke("save_settings", {
+              settings: Object.assign({}, settings, { migration_complete: true })
+            }).then(resolve).catch(resolve);
+          }
+        }, 3000);
+
+        iframe.src = oldUrl + "/localstorage_migrate.html";
+        document.body.appendChild(iframe);
+      });
+    });
+  }).catch(function (e) {
+    console.warn("[MIGRATE] Migration failed:", e);
+  });
+}
+
 window.addEventListener("DOMContentLoaded", function () {
+  // Run one-time localStorage migration before initializing the app.
+  // This ensures old saves are available in the new protocol origin.
+  migrateLocalStorage().then(initApp);
+
+  function initApp() {
   var statusMsg = document.getElementById("status-msg");
   var caseList = document.getElementById("case-list");
   var emptyLibrary = document.getElementById("empty-library");
@@ -141,4 +243,5 @@ window.addEventListener("DOMContentLoaded", function () {
   // --- Init ---
   ctx.loadLibrary();
   settingsFns.loadSettings();
+  } // end initApp
 });

@@ -26,6 +26,38 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .register_asynchronous_uri_scheme_protocol("aao", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            std::thread::spawn(move || {
+                let state = app.state::<Mutex<AppState>>();
+                let guard = match state.lock() {
+                    Ok(s) => s,
+                    Err(_) => {
+                        let resp = tauri::http::Response::builder()
+                            .status(503)
+                            .body(b"Service Unavailable".to_vec())
+                            .unwrap();
+                        responder.respond(resp);
+                        return;
+                    }
+                };
+                let config = server::ServerConfig {
+                    engine_dir: guard.engine_dir.clone(),
+                    data_dir: guard.data_dir.clone(),
+                };
+                drop(guard); // Release lock before file I/O
+
+                let method = request.method().as_str();
+                let url_path = request.uri().path();
+                let range = request
+                    .headers()
+                    .get("range")
+                    .and_then(|v| v.to_str().ok());
+
+                let result = server::serve_file(&config, url_path, method, range);
+                responder.respond(server::serve_result_to_response(result));
+            });
+        })
         .setup(|app| {
             // Determine engine_dir and data_dir based on platform.
             //
@@ -106,6 +138,13 @@ pub fn run() {
             let port_file = data_dir.join(".server_port");
             let _ = fs::write(&port_file, port.to_string());
 
+            // Shared HTTP client — reuses connection pool across all download commands
+            let http_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .pool_max_idle_per_host(10)
+                .build()
+                .unwrap_or_default();
+
             // Store state for commands
             app.manage(Mutex::new(AppState {
                 server_port: port,
@@ -113,6 +152,7 @@ pub fn run() {
                 data_dir,
                 config: app_config,
                 cancel_flag: Arc::new(AtomicBool::new(false)),
+                http_client,
             }));
 
             Ok(())
@@ -120,6 +160,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_game,
             get_server_url,
+            get_migration_server_url,
+            debug_check_file,
             fetch_case_info,
             download_case,
             download_sequence,

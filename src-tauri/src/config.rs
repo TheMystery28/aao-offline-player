@@ -17,6 +17,9 @@ pub struct AppConfig {
     /// Blur asset filenames in download progress to avoid spoilers.
     #[serde(default = "default_blur_spoilers")]
     pub blur_spoilers: bool,
+    /// Whether the one-time localStorage migration from http://localhost to aao:// has completed.
+    #[serde(default)]
+    pub migration_complete: bool,
 }
 
 fn default_language() -> String {
@@ -39,6 +42,7 @@ impl Default for AppConfig {
             concurrent_downloads: default_concurrent_downloads(),
             auto_save: default_auto_save(),
             blur_spoilers: default_blur_spoilers(),
+            migration_complete: false,
         }
     }
 }
@@ -265,6 +269,7 @@ mod tests {
             concurrent_downloads: 5,
             auto_save: true,
             blur_spoilers: false,
+            ..Default::default()
         };
         save_config(dir.path(), &config).unwrap();
         let loaded = load_config(dir.path());
@@ -296,6 +301,7 @@ mod tests {
             concurrent_downloads: 99,
             auto_save: true,
             blur_spoilers: true,
+            ..Default::default()
         };
         validate(&mut config);
         assert_eq!(config.concurrent_downloads, 10);
@@ -312,6 +318,7 @@ mod tests {
             concurrent_downloads: 3,
             auto_save: true,
             blur_spoilers: true,
+            ..Default::default()
         };
         validate(&mut config);
         assert_eq!(config.language, "en");
@@ -346,5 +353,34 @@ mod tests {
             info.total_size_bytes,
             info.cases_size_bytes + info.defaults_size_bytes
         );
+    }
+
+    /// migration_complete defaults to false for new installs and existing configs.
+    #[test]
+    fn test_migration_complete_defaults_false() {
+        let config = AppConfig::default();
+        assert!(!config.migration_complete);
+    }
+
+    /// migration_complete: existing config.json without this field defaults to false.
+    #[test]
+    fn test_migration_complete_missing_from_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), r#"{"language":"en"}"#).unwrap();
+        let config = load_config(dir.path());
+        assert!(!config.migration_complete, "Old configs without migration_complete should default to false");
+    }
+
+    /// migration_complete roundtrips through save/load.
+    #[test]
+    fn test_migration_complete_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            migration_complete: true,
+            ..Default::default()
+        };
+        save_config(dir.path(), &config).unwrap();
+        let loaded = load_config(dir.path());
+        assert!(loaded.migration_complete);
     }
 }

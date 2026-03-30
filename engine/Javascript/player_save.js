@@ -221,8 +221,13 @@ function refreshSavesList()
 				}
 				var saveStr = getSaveString();
 				gs[trial_information.id][(new Date()).getTime()] = saveStr;
-				window.localStorage.setItem('game_saves', JSON.stringify(gs));
+				var finalSaveData = JSON.stringify(gs);
+				window.localStorage.setItem('game_saves', finalSaveData);
 				EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
+				// Immediately back up to launcher (bypasses localStorage flush race on Android)
+				if (window.parent && window.parent !== window) {
+					window.parent.postMessage({ type: 'save_data_changed', data: finalSaveData }, '*');
+				}
 				refreshSavesList();
 			}
 		}, false);
@@ -333,7 +338,12 @@ function refreshSavesList()
 					registerEventHandler(del, 'click', function() {
 						delete game_saves[entry.partId][String(entry.date)];
 						if (Object.keys(game_saves[entry.partId]).length === 0) delete game_saves[entry.partId];
-						window.localStorage.setItem('game_saves', JSON.stringify(game_saves));
+						var finalSaveData = JSON.stringify(game_saves);
+						window.localStorage.setItem('game_saves', finalSaveData);
+						// Immediately back up to launcher (bypasses localStorage flush race on Android)
+						if (window.parent && window.parent !== window) {
+							window.parent.postMessage({ type: 'save_data_changed', data: finalSaveData }, '*');
+						}
 						refreshSavesList();
 					}, false);
 					setNodeTextContents(del, '×');
@@ -384,12 +394,19 @@ window.addEventListener('message', function(event) {
 				}
 				var saveStr = getSaveString();
 				game_saves[trial_information.id][(new Date()).getTime()] = saveStr;
-				window.localStorage.setItem('game_saves', JSON.stringify(game_saves));
+				var finalSaveData = JSON.stringify(game_saves);
+				window.localStorage.setItem('game_saves', finalSaveData);
 				EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
 				console.log('[SAVE] Auto-saved on quit');
+				// Hand save data directly to the launcher (bypasses localStorage flush race on Android)
+				window.parent.postMessage({ type: 'auto_save_complete', data: finalSaveData }, '*');
 			} catch (e) {
 				console.warn('[SAVE] Auto-save error:', e.message);
+				window.parent.postMessage({ type: 'auto_save_complete', data: null }, '*');
 			}
+		} else {
+			// Not in a saveable state — unblock the launcher
+			window.parent.postMessage({ type: 'auto_save_complete', data: null }, '*');
 		}
 	}
 });

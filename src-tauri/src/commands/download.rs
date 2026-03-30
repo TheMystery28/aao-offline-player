@@ -8,6 +8,19 @@ use crate::app_state::AppState;
 use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
 
+/// Check if an asset file truly exists on disk — follows VFS pointers.
+/// A VFS pointer whose target is missing counts as "not exists".
+fn asset_exists_on_disk(data_dir: &std::path::Path, local_path: &str) -> bool {
+    let disk_path = data_dir.join(local_path);
+    if !disk_path.exists() {
+        return false;
+    }
+    match downloader::vfs::read_vfs_pointer(&disk_path) {
+        Some(target) => data_dir.join(&target).is_file(),
+        None => true,
+    }
+}
+
 /// Cancel the current in-progress download.
 #[tauri::command]
 pub fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
@@ -19,11 +32,14 @@ pub fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), String> 
 
 /// Lightweight command: fetch case metadata (including sequence info) without downloading assets.
 #[tauri::command]
-pub async fn fetch_case_info(case_id: u32) -> Result<downloader::CaseInfo, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+pub async fn fetch_case_info(
+    state: State<'_, Mutex<AppState>>,
+    case_id: u32,
+) -> Result<downloader::CaseInfo, String> {
+    let client = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.http_client.clone()
+    };
 
     let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
     let _ = site_paths; // Not needed, but fetch_case requires site_paths to exist first
@@ -42,9 +58,9 @@ pub async fn download_sequence(
     case_ids: Vec<u32>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<Vec<downloader::manifest::CaseManifest>, String> {
-    let (engine_dir, data_dir, concurrency, cancel_flag) = {
+    let (engine_dir, data_dir, concurrency, cancel_flag, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone())
+        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
     };
     cancel_flag.store(false, Ordering::Relaxed);
 
@@ -78,12 +94,6 @@ pub async fn download_sequence(
             total_parts,
             part_title: format!("Part {}", idx + 1),
         });
-
-        // Run the full download pipeline (same as download_case body)
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
         debug_log!("Sequence: downloading part {}/{} (case {})...", idx + 1, total_parts, case_id);
         let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
@@ -149,7 +159,7 @@ pub async fn download_sequence(
                 missing_defaults.push(a);
                 continue;
             }
-            if data_dir.join(&a.local_path).exists() {
+            if asset_exists_on_disk(&data_dir, &a.local_path) {
                 cached_defaults.push((a.url.clone(), a.local_path.clone()));
             } else {
                 missing_defaults.push(a);
@@ -212,7 +222,7 @@ pub async fn download_sequence(
                     let reg_path = if asset.local_path.starts_with("defaults/") {
                         asset.local_path.clone()
                     } else {
-                        format!("case/{}/{}", case_id, asset.local_path)
+                        downloader::asset_paths::case_relative(case_id, &asset.local_path)
                     };
                     let _ = index.register(&reg_path, asset.size, asset.content_hash);
                 }
@@ -257,16 +267,11 @@ pub async fn download_case(
     case_id: u32,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, String> {
-    let (engine_dir, data_dir, concurrency, cancel_flag) = {
+    let (engine_dir, data_dir, concurrency, cancel_flag, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone())
+        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
     };
     cancel_flag.store(false, Ordering::Relaxed);
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     // 1. Fetch site paths
     debug_log!("Fetching site paths from bridge.js.php...");
@@ -357,7 +362,8 @@ pub async fn download_case(
             continue;
         }
         let disk_path = data_dir.join(&a.local_path);
-        if disk_path.exists() {
+        // Check exists — but if it's a VFS pointer, verify the target also exists
+        if asset_exists_on_disk(&data_dir, &a.local_path) {
             skipped_exists += 1;
             cached_defaults.push((a.url.clone(), a.local_path.clone()));
             debug_log!(
@@ -467,7 +473,7 @@ pub async fn download_case(
                 let reg_path = if asset.local_path.starts_with("defaults/") {
                     asset.local_path.clone()
                 } else {
-                    format!("case/{}/{}", case_id, asset.local_path)
+                    downloader::asset_paths::case_relative(case_id, &asset.local_path)
                 };
                 let _ = index.register(&reg_path, asset.size, asset.content_hash);
             }
@@ -498,9 +504,9 @@ pub async fn retry_failed_assets(
     case_id: u32,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, String> {
-    let (data_dir, concurrency, cancel_flag) = {
+    let (data_dir, concurrency, cancel_flag, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        (s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone())
+        (s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
     };
     cancel_flag.store(false, Ordering::Relaxed);
 
@@ -532,11 +538,6 @@ pub async fn retry_failed_assets(
             },
         })
         .collect();
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     // Check if aaonline.fr is reachable; if not, skip aaonline URLs to avoid noise
     let mut assets_to_retry = assets_to_retry;
@@ -620,9 +621,9 @@ pub async fn update_case(
     redownload_assets: bool,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, String> {
-    let (engine_dir, data_dir, concurrency, cancel_flag) = {
+    let (engine_dir, data_dir, concurrency, cancel_flag, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone())
+        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
     };
     cancel_flag.store(false, Ordering::Relaxed);
 
@@ -633,11 +634,6 @@ pub async fn update_case(
 
     // Read old manifest to know what we already have
     let old_manifest = downloader::manifest::read_manifest(&case_dir)?;
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     // 1. Fetch site paths
     debug_log!("Update: fetching site paths...");
@@ -694,7 +690,7 @@ pub async fn update_case(
         // Full update: download all case-specific + missing defaults
         let missing_defaults: Vec<_> = shared
             .into_iter()
-            .filter(|a| !a.local_path.is_empty() && !data_dir.join(&a.local_path).exists())
+            .filter(|a| !a.local_path.is_empty() && !asset_exists_on_disk(&data_dir, &a.local_path))
             .collect();
         let mut all = case_specific;
         all.extend(missing_defaults);
@@ -709,7 +705,7 @@ pub async fn update_case(
                 continue;
             }
             // For internal assets with a local_path, also check if file exists on disk
-            if !asset.local_path.is_empty() && data_dir.join(&asset.local_path).exists() {
+            if !asset.local_path.is_empty() && asset_exists_on_disk(&data_dir, &asset.local_path) {
                 continue;
             }
             new_assets.push(asset);
@@ -718,7 +714,7 @@ pub async fn update_case(
         // Shared/default: only download if missing from disk
         let missing_defaults: Vec<_> = shared
             .into_iter()
-            .filter(|a| !a.local_path.is_empty() && !data_dir.join(&a.local_path).exists())
+            .filter(|a| !a.local_path.is_empty() && !asset_exists_on_disk(&data_dir, &a.local_path))
             .collect();
         new_assets.extend(missing_defaults);
         new_assets
