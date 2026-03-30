@@ -5,6 +5,40 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::downloader::manifest::CaseManifest;
+use crate::downloader::paths::normalize_path;
+
+/// Scan defaults/ for VFS pointers whose targets are in the given set.
+/// Adds the pointer paths to the set so they get exported as real files.
+/// This ensures deduped sprites (e.g., charsStill/ pointing to chars/) are included.
+fn collect_vfs_pointers_for_export(engine_dir: &Path, defaults: &mut std::collections::HashSet<String>) {
+    let defaults_dir = engine_dir.join("defaults");
+    if !defaults_dir.is_dir() {
+        return;
+    }
+    let targets: std::collections::HashSet<String> = defaults.clone();
+    fn walk(dir: &Path, base: &Path, targets: &std::collections::HashSet<String>, out: &mut Vec<String>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, base, targets, out);
+                } else if let Some(target) = crate::downloader::vfs::read_vfs_pointer(&path) {
+                    let target_normalized = normalize_path(&target);
+                    if targets.contains(&target_normalized) {
+                        if let Ok(rel) = path.strip_prefix(base) {
+                            out.push(normalize_path(&rel.to_string_lossy()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut pointer_paths = Vec::new();
+    walk(&defaults_dir, engine_dir, &targets, &mut pointer_paths);
+    for p in pointer_paths {
+        defaults.insert(p);
+    }
+}
 
 pub fn export_aaocase(
     case_id: u32,
@@ -54,11 +88,16 @@ pub fn export_aaocase(
             .map_err(|e| format!("Failed to read manifest: {}", e))?;
         let manifest: CaseManifest = serde_json::from_str(&manifest_data)
             .map_err(|e| format!("Failed to parse manifest: {}", e))?;
-        manifest.asset_map.values()
+        let mut defaults: std::collections::HashSet<String> = manifest.asset_map.values()
             .filter(|p| p.starts_with("defaults/"))
             .filter(|p| engine_dir.join(p).is_file())
             .cloned()
-            .collect()
+            .collect();
+        // Also include VFS pointers whose targets are in the set.
+        // Dedup may have rewritten manifest entries to the target path,
+        // but the engine still needs the pointer path (e.g., charsStill/).
+        collect_vfs_pointers_for_export(engine_dir, &mut defaults);
+        defaults.into_iter().collect()
     };
 
     let total = json_files.len() + asset_files.len() + default_files.len();
@@ -411,6 +450,7 @@ pub fn export_collection(
             }
         }
     }
+    collect_vfs_pointers_for_export(engine_dir, &mut seen_defaults);
     for default_path in &seen_defaults {
         let full_path = engine_dir.join(default_path);
         let full_path = crate::downloader::vfs::resolve_path(&full_path, engine_dir, engine_dir);
@@ -639,6 +679,7 @@ pub fn export_sequence(
             }
         }
     }
+    collect_vfs_pointers_for_export(engine_dir, &mut seen_defaults);
     for default_path in &seen_defaults {
         let full_path = engine_dir.join(default_path);
         let full_path = crate::downloader::vfs::resolve_path(&full_path, engine_dir, engine_dir);
