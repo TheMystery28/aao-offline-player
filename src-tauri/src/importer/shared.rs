@@ -120,6 +120,7 @@ pub(super) fn add_dir_to_zip_recursive(
         if path.is_dir() {
             add_dir_to_zip_recursive(zip, &path, &name, options)?;
         } else if path.is_file() {
+            let path = crate::downloader::vfs::resolve_path(&path, dir, dir);
             let data = fs::read(&path)
                 .map_err(|e| format!("Failed to read {}: {}", name, e))?;
             zip.start_file(&name, options)

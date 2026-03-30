@@ -82,6 +82,7 @@ pub fn export_aaocase(
     // Add case-specific asset files
     for entry in &asset_files {
         let path = entry.path();
+        let path = crate::downloader::vfs::resolve_path(&path, engine_dir, engine_dir);
         let filename = entry.file_name();
         let zip_path = format!("assets/{}", filename.to_string_lossy());
         let data = fs::read(&path)
@@ -375,6 +376,7 @@ pub fn export_collection(
             if let Ok(entries) = fs::read_dir(&assets_dir) {
                 for entry in entries.filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
                     let path = entry.path();
+                    let path = crate::downloader::vfs::resolve_path(&path, engine_dir, engine_dir);
                     let filename = entry.file_name();
                     let zip_path = format!("{}assets/{}", prefix, filename.to_string_lossy());
                     let data = fs::read(&path)
@@ -604,6 +606,7 @@ pub fn export_sequence(
             if let Ok(entries) = fs::read_dir(&assets_dir) {
                 for entry in entries.filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
                     let path = entry.path();
+                    let path = crate::downloader::vfs::resolve_path(&path, engine_dir, engine_dir);
                     let filename = entry.file_name();
                     let zip_path = format!("{}assets/{}", prefix, filename.to_string_lossy());
                     let data = fs::read(&path)
