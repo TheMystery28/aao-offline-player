@@ -22,12 +22,15 @@ pub async fn import_plugin(
 
 /// Import a .aaoplug ZIP as a global plugin.
 #[tauri::command]
-pub fn import_aaoplug_global(
+pub async fn import_aaoplug_global(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
 ) -> Result<Vec<String>, String> {
     let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
-    importer::import_aaoplug_global(&std::path::PathBuf::from(&source_path), &data_dir)
+    let path = std::path::PathBuf::from(&source_path);
+    tokio::task::spawn_blocking(move || {
+        importer::import_aaoplug_global(&path, &data_dir)
+    }).await.map_err(|e| format!("Import task failed: {}", e))?
 }
 
 /// Attach raw plugin JS code to one or more existing cases.
@@ -228,12 +231,14 @@ pub fn promote_plugin_to_global(
 
 /// Export a case's plugins as a .aaoplug file.
 #[tauri::command]
-pub fn export_case_plugins(
+pub async fn export_case_plugins(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
     dest_path: String,
 ) -> Result<u64, String> {
     let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
     let path = std::path::PathBuf::from(&dest_path);
-    importer::export_case_plugins(case_id, &path, &data_dir)
+    tokio::task::spawn_blocking(move || {
+        importer::export_case_plugins(case_id, &path, &data_dir)
+    }).await.map_err(|e| format!("Export task failed: {}", e))?
 }

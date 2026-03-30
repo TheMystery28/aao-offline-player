@@ -13,7 +13,7 @@ use crate::importer;
 /// If `saves` is provided, includes it as saves.json in the ZIP.
 /// On Android, `dest_path` may be a content:// URI — exports to temp then copies.
 #[tauri::command]
-pub fn export_case(
+pub async fn export_case(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
@@ -27,7 +27,6 @@ pub fn export_case(
         s.data_dir.clone()
     };
 
-    // On Android, dest_path is a content:// URI. Export to temp, then copy.
     let (export_path, content_uri) = if dest_path.starts_with("content://") {
         let temp = data_dir.join("_export_temp.aaocase");
         (temp, Some(dest_path.clone()))
@@ -37,17 +36,22 @@ pub fn export_case(
 
     let _ = on_event.send(DownloadEvent::Started { total: 0 });
 
-    let progress_cb = |completed: usize, total: usize| {
-        let _ = on_event.send(DownloadEvent::Progress {
-            completed,
-            total,
-            current_url: format!("{}/{}", completed, total),
-            bytes_downloaded: 0, elapsed_ms: 0,
-        });
-    };
-
     let include_plugins_flag = include_plugins.unwrap_or(true);
-    let size = importer::export_aaocase(case_id, &data_dir, &export_path, Some(&progress_cb), saves.as_ref(), include_plugins_flag)?;
+    let export_path_clone = export_path.clone();
+    let data_dir_clone = data_dir.clone();
+    let on_event_clone = on_event.clone();
+
+    let size = tokio::task::spawn_blocking(move || {
+        let progress_cb = |completed: usize, total: usize| {
+            let _ = on_event_clone.send(DownloadEvent::Progress {
+                completed,
+                total,
+                current_url: format!("{}/{}", completed, total),
+                bytes_downloaded: 0, elapsed_ms: 0,
+            });
+        };
+        importer::export_aaocase(case_id, &data_dir_clone, &export_path_clone, Some(&progress_cb), saves.as_ref(), include_plugins_flag)
+    }).await.map_err(|e| format!("Export task failed: {}", e))??;
 
     // Copy temp file to content URI on Android
     if let Some(uri) = content_uri {
@@ -87,7 +91,7 @@ pub fn export_case(
 /// If `saves` is provided, includes it as saves.json in the ZIP.
 /// On Android, `dest_path` may be a content:// URI — exports to temp then copies.
 #[tauri::command]
-pub fn export_sequence(
+pub async fn export_sequence(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
     case_ids: Vec<u32>,
@@ -112,26 +116,31 @@ pub fn export_sequence(
 
     let _ = on_event.send(DownloadEvent::Started { total: 0 });
 
-    let progress_cb = |completed: usize, total: usize| {
-        let _ = on_event.send(DownloadEvent::Progress {
-            completed,
-            total,
-            current_url: format!("{}/{}", completed, total),
-            bytes_downloaded: 0, elapsed_ms: 0,
-        });
-    };
-
     let include_plugins_flag = include_plugins.unwrap_or(true);
-    let size = importer::export_sequence(
-        &case_ids,
-        &sequence_title,
-        &sequence_list,
-        &data_dir,
-        &export_path,
-        Some(&progress_cb),
-        saves.as_ref(),
-        include_plugins_flag,
-    )?;
+    let export_path_clone = export_path.clone();
+    let data_dir_clone = data_dir.clone();
+    let on_event_clone = on_event.clone();
+
+    let size = tokio::task::spawn_blocking(move || {
+        let progress_cb = |completed: usize, total: usize| {
+            let _ = on_event_clone.send(DownloadEvent::Progress {
+                completed,
+                total,
+                current_url: format!("{}/{}", completed, total),
+                bytes_downloaded: 0, elapsed_ms: 0,
+            });
+        };
+        importer::export_sequence(
+            &case_ids,
+            &sequence_title,
+            &sequence_list,
+            &data_dir_clone,
+            &export_path_clone,
+            Some(&progress_cb),
+            saves.as_ref(),
+            include_plugins_flag,
+        )
+    }).await.map_err(|e| format!("Export task failed: {}", e))??;
 
     if let Some(uri) = content_uri {
         use tauri_plugin_fs::FsExt;
@@ -161,7 +170,7 @@ pub fn export_sequence(
 
 /// Export a collection as a .aaocase ZIP file.
 #[tauri::command]
-pub fn export_collection(
+pub async fn export_collection(
     state: State<'_, Mutex<AppState>>,
     collection_id: String,
     dest_path: String,
@@ -181,16 +190,19 @@ pub fn export_collection(
         .clone();
 
     let export_path = PathBuf::from(&dest_path);
-    let progress_cb = |completed: usize, total: usize| {
-        let _ = on_event.send(DownloadEvent::Progress {
-            completed, total,
-            current_url: format!("{}/{}", completed, total),
-            bytes_downloaded: 0, elapsed_ms: 0,
-        });
-    };
-
+    let on_event_clone = on_event.clone();
     let include_plugins_flag = include_plugins.unwrap_or(true);
-    let size = importer::export_collection(&collection, &data_dir, &export_path, Some(&progress_cb), saves.as_ref(), include_plugins_flag)?;
+
+    let size = tokio::task::spawn_blocking(move || {
+        let progress_cb = |completed: usize, total: usize| {
+            let _ = on_event_clone.send(DownloadEvent::Progress {
+                completed, total,
+                current_url: format!("{}/{}", completed, total),
+                bytes_downloaded: 0, elapsed_ms: 0,
+            });
+        };
+        importer::export_collection(&collection, &data_dir, &export_path, Some(&progress_cb), saves.as_ref(), include_plugins_flag)
+    }).await.map_err(|e| format!("Export task failed: {}", e))??;
 
     let _ = on_event.send(DownloadEvent::Finished {
         downloaded: 0,
@@ -204,7 +216,7 @@ pub fn export_collection(
 
 /// Export saves as a .aaosave file.
 #[tauri::command]
-pub fn export_save(
+pub async fn export_save(
     state: State<'_, Mutex<AppState>>,
     case_ids: Vec<u32>,
     saves: serde_json::Value,
@@ -215,6 +227,8 @@ pub fn export_save(
         let s = state.lock().map_err(|e| e.to_string())?;
         s.data_dir.clone()
     };
-    let path = std::path::PathBuf::from(&dest_path);
-    importer::export_aaosave(&case_ids, &saves, include_plugins, &path, &data_dir)
+    let path = PathBuf::from(&dest_path);
+    tokio::task::spawn_blocking(move || {
+        importer::export_aaosave(&case_ids, &saves, include_plugins, &path, &data_dir)
+    }).await.map_err(|e| format!("Export task failed: {}", e))?
 }

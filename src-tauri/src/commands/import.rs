@@ -150,7 +150,7 @@ pub async fn import_case(
 
 /// Import saves from a .aaosave file.
 #[tauri::command]
-pub fn import_save(
+pub async fn import_save(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
 ) -> Result<importer::ImportSaveResult, String> {
@@ -159,5 +159,7 @@ pub fn import_save(
         s.data_dir.clone()
     };
     let path = std::path::PathBuf::from(&source_path);
-    importer::import_aaosave(&path, &data_dir)
+    tokio::task::spawn_blocking(move || {
+        importer::import_aaosave(&path, &data_dir)
+    }).await.map_err(|e| format!("Import task failed: {}", e))?
 }
