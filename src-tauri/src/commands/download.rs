@@ -41,9 +41,6 @@ pub async fn fetch_case_info(
         s.http_client.clone()
     };
 
-    let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
-    let _ = site_paths; // Not needed, but fetch_case requires site_paths to exist first
-
     let (case_info, _trial_data, _info_json, _data_json) =
         downloader::case_fetcher::fetch_case(&client, case_id).await?;
 
@@ -66,6 +63,9 @@ pub async fn download_sequence(
 
     let total_parts = case_ids.len();
     let mut manifests = Vec::new();
+
+    // Fetch site paths once (static config, same for all parts)
+    let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
 
     for (idx, &case_id) in case_ids.iter().enumerate() {
         // Check if already downloaded
@@ -96,7 +96,6 @@ pub async fn download_sequence(
         });
 
         debug_log!("Sequence: downloading part {}/{} (case {})...", idx + 1, total_parts, case_id);
-        let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
 
         let (case_info, trial_data, info_json, data_json) =
             downloader::case_fetcher::fetch_case(&client, case_id).await?;
