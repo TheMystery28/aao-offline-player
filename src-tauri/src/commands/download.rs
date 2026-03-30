@@ -67,6 +67,10 @@ pub async fn download_sequence(
     // Fetch site paths once (static config, same for all parts)
     let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
 
+    // Open dedup index once for the whole sequence. Reopening per-part causes
+    // concurrent redb::Database instances on the same file, which corrupts mmap on Android.
+    let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
+
     for (idx, &case_id) in case_ids.iter().enumerate() {
         // Check if already downloaded
         let case_dir = data_dir.join("case").join(case_id.to_string());
@@ -173,7 +177,6 @@ pub async fn download_sequence(
             to_download.retain(|a| !a.url.starts_with(downloader::AAONLINE_BASE));
         }
 
-        let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
         let result = downloader::asset_downloader::download_assets(
             &client,
             to_download,
@@ -215,7 +218,7 @@ pub async fn download_sequence(
 
         // Safety net: register assets that were skip-existing (not downloaded, so not registered
         // during download). Assets that were actually downloaded are already registered by download_assets.
-        if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
+        if let Some(ref index) = dedup_index {
             for asset in &result.downloaded {
                 if !asset.local_path.is_empty() {
                     let reg_path = if asset.local_path.starts_with("defaults/") {
@@ -466,7 +469,8 @@ pub async fn download_case(
         case_dir.display(), manifest.asset_map.len(), cached_defaults.len());
 
     // Register ALL downloaded assets in the persistent hash index
-    if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
+    // Reuse existing dedup_index — opening a second instance on the same file corrupts mmap on Android.
+    if let Some(ref index) = dedup_index {
         for asset in &downloaded {
             if !asset.local_path.is_empty() {
                 let reg_path = if asset.local_path.starts_with("defaults/") {

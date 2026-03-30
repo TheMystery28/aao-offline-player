@@ -113,28 +113,35 @@ impl DedupIndex {
     /// Find any file in the index matching the given content hash.
     /// Prefers defaults/ matches over case/ matches. Returns None if no match.
     /// If `exclude` is provided, skip that exact path (used to avoid self-matches).
+    ///
+    /// Wrapped in catch_unwind: redb may panic on corrupt data (types.rs unwrap on
+    /// UTF-8 decode). Dedup is a cache — a read failure means "no match", not fatal.
     pub fn find_by_hash(&self, hash: u64, exclude: Option<&str>) -> Option<String> {
-        let hash_key = format!("{}", hash);
-        let txn = self.db.begin_read().ok()?;
-        let table = txn.open_multimap_table(PATHS_BY_HASH).ok()?;
-        let candidates = table.get(&*hash_key).ok()?;
+        let exclude_owned = exclude.map(|s| s.to_string());
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let hash_key = format!("{}", hash);
+            let txn = self.db.begin_read().ok()?;
+            let table = txn.open_multimap_table(PATHS_BY_HASH).ok()?;
+            let candidates = table.get(&*hash_key).ok()?;
 
-        let mut best: Option<String> = None;
-        for candidate in candidates.flatten() {
-            let path = candidate.value().to_string();
-            if let Some(excl) = exclude {
-                if path == excl {
-                    continue;
+            let mut best: Option<String> = None;
+            for candidate in candidates.flatten() {
+                let path = candidate.value().to_string();
+                if let Some(ref excl) = exclude_owned {
+                    if path == *excl {
+                        continue;
+                    }
+                }
+                if path.starts_with("defaults/") {
+                    return Some(path);
+                }
+                if best.is_none() {
+                    best = Some(path);
                 }
             }
-            if path.starts_with("defaults/") {
-                return Some(path); // Prefer defaults/ — return immediately
-            }
-            if best.is_none() {
-                best = Some(path);
-            }
-        }
-        best
+            best
+        }))
+        .unwrap_or(None)
     }
 
     /// Scan a directory and register all files not already in the db.
@@ -284,27 +291,28 @@ impl DedupIndex {
     /// Remove all entries whose path starts with the given prefix.
     /// Uses B-tree sorted range scan. Returns count of removed entries.
     pub fn unregister_prefix(&self, prefix: &str) -> Result<usize, String> {
-        // Collect entries to remove (read transaction)
-        let to_remove: Vec<(String, u64)> = {
-            let txn = self.db.begin_read()
-                .map_err(|e| format!("Failed to begin read: {}", e))?;
-            let table = match txn.open_table(HASH_BY_PATH) {
-                Ok(t) => t,
-                Err(_) => return Ok(0),
-            };
+        // Collect entries to remove (read transaction).
+        // Wrapped in catch_unwind: redb may panic on corrupt data.
+        let prefix_owned = prefix.to_string();
+        let to_remove: Vec<(String, u64)> = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let txn = self.db.begin_read().ok()?;
+            let table = txn.open_table(HASH_BY_PATH).ok()?;
             let mut entries = Vec::new();
-            if let Ok(range) = table.range::<&str>(prefix..) {
+            if let Ok(range) = table.range::<&str>(&*prefix_owned..) {
                 for item in range.flatten() {
                     let path = item.0.value().to_string();
-                    if !path.starts_with(prefix) {
-                        break; // Sorted, no more matches
+                    if !path.starts_with(&prefix_owned) {
+                        break;
                     }
                     let (_size, hash) = item.1.value();
                     entries.push((path, hash));
                 }
             }
-            entries
-        };
+            Some(entries)
+        }))
+        .ok()
+        .flatten()
+        .unwrap_or_default();
 
         if to_remove.is_empty() {
             return Ok(0);
@@ -330,39 +338,43 @@ impl DedupIndex {
 
     /// Query all case asset entries from the index.
     /// Returns `(case_id, filename, size, ext, hash)` for all `case/*/assets/*` entries.
+    ///
+    /// Wrapped in catch_unwind: redb may panic on corrupt data.
     pub fn query_case_assets(&self) -> Result<Vec<(u32, String, u64, String, u64)>, DownloaderError> {
-        let txn = self.db.begin_read()?;
-        let table = match txn.open_table(HASH_BY_PATH) {
-            Ok(t) => t,
-            Err(_) => return Ok(Vec::new()),
-        };
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let txn = self.db.begin_read().ok()?;
+            let table = txn.open_table(HASH_BY_PATH).ok()?;
 
-        let mut result = Vec::new();
-        if let Ok(range) = table.range::<&str>("case/"..) {
-            for item in range.flatten() {
-                let path = item.0.value().to_string();
-                if !path.starts_with("case/") {
-                    break;
+            let mut result = Vec::new();
+            if let Ok(range) = table.range::<&str>("case/"..) {
+                for item in range.flatten() {
+                    let path = item.0.value().to_string();
+                    if !path.starts_with("case/") {
+                        break;
+                    }
+                    let parts: Vec<&str> = path.splitn(4, '/').collect();
+                    if parts.len() < 4 || parts[2] != "assets" {
+                        continue;
+                    }
+                    let case_id = match parts[1].parse::<u32>() {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    };
+                    let filename = parts[3].to_string();
+                    let (size, hash) = item.1.value();
+                    let ext = Path::new(&filename)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(normalize_ext)
+                        .unwrap_or_default();
+                    result.push((case_id, filename, size, ext, hash));
                 }
-                // Parse "case/{id}/assets/{filename}"
-                let parts: Vec<&str> = path.splitn(4, '/').collect();
-                if parts.len() < 4 || parts[2] != "assets" {
-                    continue;
-                }
-                let case_id = match parts[1].parse::<u32>() {
-                    Ok(id) => id,
-                    Err(_) => continue,
-                };
-                let filename = parts[3].to_string();
-                let (size, hash) = item.1.value();
-                let ext = Path::new(&filename)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(normalize_ext)
-                    .unwrap_or_default();
-                result.push((case_id, filename, size, ext, hash));
             }
-        }
-        Ok(result)
+            Some(result)
+        }))
+        .ok()
+        .flatten()
+        .map(Ok)
+        .unwrap_or(Ok(Vec::new()))
     }
 }
