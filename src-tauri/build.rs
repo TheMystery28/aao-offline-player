@@ -87,6 +87,14 @@ fn collect_engine_files(base: &Path, dir: &Path, files: &mut Vec<String>) {
             || name == "tests"
             || name.starts_with("tests/")
             || name == "config.json"
+            || name == "collections.json"
+            || name == "saves_backup.json"
+            || name == "dedup_index.redb"
+            || name == ".server_port"
+            || name == "plugins"
+            || name.starts_with("plugins/")
+            || name == "plugins_examples"
+            || name.starts_with("plugins_examples/")
         {
             continue;
         }
