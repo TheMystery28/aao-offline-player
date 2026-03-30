@@ -18,7 +18,7 @@ pub fn rewrite_external_urls(
     for asset in downloaded {
         if asset.local_path.starts_with("assets/") {
             // External asset -- build a path the local server can resolve
-            let server_path = format!("case/{}/{}", case_id, asset.local_path);
+            let server_path = crate::downloader::asset_paths::case_relative(case_id, &asset.local_path);
             url_map.insert(asset.original_url.clone(), server_path);
         } else if asset.local_path.starts_with("defaults/") {
             // Custom sprite URL was upgraded to default path -- rewrite to use default path directly

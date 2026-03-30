@@ -114,7 +114,7 @@ pub fn dedup_case_assets_with_index(
         };
 
         // Exclude self from matches
-        let self_reg_key = format!("case/{}/assets/{}", case_id, asset_filename);
+        let self_reg_key = crate::downloader::asset_paths::case_asset(case_id, &asset_filename);
         let match_path = match index.find_by_hash(content_hash, Some(&self_reg_key)) {
             Some(p) => p,
             None => continue, // No duplicate found
@@ -160,7 +160,7 @@ pub fn dedup_case_assets_with_index(
 
         // Rewrite references in trial_data.json
         if let Some(ref mut td) = trial_data {
-            let old_server_path = format!("case/{}/{}", case_id, old_local_path);
+            let old_server_path = crate::downloader::asset_paths::case_relative(case_id, &old_local_path);
             rewrite_value_recursive(td, &old_server_path, &target_path);
             trial_data_modified = true;
         }
@@ -241,13 +241,7 @@ pub(crate) fn promote_to_shared(
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
-    let hash_hex = format!("{:016x}", content_hash);
-    let subdir = &hash_hex[0..4];
-    let shared_relative = if ext.is_empty() {
-        format!("defaults/shared/{}/{}", subdir, hash_hex)
-    } else {
-        format!("defaults/shared/{}/{}.{}", subdir, hash_hex, ext)
-    };
+    let shared_relative = crate::downloader::asset_paths::shared_asset(content_hash, &ext);
     let dest = data_dir.join(&shared_relative);
 
     if !dest.is_file() {
@@ -310,7 +304,7 @@ pub(crate) fn rewrite_other_case(
     if td_path.exists() {
         if let Ok(text) = fs::read_to_string(&td_path) {
             if let Ok(mut td) = serde_json::from_str::<serde_json::Value>(&text) {
-                let old_server_path = format!("case/{}/{}", other_case_id, old_local_path);
+                let old_server_path = crate::downloader::asset_paths::case_relative(other_case_id, &old_local_path);
                 rewrite_value_recursive(&mut td, &old_server_path, new_shared_path);
                 if let Ok(json) = serde_json::to_string_pretty(&td) {
                     let _ = fs::write(&td_path, json);
@@ -362,6 +356,33 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
         return Ok((0, 0));
     }
 
+    // Bidirectional VFS pointer protection: if a pointer is used, protect its target;
+    // if a target is used, protect its pointer. Prevents GC from breaking either side.
+    fn collect_vfs_pointers_for_gc(dir: &Path, base_dir: &Path, pairs: &mut Vec<(String, String)>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    collect_vfs_pointers_for_gc(&path, base_dir, pairs);
+                } else if let Some(target) = crate::downloader::vfs::read_vfs_pointer(&path) {
+                    if let Ok(rel) = path.strip_prefix(base_dir) {
+                        pairs.push((normalize_path(&rel.to_string_lossy()), target));
+                    }
+                }
+            }
+        }
+    }
+    let mut pointer_pairs: Vec<(String, String)> = Vec::new();
+    collect_vfs_pointers_for_gc(&defaults_dir, data_dir, &mut pointer_pairs);
+    for (pointer_rel, target_rel) in &pointer_pairs {
+        if used_defaults.contains(pointer_rel) {
+            used_defaults.insert(target_rel.clone());
+        }
+        if used_defaults.contains(target_rel) {
+            used_defaults.insert(pointer_rel.clone());
+        }
+    }
+
     // Open index to unregister deleted files
     let index = DedupIndex::open(data_dir).ok();
 
@@ -392,6 +413,12 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
                     Err(_) => continue,
                 };
                 if !used.contains(&relative) {
+                    // Don't delete VFS pointers whose target is referenced
+                    if let Some(target) = crate::downloader::vfs::read_vfs_pointer(&path) {
+                        if used.contains(&normalize_path(&target)) {
+                            continue;
+                        }
+                    }
                     let size = path.metadata().map(|m| m.len()).unwrap_or(0);
                     if fs::remove_file(&path).is_ok() {
                         // Unregister from persistent index

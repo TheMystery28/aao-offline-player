@@ -74,10 +74,11 @@ pub async fn download_assets(
             let failed = failed.clone();
             let on_event = on_event.clone();
             let log = log.clone();
-            let url = asset.url.clone();
-            let asset_type = asset.asset_type.clone();
-            let local_path = asset.local_path.clone();
             let cancel_flag = cancel_flag.clone();
+            // Move owned AssetRef fields directly — avoids 3 String clones per asset
+            let url = asset.url;
+            let asset_type = asset.asset_type;
+            let local_path = asset.local_path;
 
             async move {
                 // Check cancel before each asset
@@ -120,9 +121,11 @@ pub async fn download_assets(
                             elapsed_ms: start_time.elapsed().as_millis() as u64,
                         })
                         .ok();
-                    // Compute hash from existing file for accurate dedup index
+                    // Compute hash from existing file for accurate dedup index.
+                    // If the file is a VFS pointer, resolve to the real target before hashing.
                     let file_path = save_dir.join(&relative_path);
-                    let content_hash = std::fs::read(&file_path)
+                    let hash_path = crate::downloader::vfs::resolve_path(&file_path, &save_dir, &save_dir);
+                    let content_hash = std::fs::read(&hash_path)
                         .map(|bytes| xxhash_rust::xxh3::xxh3_64(&bytes))
                         .unwrap_or(0);
                     return Ok(DownloadedAsset {
@@ -141,13 +144,39 @@ pub async fn download_assets(
                                 &engine, result.content_hash, idx, None,
                             ) {
                                 if existing != result.local_path {
-                                    let saved = save_dir.join(&result.local_path);
-                                    let _ = std::fs::remove_file(&saved);
-                                    log.log(&format!(
-                                        "  DEDUP_SKIP hash={:016x} reuse={} was={}",
-                                        result.content_hash, existing, result.local_path
-                                    ));
-                                    result.local_path = existing;
+                                    // If the just-saved file is a canonical default
+                                    // (defaults/sounds/, defaults/images/, etc.) and the
+                                    // existing match is in defaults/shared/, keep the
+                                    // canonical one — the engine references it by fixed path.
+                                    // Delete the shared copy instead.
+                                    let saved_is_canonical = result.local_path.starts_with("defaults/")
+                                        && !result.local_path.starts_with("defaults/shared/");
+                                    let existing_is_shared = existing.starts_with("defaults/shared/");
+
+                                    if saved_is_canonical && existing_is_shared {
+                                        // Keep canonical, replace shared with VFS pointer.
+                                        // Cannot delete shared — other cases may have VFS pointers to it.
+                                        let shared_file = save_dir.join(&existing);
+                                        let _ = std::fs::remove_file(&shared_file);
+                                        let _ = crate::downloader::vfs::write_vfs_pointer(&shared_file, &result.local_path);
+                                        let _ = idx.register(
+                                            &result.local_path, result.size, result.content_hash,
+                                        );
+                                        log.log(&format!(
+                                            "  DEDUP_KEEP_CANONICAL hash={:016x} keep={} shared_alias={}",
+                                            result.content_hash, result.local_path, existing
+                                        ));
+                                    } else {
+                                        // Write VFS pointer instead of deleting — one physical copy
+                                        let saved = save_dir.join(&result.local_path);
+                                        let _ = std::fs::remove_file(&saved);
+                                        let _ = crate::downloader::vfs::write_vfs_pointer(&saved, &existing);
+                                        log.log(&format!(
+                                            "  DEDUP_VFS_ALIAS hash={:016x} pointer={} -> target={}",
+                                            result.content_hash, result.local_path, existing
+                                        ));
+                                        result.local_path = existing;
+                                    }
                                 }
                             } else {
                                 // No match — register the new file in the index
@@ -370,6 +399,13 @@ pub(crate) async fn download_single_asset(
     }
 
     let content_hash = xxhash_rust::xxh3::xxh3_64(&bytes);
+
+    // Reject imgur's "removed" placeholder (503 bytes, served with HTTP 200 for dead image URLs).
+    const IMGUR_REMOVED_HASH: u64 = 0x38da9bd2e10a4bc8;
+    if content_hash == IMGUR_REMOVED_HASH {
+        log.log(&format!("  IMGUR_REMOVED detected for {}", url));
+        return Err("Image has been removed from imgur".to_string());
+    }
 
     let file_path = base_dir.join(relative_path);
     log.log(&format!(

@@ -677,3 +677,148 @@ async fn test_download_dedup_skips_existing_in_index() {
     // The just-saved file should have been deleted
     // (it was saved to assets/{hash}.png then removed after dedup check)
 }
+
+/// Regression: canonical defaults (defaults/sounds/, defaults/images/, etc.) must NOT
+/// be deleted by dedup even when a match exists in defaults/shared/.
+/// The engine references these by fixed path (external: false in trial_data).
+#[tokio::test]
+async fn test_download_dedup_preserves_canonical_defaults() {
+    use crate::downloader::dedup::DedupIndex;
+
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path();
+
+    // Content that will be downloaded as a canonical default sound
+    let content = vec![0xAA; 100];
+    let content_hash = xxhash_rust::xxh3::xxh3_64(&content);
+
+    Mock::given(method("GET")).and(path("/sound.mp3"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(content.clone()))
+        .mount(&mock_server).await;
+
+    // Pre-register the SAME content at a defaults/shared/ path (simulating a previous case's dedup)
+    let shared_path = "defaults/shared/abcd/abcd1234.mp3";
+    std::fs::create_dir_all(data_dir.join("defaults/shared/abcd")).unwrap();
+    std::fs::write(data_dir.join(shared_path), &content).unwrap();
+
+    let index = DedupIndex::open(data_dir).unwrap();
+    index.register(shared_path, content.len() as u64, content_hash).unwrap();
+
+    // Download the sound as a canonical default (defaults/sounds/Objection Phoenix.mp3)
+    let assets = vec![AssetRef {
+        url: format!("{}/sound.mp3", mock_server.uri()),
+        asset_type: "sound".to_string(),
+        is_default: true,
+        local_path: "defaults/sounds/Objection Phoenix.mp3".to_string(),
+    }];
+
+    // Create target dir so download can write
+    std::fs::create_dir_all(data_dir.join("defaults/sounds")).unwrap();
+
+    let client = test_client();
+    let tx = tauri::ipc::Channel::new(|_| Ok(()));
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let result = download_assets(
+        &client, assets,
+        &data_dir.to_path_buf(), &data_dir.to_path_buf(),
+        Some(&index), &tx, 3, cancel,
+    ).await.unwrap();
+
+    assert_eq!(result.downloaded.len(), 1);
+    let asset = &result.downloaded[0];
+
+    // The canonical path must be kept — engine looks for it by fixed path
+    assert_eq!(
+        asset.local_path, "defaults/sounds/Objection Phoenix.mp3",
+        "Canonical default must NOT be redirected to shared"
+    );
+
+    // The file must actually exist at the canonical path
+    assert!(
+        data_dir.join("defaults/sounds/Objection Phoenix.mp3").is_file(),
+        "Canonical default file must exist on disk"
+    );
+
+    // The shared copy should be replaced with a VFS pointer to the canonical
+    let shared_full = data_dir.join(shared_path);
+    assert!(
+        shared_full.is_file(),
+        "Shared path should still exist as a VFS pointer"
+    );
+    let pointer_target = crate::downloader::vfs::read_vfs_pointer(&shared_full);
+    assert!(
+        pointer_target.is_some(),
+        "Shared file should be a VFS pointer, not the original data"
+    );
+    assert_eq!(
+        pointer_target.unwrap(),
+        "defaults/sounds/Objection Phoenix.mp3",
+        "VFS pointer should redirect to the canonical default"
+    );
+}
+
+/// Regression: case-specific assets (assets/...) should still be deduped normally
+/// against existing defaults/ entries — only canonical defaults are protected.
+#[tokio::test]
+async fn test_download_dedup_still_works_for_case_assets() {
+    use crate::downloader::dedup::DedupIndex;
+
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path();
+
+    let content = vec![0xBB; 50];
+    let content_hash = xxhash_rust::xxh3::xxh3_64(&content);
+
+    Mock::given(method("GET")).and(path("/sprite.gif"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(content.clone()))
+        .mount(&mock_server).await;
+
+    // Pre-register at a canonical defaults/ path
+    let canonical = "defaults/images/chars/Apollo/1.gif";
+    std::fs::create_dir_all(data_dir.join("defaults/images/chars/Apollo")).unwrap();
+    std::fs::write(data_dir.join(canonical), &content).unwrap();
+
+    let index = DedupIndex::open(data_dir).unwrap();
+    index.register(canonical, content.len() as u64, content_hash).unwrap();
+
+    // Download as a case-specific external asset (no local_path → goes to assets/)
+    let assets = vec![AssetRef {
+        url: format!("{}/sprite.gif", mock_server.uri()),
+        asset_type: "sprite".to_string(),
+        is_default: false,
+        local_path: String::new(), // External asset
+    }];
+
+    std::fs::create_dir_all(data_dir.join("assets")).unwrap();
+
+    let client = test_client();
+    let tx = tauri::ipc::Channel::new(|_| Ok(()));
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let result = download_assets(
+        &client, assets,
+        &data_dir.to_path_buf(), &data_dir.to_path_buf(),
+        Some(&index), &tx, 3, cancel,
+    ).await.unwrap();
+
+    assert_eq!(result.downloaded.len(), 1);
+    let asset = &result.downloaded[0];
+
+    // Case asset should be deduped to the existing canonical default
+    assert_eq!(
+        asset.local_path, canonical,
+        "Case-specific asset should dedup to existing canonical default"
+    );
+}
+
+/// Verify the IMGUR_REMOVED_HASH constant matches the actual imgur removed.png fixture.
+#[test]
+fn test_imgur_removed_hash_constant() {
+    let bytes = include_bytes!("../testdata/imgur_removed.png");
+    assert_eq!(bytes.len(), 503, "imgur removed.png should be exactly 503 bytes");
+    let hash = xxhash_rust::xxh3::xxh3_64(bytes);
+    assert_eq!(hash, 0x38da9bd2e10a4bc8, "IMGUR_REMOVED_HASH must match imgur_removed.png");
+}

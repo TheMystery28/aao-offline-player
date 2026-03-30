@@ -388,3 +388,28 @@ fn test_dedup_case_assets_no_trial_data() {
     let updated = read_manifest(&case_dir).unwrap();
     assert!(updated.asset_map["http://x.com/s.gif"].starts_with("defaults/"));
 }
+
+#[test]
+fn test_unregister_nonexistent_path_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = DedupIndex::open(dir.path()).unwrap();
+    // Unregistering a path that was never registered should succeed (no-op)
+    let result = index.unregister("does/not/exist.gif");
+    assert!(result.is_ok(), "Unregister of nonexistent path should be Ok");
+}
+
+#[test]
+fn test_scan_and_register_returns_zero_for_nonexistent_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = DedupIndex::open(dir.path()).unwrap();
+    let count = index.scan_and_register(dir.path(), "nonexistent").unwrap();
+    assert_eq!(count, 0, "Nonexistent dir should return 0");
+}
+
+#[test]
+fn test_register_batch_empty_slice_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = DedupIndex::open(dir.path()).unwrap();
+    let result = index.register_batch(&[]);
+    assert!(result.is_ok(), "Empty batch should succeed");
+}
