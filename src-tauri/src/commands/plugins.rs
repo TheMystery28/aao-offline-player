@@ -12,12 +12,12 @@ pub async fn import_plugin(
     source_path: String,
     target_case_ids: Vec<u32>,
 ) -> Result<Vec<u32>, String> {
-    let data_dir = {
+    let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
+        (s.data_dir.clone(), s.http_client.clone())
     };
     let path = std::path::PathBuf::from(&source_path);
-    importer::import_aaoplug(&path, &target_case_ids, &data_dir).await
+    importer::import_aaoplug(&path, &target_case_ids, &data_dir, &client).await
 }
 
 /// Import a .aaoplug ZIP as a global plugin.
@@ -26,26 +26,28 @@ pub async fn import_aaoplug_global(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
 ) -> Result<Vec<String>, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let (data_dir, client) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        (s.data_dir.clone(), s.http_client.clone())
+    };
     let path = std::path::PathBuf::from(&source_path);
-    tokio::task::spawn_blocking(move || {
-        importer::import_aaoplug_global(&path, &data_dir)
-    }).await.map_err(|e| format!("Import task failed: {}", e))?
+    importer::import_aaoplug_global(&path, &data_dir, &client).await
 }
 
 /// Attach raw plugin JS code to one or more existing cases.
+/// Downloads any @assets declared in the plugin code.
 #[tauri::command]
-pub fn attach_plugin_code(
+pub async fn attach_plugin_code(
     state: State<'_, Mutex<AppState>>,
     code: String,
     filename: String,
     target_case_ids: Vec<u32>,
 ) -> Result<Vec<u32>, String> {
-    let data_dir = {
+    let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
+        (s.data_dir.clone(), s.http_client.clone())
     };
-    importer::attach_plugin_code(&code, &filename, &target_case_ids, &data_dir)
+    importer::attach_plugin_code(&code, &filename, &target_case_ids, &data_dir, &client).await
 }
 
 /// List plugins installed for a given case.
@@ -100,14 +102,18 @@ pub fn list_global_plugins(
 }
 
 /// Attach raw plugin code as a global plugin.
+/// Downloads any @assets declared in the plugin code.
 #[tauri::command]
-pub fn attach_global_plugin_code(
+pub async fn attach_global_plugin_code(
     state: State<'_, Mutex<AppState>>,
     code: String,
     filename: String,
 ) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
-    importer::attach_global_plugin_code(&code, &filename, &data_dir)
+    let (data_dir, client) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        (s.data_dir.clone(), s.http_client.clone())
+    };
+    importer::attach_global_plugin_code(&code, &filename, &data_dir, &client).await
 }
 
 /// Remove a global plugin.

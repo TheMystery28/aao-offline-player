@@ -1,11 +1,25 @@
 use super::*;
 use std::io;
 
+/// Sync wrapper for attach_global_plugin_code in tests (no @assets, no downloads).
+fn attach_global_plugin_code_sync(code: &str, filename: &str, engine_dir: &std::path::Path) -> Result<(), String> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let client = reqwest::Client::new();
+    rt.block_on(attach_global_plugin_code(code, filename, engine_dir, &client))
+}
+
+/// Sync wrapper for import_aaoplug_global in tests.
+fn import_aaoplug_global_sync(zip_path: &std::path::Path, engine_dir: &std::path::Path) -> Result<Vec<String>, String> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let client = reqwest::Client::new();
+    rt.block_on(import_aaoplug_global(zip_path, engine_dir, &client))
+}
+
 #[test]
 fn test_attach_global_plugin() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
-    attach_global_plugin_code("// global", "global.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// global", "global.js", engine_dir).unwrap();
     assert!(engine_dir.join("plugins/global.js").exists());
     let manifest: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
@@ -17,7 +31,7 @@ fn test_attach_global_plugin() {
 fn test_remove_global_plugin() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
-    attach_global_plugin_code("// global", "global.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// global", "global.js", engine_dir).unwrap();
     remove_global_plugin("global.js", engine_dir).unwrap();
     assert!(!engine_dir.join("plugins/global.js").exists());
     let manifest: serde_json::Value = serde_json::from_str(
@@ -30,7 +44,7 @@ fn test_remove_global_plugin() {
 fn test_toggle_global_plugin() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
-    attach_global_plugin_code("// global", "g.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// global", "g.js", engine_dir).unwrap();
     toggle_global_plugin("g.js", false, engine_dir).unwrap();
     let manifest: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap()
@@ -231,7 +245,7 @@ fn test_params_partial_override_inherits() {
 fn test_attach_global_plugin_starts_disabled() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
 
     let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -250,11 +264,11 @@ fn test_attach_existing_plugin_not_re_disabled() {
     let engine_dir = dir.path();
 
     // Attach first time (starts disabled)
-    attach_global_plugin_code("// v1", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// v1", "test.js", engine_dir).unwrap();
     // Enable it
     toggle_global_plugin("test.js", true, engine_dir).unwrap();
     // Re-attach (update code)
-    attach_global_plugin_code("// v2", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// v2", "test.js", engine_dir).unwrap();
 
     let text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -273,7 +287,7 @@ fn test_resolve_globally_disabled_plugin_inactive() {
     create_test_case_for_save(engine_dir, 99001);
 
     // Attach plugin (starts disabled)
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
 
     let resolved = resolve_plugins_for_case(99001, engine_dir).unwrap();
     let active = resolved["active"].as_array().unwrap();
@@ -287,7 +301,7 @@ fn test_resolve_globally_enabled_plugin_active() {
 
     create_test_case_for_save(engine_dir, 99002);
 
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
     toggle_global_plugin("test.js", true, engine_dir).unwrap();
 
     let resolved = resolve_plugins_for_case(99002, engine_dir).unwrap();
@@ -303,7 +317,7 @@ fn test_resolve_with_disabled_for() {
 
     create_test_case_for_save(engine_dir, 99003);
 
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
     toggle_global_plugin("test.js", true, engine_dir).unwrap();
 
     // Disable for this specific case
@@ -321,7 +335,7 @@ fn test_resolve_with_enabled_for() {
 
     create_test_case_for_save(engine_dir, 99004);
 
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
     // Plugin starts disabled globally
 
     // Enable for this specific case
@@ -337,7 +351,7 @@ fn test_toggle_plugin_for_scope_globally_enabled_disable() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
 
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
     toggle_global_plugin("test.js", true, engine_dir).unwrap();
 
     // Disable for a sequence
@@ -354,7 +368,7 @@ fn test_toggle_plugin_for_scope_globally_disabled_enable() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
 
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
     // Plugin starts globally disabled
 
     // Enable for a collection
@@ -371,7 +385,7 @@ fn test_toggle_plugin_for_scope_re_enable_removes_from_disabled_for() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
 
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
     toggle_global_plugin("test.js", true, engine_dir).unwrap();
 
     // Disable then re-enable for a case
@@ -392,7 +406,7 @@ fn test_resolve_bidirectional_precedence() {
     create_test_case_for_save(engine_dir, 99010);
     create_test_case_for_save(engine_dir, 99011);
 
-    attach_global_plugin_code("// test", "test.js", engine_dir).unwrap();
+    attach_global_plugin_code_sync("// test", "test.js", engine_dir).unwrap();
     // Globally disabled, but enable for case 99010 only
     toggle_plugin_for_scope("test.js", "case", "99010", true, engine_dir).unwrap();
 
@@ -435,7 +449,7 @@ fn test_import_aaoplug_global_basic() {
     let engine_dir = dir.path();
     let zip_path = create_aaoplug_zip(dir.path(), &[("myplugin.js", "// test plugin code")]);
 
-    let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+    let result = import_aaoplug_global_sync(&zip_path, engine_dir).unwrap();
     assert_eq!(result, vec!["myplugin.js"]);
 
     // Verify plugin is in global manifest
@@ -458,7 +472,7 @@ fn test_import_aaoplug_global_multiple_scripts() {
         ("b.js", "// plugin b"),
     ]);
 
-    let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+    let result = import_aaoplug_global_sync(&zip_path, engine_dir).unwrap();
     assert_eq!(result.len(), 2);
     assert!(result.contains(&"a.js".to_string()));
     assert!(result.contains(&"b.js".to_string()));
@@ -487,7 +501,7 @@ fn test_import_aaoplug_global_skips_assets() {
     io::Write::write_all(&mut zip, b"fake audio data").unwrap();
     zip.finish().unwrap();
 
-    let result = import_aaoplug_global(&zip_path, engine_dir).unwrap();
+    let result = import_aaoplug_global_sync(&zip_path, engine_dir).unwrap();
     assert_eq!(result, vec!["p.js"]);
     // Assets should NOT be extracted to global plugins dir
     assert!(!engine_dir.join("plugins/assets").exists());

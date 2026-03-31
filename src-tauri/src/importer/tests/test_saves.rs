@@ -1,6 +1,13 @@
 use super::*;
 use std::io;
 
+/// Sync wrapper for attach_plugin_code in tests (no @assets, no downloads needed).
+fn attach_plugin_code_sync(code: &str, filename: &str, case_ids: &[u32], engine_dir: &std::path::Path) -> Result<Vec<u32>, String> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let client = reqwest::Client::new();
+    rt.block_on(attach_plugin_code(code, filename, case_ids, engine_dir, &client))
+}
+
 #[test]
 fn test_export_aaosave_basic() {
     let dir = tempfile::tempdir().unwrap();
@@ -38,7 +45,7 @@ fn test_export_aaosave_with_plugins() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
     create_test_case_for_save(engine_dir, 50002);
-    attach_plugin_code("// test", "test.js", &[50002], engine_dir).unwrap();
+    attach_plugin_code_sync("// test", "test.js", &[50002], engine_dir).unwrap();
 
     let saves = serde_json::json!({
         "50002": { "1700000000000": "{\"trial_id\":50002}" }
@@ -136,7 +143,7 @@ fn test_export_import_aaosave_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
     create_test_case_for_save(engine_dir, 70001);
-    attach_plugin_code("// roundtrip", "rt.js", &[70001], engine_dir).unwrap();
+    attach_plugin_code_sync("// roundtrip", "rt.js", &[70001], engine_dir).unwrap();
 
     let saves = serde_json::json!({
         "70001": {

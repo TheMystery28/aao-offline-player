@@ -17,7 +17,7 @@ pub fn list_global_plugins(engine_dir: &Path) -> Result<serde_json::Value, Strin
 }
 
 /// Attach raw plugin JS code as a global plugin.
-pub fn attach_global_plugin_code(code: &str, filename: &str, engine_dir: &Path) -> Result<(), String> {
+pub async fn attach_global_plugin_code(code: &str, filename: &str, engine_dir: &Path, client: &reqwest::Client) -> Result<(), String> {
     let plugins_dir = engine_dir.join("plugins");
     fs::create_dir_all(&plugins_dir)
         .map_err(|e| format!("Failed to create global plugins dir: {}", e))?;
@@ -25,6 +25,13 @@ pub fn attach_global_plugin_code(code: &str, filename: &str, engine_dir: &Path) 
     let dest = plugins_dir.join(filename);
     fs::write(&dest, code)
         .map_err(|e| format!("Failed to write global plugin file: {}", e))?;
+
+    // Download @assets declared in the plugin code
+    let assets = super::parse_plugin_assets(code);
+    if !assets.is_empty() {
+        let assets_dir = plugins_dir.join("assets");
+        super::download_plugin_assets(client, &assets, &assets_dir).await;
+    }
 
     let manifest_file = plugins_dir.join("manifest.json");
     let mut scripts: Vec<String> = Vec::new();

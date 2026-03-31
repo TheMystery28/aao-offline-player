@@ -1,5 +1,12 @@
 use super::*;
 
+/// Sync wrapper for attach_plugin_code in tests (no @assets, no downloads needed).
+fn attach_plugin_code_sync(code: &str, filename: &str, case_ids: &[u32], engine_dir: &std::path::Path) -> Result<Vec<u32>, String> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let client = reqwest::Client::new();
+    rt.block_on(attach_plugin_code(code, filename, case_ids, engine_dir, &client))
+}
+
 #[test]
 fn test_extract_descriptors_basic() {
     let code = r#"
@@ -200,7 +207,7 @@ fn test_promote_copies_file() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
     create_test_case_for_save(engine_dir, 55555);
-    attach_plugin_code("// promote me", "prom.js", &[55555], engine_dir).unwrap();
+    attach_plugin_code_sync("// promote me", "prom.js", &[55555], engine_dir).unwrap();
 
     let scope = serde_json::json!({"all": true});
     promote_plugin_to_global(55555, "prom.js", &scope, engine_dir).unwrap();
@@ -215,7 +222,7 @@ fn test_promote_updates_global_manifest() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
     create_test_case_for_save(engine_dir, 55556);
-    attach_plugin_code("// prom2", "p2.js", &[55556], engine_dir).unwrap();
+    attach_plugin_code_sync("// prom2", "p2.js", &[55556], engine_dir).unwrap();
 
     let scope = serde_json::json!({"all": false, "case_ids": [1, 2]});
     promote_plugin_to_global(55556, "p2.js", &scope, engine_dir).unwrap();
@@ -231,7 +238,7 @@ fn test_promote_removes_from_case() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
     create_test_case_for_save(engine_dir, 55557);
-    attach_plugin_code("// prom3", "p3.js", &[55557], engine_dir).unwrap();
+    attach_plugin_code_sync("// prom3", "p3.js", &[55557], engine_dir).unwrap();
 
     promote_plugin_to_global(55557, "p3.js", &serde_json::json!({"all":true}), engine_dir).unwrap();
 

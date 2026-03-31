@@ -8,6 +8,45 @@ use crate::downloader::manifest::{read_manifest, write_manifest};
 use super::*;
 use super::shared::read_zip_text;
 
+/// Download plugin assets to a target directory.
+/// Silent on failure — logs errors but never returns Err.
+/// Returns count of successfully downloaded assets.
+pub async fn download_plugin_assets(
+    client: &reqwest::Client,
+    assets: &[(String, String)],
+    dest_dir: &Path,
+) -> usize {
+    if assets.is_empty() {
+        return 0;
+    }
+    let _ = fs::create_dir_all(dest_dir);
+    let mut count = 0;
+    for (filename, url) in assets {
+        let dest = dest_dir.join(filename);
+        match client.get(url.as_str()).send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    match resp.bytes().await {
+                        Ok(bytes) => {
+                            if fs::write(&dest, &bytes).is_ok() {
+                                eprintln!("[PLUGIN_ASSETS] Downloaded: {} → {}", url, dest.display());
+                                count += 1;
+                            } else {
+                                eprintln!("[PLUGIN_ASSETS] Failed to write {}: I/O error", dest.display());
+                            }
+                        }
+                        Err(e) => eprintln!("[PLUGIN_ASSETS] Failed to read response for {}: {}", url, e),
+                    }
+                } else {
+                    eprintln!("[PLUGIN_ASSETS] Failed to download {}: HTTP {}", url, resp.status());
+                }
+            }
+            Err(e) => eprintln!("[PLUGIN_ASSETS] Failed to download {}: {}", url, e),
+        }
+    }
+    count
+}
+
 /// Import a plugin from a .aaoplug ZIP file into one or more existing cases.
 ///
 /// The .aaoplug format:
@@ -21,6 +60,7 @@ pub async fn import_aaoplug(
     zip_path: &Path,
     target_case_ids: &[u32],
     engine_dir: &Path,
+    client: &reqwest::Client,
 ) -> Result<Vec<u32>, String> {
     let file = fs::File::open(zip_path)
         .map_err(|e| format!("Failed to open .aaoplug file: {}", e))?;
@@ -79,11 +119,6 @@ pub async fn import_aaoplug(
                 let assets_dir = plugins_dir.join("assets");
                 fs::create_dir_all(&assets_dir).ok();
 
-                let client = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(30))
-                    .build()
-                    .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-
                 for ext in externals {
                     let url = ext.get("url").and_then(|u| u.as_str()).unwrap_or("");
                     let path = ext.get("path").and_then(|p| p.as_str()).unwrap_or("");
@@ -134,7 +169,7 @@ pub async fn import_aaoplug(
 /// Import a .aaoplug ZIP file as a global plugin.
 /// Extracts JS files and attaches each via attach_global_plugin_code.
 /// Assets and case_config are skipped (case-specific, not relevant globally).
-pub fn import_aaoplug_global(zip_path: &Path, engine_dir: &Path) -> Result<Vec<String>, String> {
+pub async fn import_aaoplug_global(zip_path: &Path, engine_dir: &Path, client: &reqwest::Client) -> Result<Vec<String>, String> {
     let file = fs::File::open(zip_path)
         .map_err(|e| format!("Failed to open .aaoplug file: {}", e))?;
     let mut archive = zip::ZipArchive::new(file)
@@ -166,7 +201,7 @@ pub fn import_aaoplug_global(zip_path: &Path, engine_dir: &Path) -> Result<Vec<S
             }
         };
 
-        attach_global_plugin_code(&code, script_name, engine_dir)?;
+        attach_global_plugin_code(&code, script_name, engine_dir, client).await?;
         attached.push(script_name.clone());
     }
 
@@ -174,13 +209,17 @@ pub fn import_aaoplug_global(zip_path: &Path, engine_dir: &Path) -> Result<Vec<S
 }
 
 /// Attach raw plugin JS code to one or more existing cases.
-pub fn attach_plugin_code(
+pub async fn attach_plugin_code(
     code: &str,
     filename: &str,
     target_case_ids: &[u32],
     engine_dir: &Path,
+    client: &reqwest::Client,
 ) -> Result<Vec<u32>, String> {
     let mut attached_cases = Vec::new();
+
+    // Parse @assets once (same for all target cases)
+    let assets = parse_plugin_assets(code);
 
     for &case_id in target_case_ids {
         let case_dir = engine_dir.join("case").join(case_id.to_string());
@@ -194,6 +233,12 @@ pub fn attach_plugin_code(
         let dest = plugins_dir.join(filename);
         fs::write(&dest, code)
             .map_err(|e| format!("Failed to write plugin file: {}", e))?;
+
+        // Download @assets declared in the plugin code
+        if !assets.is_empty() {
+            let assets_dir = plugins_dir.join("assets");
+            download_plugin_assets(client, &assets, &assets_dir).await;
+        }
 
         // Create/update plugins manifest
         let manifest_file = plugins_dir.join("manifest.json");

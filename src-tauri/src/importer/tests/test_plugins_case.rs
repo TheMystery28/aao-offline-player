@@ -1,5 +1,15 @@
 use super::*;
 
+fn test_client() -> reqwest::Client {
+    reqwest::Client::new()
+}
+
+/// Sync wrapper for attach_plugin_code in tests (no @assets, no downloads needed).
+fn attach_plugin_code_sync(code: &str, filename: &str, case_ids: &[u32], engine_dir: &std::path::Path) -> Result<Vec<u32>, String> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(attach_plugin_code(code, filename, case_ids, engine_dir, &test_client()))
+}
+
 #[tokio::test]
 async fn test_import_aaoplug_extracts_to_case() {
     let dir = tempfile::tempdir().unwrap();
@@ -49,7 +59,7 @@ async fn test_import_aaoplug_extracts_to_case() {
     }
 
     // Import the plugin
-    let result = import_aaoplug(&plug_path, &[99999], engine_dir).await;
+    let result = import_aaoplug(&plug_path, &[99999], engine_dir, &test_client()).await;
     assert!(result.is_ok(), "import_aaoplug should succeed");
     let imported = result.unwrap();
     assert_eq!(imported, vec![99999]);
@@ -69,7 +79,7 @@ async fn test_import_aaoplug_invalid_zip() {
     let dir = tempfile::tempdir().unwrap();
     let bad_path = dir.path().join("bad.aaoplug");
     std::fs::write(&bad_path, "not a zip").unwrap();
-    let result = import_aaoplug(&bad_path, &[1], dir.path()).await;
+    let result = import_aaoplug(&bad_path, &[1], dir.path(), &test_client()).await;
     assert!(result.is_err());
 }
 
@@ -85,13 +95,13 @@ async fn test_import_aaoplug_nonexistent_case() {
         std::io::Write::write_all(&mut zip, b"{}").unwrap();
         zip.finish().unwrap();
     }
-    let result = import_aaoplug(&plug_path, &[99998], dir.path()).await;
+    let result = import_aaoplug(&plug_path, &[99998], dir.path(), &test_client()).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_empty(), "Should skip non-existent case");
 }
 
 #[test]
-fn test_attach_plugin_code() {
+fn test_attach_plugin_code_sync() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
 
@@ -120,7 +130,7 @@ fn test_attach_plugin_code() {
     write_manifest(&manifest, &case_dir).unwrap();
 
     // Attach plugin code
-    let result = attach_plugin_code(
+    let result = attach_plugin_code_sync(
         "console.log('hello');",
         "my_plugin.js",
         &[88888],
@@ -188,8 +198,8 @@ fn test_list_plugins_with_plugins() {
     };
     write_manifest(&manifest, &case_dir).unwrap();
 
-    attach_plugin_code("// a", "a.js", &[90002], engine_dir).unwrap();
-    attach_plugin_code("// b", "b.js", &[90002], engine_dir).unwrap();
+    attach_plugin_code_sync("// a", "a.js", &[90002], engine_dir).unwrap();
+    attach_plugin_code_sync("// b", "b.js", &[90002], engine_dir).unwrap();
 
     let result = list_plugins(90002, engine_dir).unwrap();
     let scripts = result.get("scripts").unwrap().as_array().unwrap();
@@ -227,8 +237,8 @@ fn test_remove_plugin_updates_manifest() {
     };
     write_manifest(&manifest, &case_dir).unwrap();
 
-    attach_plugin_code("// x", "x.js", &[90003], engine_dir).unwrap();
-    attach_plugin_code("// y", "y.js", &[90003], engine_dir).unwrap();
+    attach_plugin_code_sync("// x", "x.js", &[90003], engine_dir).unwrap();
+    attach_plugin_code_sync("// y", "y.js", &[90003], engine_dir).unwrap();
 
     remove_plugin(90003, "x.js", engine_dir).unwrap();
 
@@ -276,7 +286,7 @@ fn test_remove_plugin_sets_has_plugins_false() {
     };
     write_manifest(&manifest, &case_dir).unwrap();
 
-    attach_plugin_code("// only", "only.js", &[90004], engine_dir).unwrap();
+    attach_plugin_code_sync("// only", "only.js", &[90004], engine_dir).unwrap();
     assert!(read_manifest(&case_dir).unwrap().has_plugins);
 
     remove_plugin(90004, "only.js", engine_dir).unwrap();
@@ -345,7 +355,7 @@ fn test_toggle_plugin_disables() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
     create_test_case_for_save(engine_dir, 80001);
-    attach_plugin_code("// test", "test.js", &[80001], engine_dir).unwrap();
+    attach_plugin_code_sync("// test", "test.js", &[80001], engine_dir).unwrap();
 
     toggle_plugin(80001, "test.js", false, engine_dir).unwrap();
 
@@ -361,7 +371,7 @@ fn test_toggle_plugin_enables() {
     let dir = tempfile::tempdir().unwrap();
     let engine_dir = dir.path();
     create_test_case_for_save(engine_dir, 80002);
-    attach_plugin_code("// test", "test.js", &[80002], engine_dir).unwrap();
+    attach_plugin_code_sync("// test", "test.js", &[80002], engine_dir).unwrap();
 
     // Disable then re-enable
     toggle_plugin(80002, "test.js", false, engine_dir).unwrap();
