@@ -12,13 +12,15 @@ MyCase.aaocase
 ├── assets/              Case-specific images and audio
 ├── defaults/            Shared assets this case uses (sprites, backgrounds, music)
 ├── plugins/             (optional) Bundled plugins
-│   ├── manifest.json    Plugin list and metadata
+│   ├── manifest.json    Plugin list
 │   ├── plugin.js        Plugin code
 │   └── assets/          Plugin assets (flat folder — fonts, sounds, images)
 ├── case_config.json     (optional) Plugin config overrides
 ├── plugin_params.json   (optional) Plugin parameter overrides (by_sequence/by_collection scopes)
 └── saves.json           (optional) Game progress / save data
 ```
+
+On import, plugins from the ZIP are added to the global `plugins/` pool and scoped to the imported case. If the plugin already exists globally, only the scope is updated — the file is not duplicated.
 
 For multi-part sequences, a single `.aaocase` bundles all parts together:
 
@@ -28,6 +30,7 @@ MySequence.aaocase
 ├── 99990/               Part 1 (manifest + data + assets)
 ├── 99991/               Part 2 (manifest + data + assets)
 ├── defaults/            Shared assets (deduplicated across all parts)
+├── plugins/             (optional) Bundled plugins (added to global pool)
 ├── plugin_params.json   (optional) Plugin parameter overrides (by_sequence scope)
 └── saves.json           (optional) Saves for all parts
 ```
@@ -42,6 +45,7 @@ MyCollection.aaocase
 ├── 99081/               Sequence part 2
 ├── ...                  All cases in the collection, standalone or sequenced
 ├── defaults/            Shared assets (deduplicated across everything)
+├── plugins/             (optional) Bundled plugins (added to global pool)
 ├── plugin_params.json   (optional) Plugin parameter overrides (by_sequence + by_collection scopes)
 └── saves.json           (optional) Saves for all cases
 ```
@@ -110,24 +114,58 @@ The `manifest.json` declares the plugin's scripts and assets:
 }
 ```
 
-When importing a `.aaoplug`, the plugin is installed globally (available to all cases). The user can then configure its scope — enabling or disabling it for specific cases, sequences, or collections. The plugin code is stored in `plugins/` and parameter descriptors are automatically extracted from the source to enable type-aware editing in the UI.
+When importing a `.aaoplug`, the plugin is installed to the global `plugins/` pool. The user can configure its scope — enabling or disabling it for specific cases, sequences, or collections. Plugin code and assets are stored once; multiple cases share the same files. The plugin is reference-counted: it's deleted when the last case using it removes it.
 
 If the manifest declares external asset URLs, they are downloaded during import. At runtime, all assets are local — the plugin engine never fetches from the internet.
 
-## Plugin Assets
+### Standalone JS Plugins and @assets
 
-All plugin assets live in a flat `plugins/assets/` folder — no subfolders. Plugins access them via relative local paths:
+Plugins can also be distributed as standalone `.js` files (without a `.aaoplug` ZIP). These can declare required remote assets via a JSDoc `@assets` block:
 
 ```js
-var baseUrl = 'case/' + api.player.getTrialInfo().id + '/plugins/assets/';
+/**
+ * My Plugin
+ *
+ * @assets
+ * voice_blip1.opus = https://example.com/voice_blip1.opus
+ * custom_font.woff = https://example.com/custom_font.woff
+ */
+EnginePlugins.register({ ... });
+```
+
+When attached via "Attach Code", the backend parses the `@assets` block and downloads each URL to `plugins/assets/`. The plugin works fully offline after import.
+
+## Plugin Assets
+
+All plugin assets live in a flat `plugins/assets/` folder shared across all plugins. Plugins access them via relative paths at runtime:
+
+```js
+var baseUrl = 'plugins/assets/';
 // e.g. baseUrl + 'voice_blip1.opus'
 ```
 
 Assets can be:
 - **Bundled** in the `.aaoplug` or `.aaocase` ZIP (extracted on import)
 - **External** URLs declared in `manifest.json` → `assets.external` (downloaded during import)
+- **Declared via `@assets`** in standalone JS plugins (downloaded when attached)
 
 At runtime, ALL assets are local. No online fetching ever happens during gameplay.
+
+## Plugin Auto-Cleanup
+
+Plugins receive a per-plugin tracked API. The engine automatically cleans up resources when a plugin is disabled:
+
+| API method | Auto-cleaned |
+|---|---|
+| `api.dom.injectCSS()` | Style element removed |
+| `api.dom.injectStylesheet()` | Link element removed |
+| `api.dom.onMediaQuery()` | Media listener removed |
+| `api.sound.registerSound()` | Sound unloaded |
+| `api.input.onKeyDown()` / `onKeyUp()` | DOM listener removed |
+| `api.timers.setInterval()` / `setTimeout()` / `requestAnimationFrame()` | Timer cleared |
+| `events.on()` | Listener removed by namespace |
+
+Plugins can optionally return `{ destroy: function() { ... } }` from `init()` for custom cleanup (e.g., removing manually added DOM elements). The manual `destroy()` runs before auto-cleanup.
 
 # The .aaosave Format
 
@@ -177,7 +215,7 @@ Provides human-readable context without parsing saves.json:
 
 ## Plugins (optional)
 
-When exporting, the user can choose to include plugins. Plugins are stored per-case under `plugins/{case_id}/` mirroring the case's `plugins/` directory. On import, plugins are only installed if the target case exists locally. Case config overrides go in `case_config/{case_id}.json`.
+When exporting, the user can choose to include plugins. Active plugins for each case are read from the global `plugins/` pool and bundled per-case under `plugins/{case_id}/`. On import, plugins are added to the global pool and scoped to the target case.
 
 ## Importing from a Save Link
 

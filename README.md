@@ -39,14 +39,20 @@ The app also imports from [aaoffline](https://github.com/falko17/aaoffline) HTML
 
 ### Plugins
 
-The engine supports a plugin system for extending the player. Plugins are JS files that register via `EnginePlugins.register()` and receive a frozen API with access to DOM, player state, sound, court record, input, settings, and display modules.
+The engine supports a plugin system for extending the player. Plugins are JS files that register via `EnginePlugins.register()` and receive a tracked API with access to DOM, player state, sound, court record, input, settings, timers, and display modules.
+
+**Auto-cleanup:** Every API call a plugin makes is automatically tracked. When a plugin is disabled via the in-game settings panel, all its injected CSS, registered sounds, event listeners, timers, and media query watchers are cleaned up automatically — no page reload needed. Plugins can optionally return a manual `destroy()` for custom DOM cleanup.
+
+**Global plugin pool:** All plugins are stored in a single `plugins/` folder with scoped activation. A plugin can be enabled globally, per-collection, per-sequence, or per-case. When a plugin is enabled for every case in a sequence individually, the scope is automatically promoted to sequence-level. Plugins are reference-counted: when the last case using a plugin removes it, the plugin files are deleted.
+
+**Asset downloads:** Standalone `.js` plugins can declare remote assets via an `@assets` comment block. When the plugin is attached, the assets are downloaded automatically so the plugin works fully offline.
 
 Plugins can be:
+- **Distributed as `.aaoplug`** files (standalone ZIP with plugin code, bundled assets, and optional external asset URLs for updates)
+- **Attached as raw code** via the launcher's plugin panel or per-case plugin manager
 - **Bundled in `.aaocase`** exports (case authors can include plugins with their cases)
-- **Distributed as `.aaoplug`** files (standalone ZIP with plugin code, assets, and optional config)
-- **Attached as raw code** via the launcher's plugin manager
 
-The launcher provides per-case plugin management: install from `.aaoplug`, attach code, view installed plugins, and remove plugins. See `engine/plugins_examples/` for sample plugins.
+The launcher provides a unified plugin panel showing all installed plugins with their scopes, plus per-case plugin management. See `engine/plugins_examples/` for sample plugins.
 
 ### Library management
 
@@ -61,6 +67,7 @@ The in-game player is a modified version of the AAO engine with a configurable s
 Features added to the engine:
 - **Dark mode** (grey palette, on by default)
 - **Responsive layout** with automatic wide/tabbed/stacked modes based on window size
+- **GPU-accelerated screen scaling** via `transform: scale()` with margin compensation for pixel-perfect rendering
 - **Panel arrangement picker** (12 layouts) to reorder the screen, evidence, and settings panels
 - **Width sliders** for page, screen, evidence, and settings panels with live ghost preview
 - **Fullscreen toggle** (F11 / gamepad View button)
@@ -68,9 +75,10 @@ Features added to the engine:
 - **Quick save/load** (Ctrl+S / Ctrl+L / gamepad LB / LT)
 - **Gamepad support** with W3C Standard mapping
 - **Save management** with sorted list across sequence parts and load-latest
-- **Plugin system** with full API for extending the player
+- **Plugin system** with tracked auto-cleanup API for extending the player
 - **Config-driven architecture** with persistent user settings in localStorage
 - **Event bus** for decoupled module communication
+- **Accessibility options**: font scale, line spacing, reduce motion, disable screen shake, disable flash
 
 ### Controls
 
