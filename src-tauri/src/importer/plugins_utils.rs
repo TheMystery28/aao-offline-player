@@ -156,10 +156,15 @@ pub fn set_global_plugin_params(
 
 /// Export a case's active plugins as a .aaoplug ZIP file.
 /// Reads from the global plugins/ folder, filtered to plugins active for this case.
-pub fn export_case_plugins(case_id: u32, dest_path: &Path, data_dir: &Path) -> Result<u64, String> {
+pub fn export_case_plugins(_case_id: u32, dest_path: &Path, data_dir: &Path) -> Result<u64, String> {
     let plugins_dir = data_dir.join("plugins");
     if !plugins_dir.is_dir() {
-        return Err(format!("No plugins installed"));
+        return Err("No plugins installed".to_string());
+    }
+
+    let active = super::saves::get_active_plugin_scripts_for_case(_case_id, data_dir);
+    if active.is_empty() {
+        return Err("No active plugins for this case".to_string());
     }
 
     let file = fs::File::create(dest_path)
@@ -168,7 +173,31 @@ pub fn export_case_plugins(case_id: u32, dest_path: &Path, data_dir: &Path) -> R
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
 
-    add_dir_to_zip_recursive(&mut zip, &plugins_dir, "", options)?;
+    // Write manifest
+    let manifest = serde_json::json!({ "scripts": active });
+    zip.start_file("manifest.json", options)
+        .map_err(|e| format!("Failed to add manifest: {}", e))?;
+    std::io::Write::write_all(&mut zip, serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+        .map_err(|e| format!("Failed to write manifest: {}", e))?;
+
+    // Write each active script
+    for script in &active {
+        let src = plugins_dir.join(script);
+        if src.is_file() {
+            let data = fs::read(&src)
+                .map_err(|e| format!("Failed to read {}: {}", script, e))?;
+            zip.start_file(script.as_str(), options)
+                .map_err(|e| format!("Failed to add {}: {}", script, e))?;
+            std::io::Write::write_all(&mut zip, &data)
+                .map_err(|e| format!("Failed to write {}: {}", script, e))?;
+        }
+    }
+
+    // Write assets/ if present
+    let assets_dir = plugins_dir.join("assets");
+    if assets_dir.is_dir() {
+        add_dir_to_zip_recursive(&mut zip, &assets_dir, "assets", options)?;
+    }
 
     zip.finish()
         .map_err(|e| format!("Failed to finalize .aaoplug ZIP: {}", e))?;

@@ -611,10 +611,13 @@ fn import_single_case_zip(
 
         let entry_name = entry.name().to_string();
 
-        // Route defaults/ entries to engine_dir (not case_dir)
+        // Route defaults/ entries to engine_dir, plugins/ to global plugins/
         let is_default = entry_name.starts_with("defaults/");
+        let is_plugin = entry_name.starts_with("plugins/");
         let dest_path = if is_default {
             engine_dir.join(&entry_name)
+        } else if is_plugin {
+            engine_dir.join(&entry_name) // plugins/ → engine_dir/plugins/ (global)
         } else {
             case_dir.join(&entry_name)
         };
@@ -637,6 +640,12 @@ fn import_single_case_zip(
             .map_err(|e| format!("Failed to write {}: {}", entry_name, e))?;
         drop(outfile);
 
+        // Skip dedup for plugin files — they're not case assets
+        if is_plugin {
+            if let Some(cb) = &on_progress { cb(i + 1, total); }
+            continue;
+        }
+
         let index_key = if is_default {
             crate::downloader::paths::normalize_path(&entry_name)
         } else {
@@ -655,9 +664,33 @@ fn import_single_case_zip(
         if let Some(cb) = &on_progress { cb(i + 1, total); }
     }
 
-    // 3. Detect plugins and case_config
-    let has_plugins = case_dir.join("plugins").is_dir();
+    // 3. Detect case_config. Plugins are now in the global pool.
     let has_case_config = case_dir.join("case_config.json").is_file();
+
+    // If plugins were extracted to the global pool, register them in the global manifest
+    let global_plugins_manifest = engine_dir.join("plugins").join("manifest.json");
+    if global_plugins_manifest.exists() || engine_dir.join("plugins").is_dir() {
+        // Read the extracted plugin manifest to find script names
+        let plugin_manifest_path = engine_dir.join("plugins").join("manifest.json");
+        if plugin_manifest_path.exists() {
+            if let Ok(text) = fs::read_to_string(&plugin_manifest_path) {
+                if let Ok(pm) = serde_json::from_str::<serde_json::Value>(&text) {
+                    // Only register if this looks like a simple aaoplug manifest (has scripts but no plugins config)
+                    if pm.get("scripts").is_some() && pm.get("plugins").is_none() {
+                        let scripts: Vec<String> = pm.get("scripts")
+                            .and_then(|s| s.as_array())
+                            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                            .unwrap_or_default();
+                        for script in &scripts {
+                            let code = fs::read_to_string(engine_dir.join("plugins").join(script)).unwrap_or_default();
+                            let descriptors = extract_plugin_descriptors(&code);
+                            let _ = upsert_plugin_manifest(engine_dir, script, "case", &[case_id], descriptors);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // 4. Read the manifest we just extracted (or use the one from the ZIP)
     let final_manifest_path = case_dir.join("manifest.json");
@@ -666,7 +699,7 @@ fn import_single_case_zip(
     } else {
         zip_manifest
     };
-    manifest.has_plugins = has_plugins;
+    manifest.has_plugins = false; // Plugins are global now
     manifest.has_case_config = has_case_config;
     write_manifest(&manifest, &case_dir)?;
 

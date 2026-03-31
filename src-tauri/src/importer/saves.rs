@@ -8,7 +8,7 @@ use crate::utils::format_timestamp;
 use super::shared::*;
 
 /// Get active plugin script names for a case from the global manifest.
-fn get_active_plugin_scripts_for_case(case_id: u32, engine_dir: &Path) -> Vec<String> {
+pub(super) fn get_active_plugin_scripts_for_case(case_id: u32, engine_dir: &Path) -> Vec<String> {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() { return Vec::new(); }
     let text = match fs::read_to_string(&manifest_path) { Ok(t) => t, Err(_) => return Vec::new() };

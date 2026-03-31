@@ -152,33 +152,61 @@ pub fn export_aaocase(
         }
     }
 
-    // Add plugins directory if present and requested
-    let plugins_dir = case_dir.join("plugins");
-    if include_plugins && plugins_dir.is_dir() {
-        fn add_dir_to_zip(
-            zip: &mut zip::ZipWriter<fs::File>,
-            dir: &Path,
-            prefix: &str,
-            options: zip::write::SimpleFileOptions,
-        ) -> Result<(), String> {
-            for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read {}: {}", prefix, e))? {
-                let entry = entry.map_err(|e| format!("Dir entry error: {}", e))?;
-                let path = entry.path();
-                let name = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
-                if path.is_dir() {
-                    add_dir_to_zip(zip, &path, &name, options)?;
-                } else if path.is_file() {
-                    let data = fs::read(&path)
-                        .map_err(|e| format!("Failed to read {}: {}", name, e))?;
-                    zip.start_file(&name, options)
-                        .map_err(|e| format!("Failed to add {} to ZIP: {}", name, e))?;
-                    io::Write::write_all(zip, &data)
-                        .map_err(|e| format!("Failed to write {} to ZIP: {}", name, e))?;
+    // Add active plugins from the global pool
+    let global_plugins_dir = engine_dir.join("plugins");
+    if include_plugins && global_plugins_dir.is_dir() {
+        let active_scripts = super::saves::get_active_plugin_scripts_for_case(case_id, engine_dir);
+        if !active_scripts.is_empty() {
+            // Write a plugin manifest listing active scripts
+            let manifest = serde_json::json!({ "scripts": active_scripts });
+            zip.start_file("plugins/manifest.json", options)
+                .map_err(|e| format!("Failed to add plugins/manifest.json: {}", e))?;
+            io::Write::write_all(&mut zip, serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+                .map_err(|e| format!("Failed to write plugins/manifest.json: {}", e))?;
+
+            // Add each active script
+            for script in &active_scripts {
+                let src = global_plugins_dir.join(script);
+                if src.is_file() {
+                    let data = fs::read(&src)
+                        .map_err(|e| format!("Failed to read plugin {}: {}", script, e))?;
+                    let zip_name = format!("plugins/{}", script);
+                    zip.start_file(&zip_name, options)
+                        .map_err(|e| format!("Failed to add {}: {}", zip_name, e))?;
+                    io::Write::write_all(&mut zip, &data)
+                        .map_err(|e| format!("Failed to write {}: {}", zip_name, e))?;
                 }
             }
-            Ok(())
+
+            // Add assets/ directory if it exists
+            let assets_dir = global_plugins_dir.join("assets");
+            if assets_dir.is_dir() {
+                fn add_assets_to_zip(
+                    zip: &mut zip::ZipWriter<fs::File>,
+                    dir: &Path,
+                    prefix: &str,
+                    options: zip::write::SimpleFileOptions,
+                ) -> Result<(), String> {
+                    for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read {}: {}", prefix, e))? {
+                        let entry = entry.map_err(|e| format!("Dir entry error: {}", e))?;
+                        let path = entry.path();
+                        let name = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
+                        if path.is_dir() {
+                            add_assets_to_zip(zip, &path, &name, options)?;
+                        } else if path.is_file() {
+                            let data = fs::read(&path)
+                                .map_err(|e| format!("Failed to read {}: {}", name, e))?;
+                            zip.start_file(&name, options)
+                                .map_err(|e| format!("Failed to add {}: {}", name, e))?;
+                            io::Write::write_all(zip, &data)
+                                .map_err(|e| format!("Failed to write {}: {}", name, e))?;
+                        }
+                    }
+                    Ok(())
+                }
+                let _ = add_assets_to_zip(&mut zip, &assets_dir, "plugins/assets", options);
+            }
         }
-        let _ = add_dir_to_zip(&mut zip, &plugins_dir, "plugins", options);
     }
 
     // Add case_config.json if present and plugins included
