@@ -189,11 +189,13 @@ function testPlugins() {
 		var api = EnginePlugins._buildApi();
 		if (!api) return;
 
-		// injectCSS
-		var styleEl = api.dom.injectCSS('body { --test-plugin-var: 1; }');
-		TestHarness.assert(styleEl instanceof HTMLStyleElement, 'injectCSS returns a style element');
-		TestHarness.assert(styleEl.parentNode === document.head, 'injectCSS appends to head');
-		if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+		// injectCSS returns { element, remove }
+		var cssResult = api.dom.injectCSS('body { --test-plugin-var: 1; }');
+		TestHarness.assert(cssResult.element instanceof HTMLStyleElement, 'injectCSS returns { element: HTMLStyleElement }');
+		TestHarness.assertType(cssResult.remove, 'function', 'injectCSS returns { remove: function }');
+		TestHarness.assert(cssResult.element.parentNode === document.head, 'injectCSS appends to head');
+		cssResult.remove();
+		TestHarness.assert(!cssResult.element.parentNode, 'injectCSS remove() detaches from DOM');
 
 		// create
 		var div = api.dom.create('div');
@@ -203,11 +205,16 @@ function testPlugins() {
 		var body = api.dom.query('body');
 		TestHarness.assert(body === document.body, 'query returns correct element');
 
-		// injectStylesheet
-		var linkEl = api.dom.injectStylesheet('test.css');
-		TestHarness.assert(linkEl instanceof HTMLLinkElement, 'injectStylesheet returns a link element');
-		TestHarness.assertEqual(linkEl.rel, 'stylesheet', 'injectStylesheet sets rel=stylesheet');
-		if (linkEl.parentNode) linkEl.parentNode.removeChild(linkEl);
+		// injectStylesheet returns { element, remove }
+		var linkResult = api.dom.injectStylesheet('test.css');
+		TestHarness.assert(linkResult.element instanceof HTMLLinkElement, 'injectStylesheet returns { element: HTMLLinkElement }');
+		TestHarness.assertType(linkResult.remove, 'function', 'injectStylesheet returns { remove: function }');
+		TestHarness.assertEqual(linkResult.element.rel, 'stylesheet', 'injectStylesheet sets rel=stylesheet');
+		linkResult.remove();
+		TestHarness.assert(!linkResult.element.parentNode, 'injectStylesheet remove() detaches from DOM');
+
+		// onMediaQuery
+		TestHarness.assertType(api.dom.onMediaQuery, 'function', 'api.dom.onMediaQuery is a function');
 	})();
 
 	// Settings API functional tests
@@ -285,6 +292,82 @@ function testPlugins() {
 		TestHarness.assert(engineFired, 'EngineEvents.clear() preserves engine listeners');
 		TestHarness.assert(!pluginFired, 'EngineEvents.clear() removes plugin listeners');
 		EngineEvents.clear();
+	})();
+
+	// ============================================================
+	// New tracked API modules
+	// ============================================================
+
+	// api.timers module exists
+	(function() {
+		if (typeof EnginePlugins._buildApi !== 'function') return;
+		var api = EnginePlugins._buildApi();
+		if (!api) return;
+
+		TestHarness.assertType(api.timers, 'object', 'api.timers exists');
+		TestHarness.assertType(api.timers.setInterval, 'function', 'timers.setInterval');
+		TestHarness.assertType(api.timers.clearInterval, 'function', 'timers.clearInterval');
+		TestHarness.assertType(api.timers.setTimeout, 'function', 'timers.setTimeout');
+		TestHarness.assertType(api.timers.clearTimeout, 'function', 'timers.clearTimeout');
+		TestHarness.assertType(api.timers.requestAnimationFrame, 'function', 'timers.requestAnimationFrame');
+		TestHarness.assertType(api.timers.cancelAnimationFrame, 'function', 'timers.cancelAnimationFrame');
+	})();
+
+	// api.input.offKeyDown / offKeyUp exist
+	(function() {
+		if (typeof EnginePlugins._buildApi !== 'function') return;
+		var api = EnginePlugins._buildApi();
+		if (!api) return;
+
+		TestHarness.assertType(api.input.offKeyDown, 'function', 'input.offKeyDown exists');
+		TestHarness.assertType(api.input.offKeyUp, 'function', 'input.offKeyUp exists');
+	})();
+
+	// Auto-destroy: CSS injected by plugin is removed when _destroy is called
+	(function() {
+		if (typeof EnginePlugins._buildApi !== 'function') return;
+		var api = EnginePlugins._buildApi();
+		if (!api) return;
+
+		api.dom.injectCSS('body { --auto-destroy-css-test: 1; }');
+		// Verify it's in the DOM
+		var styles = document.querySelectorAll('style');
+		var found = false;
+		for (var i = 0; i < styles.length; i++) {
+			if (styles[i].textContent.indexOf('--auto-destroy-css-test') !== -1) { found = true; break; }
+		}
+		TestHarness.assert(found, 'auto-destroy: CSS injected into DOM');
+
+		// Call _destroy
+		api._destroy();
+
+		// Verify it's gone
+		styles = document.querySelectorAll('style');
+		found = false;
+		for (var i = 0; i < styles.length; i++) {
+			if (styles[i].textContent.indexOf('--auto-destroy-css-test') !== -1) { found = true; break; }
+		}
+		TestHarness.assert(!found, 'auto-destroy: CSS removed from DOM after _destroy()');
+	})();
+
+	// Auto-destroy: DOM event listeners removed
+	(function() {
+		if (typeof EnginePlugins._buildApi !== 'function') return;
+		var api = EnginePlugins._buildApi();
+		if (!api) return;
+
+		var keydownFired = false;
+		var handler = function() { keydownFired = true; };
+		api.input.onKeyDown(handler);
+
+		// Simulate keydown
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+		TestHarness.assert(keydownFired, 'auto-destroy: keydown listener fires before destroy');
+
+		api._destroy();
+		keydownFired = false;
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+		TestHarness.assert(!keydownFired, 'auto-destroy: keydown listener removed after _destroy()');
 	})();
 
 	// ============================================================

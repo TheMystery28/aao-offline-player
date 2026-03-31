@@ -25,15 +25,37 @@ Modules.load(new Object({
 var EnginePlugins = (function() {
 	var registry = [];
 	var isReady = false;
-	var frozenApi = null;
 	var resolvedPluginData = null; // { active: [...], available: [...] } from resolved_plugins.json
 
 	// ============================================================
-	// SECTION: Plugin API Builder
+	// SECTION: Per-Plugin Tracked API Builder
 	// ============================================================
 
-	function buildApi() {
-		return {
+	/**
+	 * Build a per-plugin tracked API. Each plugin gets its own instance.
+	 * Tracked operations are automatically undone on destroy:
+	 *   - api.dom.injectCSS / injectStylesheet / onMediaQuery
+	 *   - api.sound.registerSound
+	 *   - api.input.onKeyDown / onKeyUp / registerAction
+	 *   - api.timers.setInterval / setTimeout / requestAnimationFrame
+	 *   - events.on (auto-namespaced via buildTrackedEvents)
+	 *
+	 * NOT auto-tracked (requires manual destroy() if needed):
+	 *   - Raw DOM manipulation (appendChild, innerHTML, style changes)
+	 *   - Restoring original sounds replaced by registerSound
+	 *   - window.addEventListener or other globals not called through the API
+	 */
+	function buildTrackedApi(pluginName) {
+		var _styles = [];
+		var _sounds = [];
+		var _domListeners = [];
+		var _mediaListeners = [];
+		var _intervals = [];
+		var _timeouts = [];
+		var _rafs = [];
+		var _eventNs = 'plugin:' + pluginName;
+
+		var api = {
 			// --- DOM manipulation ---
 			dom: {
 				query: function(sel) { return document.querySelector(sel); },
@@ -50,14 +72,44 @@ var EnginePlugins = (function() {
 					var style = document.createElement('style');
 					style.textContent = cssText;
 					document.head.appendChild(style);
-					return style;
+					_styles.push(style);
+					return {
+						element: style,
+						remove: function() {
+							var idx = _styles.indexOf(style);
+							if (idx !== -1) _styles.splice(idx, 1);
+							if (style.parentNode) style.parentNode.removeChild(style);
+						}
+					};
 				},
 				injectStylesheet: function(href) {
 					var link = document.createElement('link');
 					link.rel = 'stylesheet';
 					link.href = href;
 					document.head.appendChild(link);
-					return link;
+					_styles.push(link);
+					return {
+						element: link,
+						remove: function() {
+							var idx = _styles.indexOf(link);
+							if (idx !== -1) _styles.splice(idx, 1);
+							if (link.parentNode) link.parentNode.removeChild(link);
+						}
+					};
+				},
+				onMediaQuery: function(query, handler) {
+					var mql = window.matchMedia(query);
+					mql.addEventListener('change', handler);
+					_mediaListeners.push({ mql: mql, fn: handler });
+					return {
+						matches: mql.matches,
+						remove: function() {
+							mql.removeEventListener('change', handler);
+							for (var i = _mediaListeners.length - 1; i >= 0; i--) {
+								if (_mediaListeners[i].fn === handler) { _mediaListeners.splice(i, 1); break; }
+							}
+						}
+					};
 				}
 			},
 
@@ -73,7 +125,7 @@ var EnginePlugins = (function() {
 				getTrialInfo: function() { return typeof trial_information !== 'undefined' ? trial_information : null; }
 			},
 
-			// --- Sound (transparent passthrough to SoundHowler) ---
+			// --- Sound (tracked: registerSound/unloadSound) ---
 			sound: {
 				playMusic: typeof playMusic === 'function' ? playMusic : function() {},
 				stopMusic: typeof stopMusic === 'function' ? stopMusic : function() {},
@@ -81,9 +133,12 @@ var EnginePlugins = (function() {
 				fadeMusic: typeof fadeMusic === 'function' ? fadeMusic : function() {},
 				crossfadeMusic: typeof crossfadeMusic === 'function' ? crossfadeMusic : function() {},
 				registerSound: function(id, options) {
+					_sounds.push(id);
 					return typeof SoundHowler !== 'undefined' ? SoundHowler.registerSound(id, options) : null;
 				},
 				unloadSound: function(id) {
+					var idx = _sounds.indexOf(id);
+					if (idx !== -1) _sounds.splice(idx, 1);
 					if (typeof SoundHowler !== 'undefined') SoundHowler.unloadSound(id);
 				},
 				getSoundById: function(id) {
@@ -109,18 +164,79 @@ var EnginePlugins = (function() {
 				}
 			},
 
-			// --- Custom input actions ---
+			// --- Custom input actions (tracked) ---
 			input: {
 				registerAction: function(actionName, handler) {
-					EngineEvents.on('input:action', function(data) {
+					var wrapper = function(data) {
 						if (data.action === actionName) handler(data);
-					});
+					};
+					EngineEvents.on('input:action', wrapper, 0, _eventNs);
 				},
 				onKeyDown: function(handler) {
 					document.addEventListener('keydown', handler);
+					_domListeners.push({ el: document, ev: 'keydown', fn: handler });
 				},
 				onKeyUp: function(handler) {
 					document.addEventListener('keyup', handler);
+					_domListeners.push({ el: document, ev: 'keyup', fn: handler });
+				},
+				offKeyDown: function(handler) {
+					document.removeEventListener('keydown', handler);
+					for (var i = _domListeners.length - 1; i >= 0; i--) {
+						if (_domListeners[i].ev === 'keydown' && _domListeners[i].fn === handler) {
+							_domListeners.splice(i, 1); break;
+						}
+					}
+				},
+				offKeyUp: function(handler) {
+					document.removeEventListener('keyup', handler);
+					for (var i = _domListeners.length - 1; i >= 0; i--) {
+						if (_domListeners[i].ev === 'keyup' && _domListeners[i].fn === handler) {
+							_domListeners.splice(i, 1); break;
+						}
+					}
+				}
+			},
+
+			// --- Timers (tracked) ---
+			timers: {
+				setInterval: function(fn, delay) {
+					var id = setInterval(fn, delay);
+					_intervals.push(id);
+					return id;
+				},
+				clearInterval: function(id) {
+					var idx = _intervals.indexOf(id);
+					if (idx !== -1) _intervals.splice(idx, 1);
+					clearInterval(id);
+				},
+				setTimeout: function(fn, delay) {
+					var id = setTimeout(function() {
+						var idx = _timeouts.indexOf(id);
+						if (idx !== -1) _timeouts.splice(idx, 1);
+						fn();
+					}, delay);
+					_timeouts.push(id);
+					return id;
+				},
+				clearTimeout: function(id) {
+					var idx = _timeouts.indexOf(id);
+					if (idx !== -1) _timeouts.splice(idx, 1);
+					clearTimeout(id);
+				},
+				requestAnimationFrame: function(fn) {
+					var id = requestAnimationFrame(function(ts) {
+						var idx = _rafs.indexOf(id);
+						if (idx !== -1) _rafs.splice(idx, 1);
+						fn(ts);
+					});
+					_rafs.push(id);
+					return id;
+				},
+				cancelAnimationFrame: function(id) {
+					var idx = _rafs.indexOf(id);
+					if (idx !== -1) _rafs.splice(idx, 1);
+					cancelAnimationFrame(id);
 				}
 			},
 
@@ -226,6 +342,59 @@ var EnginePlugins = (function() {
 				getScreenDisplay: function() { return typeof top_screen !== 'undefined' ? top_screen : null; }
 			}
 		};
+
+		// Auto-destroy: undo all tracked operations. Each step in try/catch.
+		api._destroy = function() {
+			var i;
+			for (i = 0; i < _styles.length; i++) {
+				try { if (_styles[i].parentNode) _styles[i].parentNode.removeChild(_styles[i]); }
+				catch (e) { console.warn('[PluginCleanup] Style removal failed:', e); }
+			}
+			for (i = 0; i < _sounds.length; i++) {
+				try { if (typeof SoundHowler !== 'undefined') SoundHowler.unloadSound(_sounds[i]); }
+				catch (e) { console.warn('[PluginCleanup] Sound unload failed:', e); }
+			}
+			for (i = 0; i < _domListeners.length; i++) {
+				try { _domListeners[i].el.removeEventListener(_domListeners[i].ev, _domListeners[i].fn); }
+				catch (e) { console.warn('[PluginCleanup] Listener removal failed:', e); }
+			}
+			for (i = 0; i < _mediaListeners.length; i++) {
+				try { _mediaListeners[i].mql.removeEventListener('change', _mediaListeners[i].fn); }
+				catch (e) { console.warn('[PluginCleanup] Media listener removal failed:', e); }
+			}
+			for (i = 0; i < _intervals.length; i++) {
+				try { clearInterval(_intervals[i]); } catch (e) {}
+			}
+			for (i = 0; i < _timeouts.length; i++) {
+				try { clearTimeout(_timeouts[i]); } catch (e) {}
+			}
+			for (i = 0; i < _rafs.length; i++) {
+				try { cancelAnimationFrame(_rafs[i]); } catch (e) {}
+			}
+			try { EngineEvents.clearNamespace(_eventNs); } catch (e) {}
+			_styles = []; _sounds = []; _domListeners = []; _mediaListeners = [];
+			_intervals = []; _timeouts = []; _rafs = [];
+		};
+
+		return api;
+	}
+
+	/**
+	 * Build a tracked events wrapper that auto-namespaces listeners.
+	 * Passed as the 2nd arg to plugin init() instead of raw EngineEvents.
+	 */
+	function buildTrackedEvents(pluginName) {
+		var ns = 'plugin:' + pluginName;
+		return {
+			on: function(event, handler, priority, namespace) {
+				EngineEvents.on(event, handler, priority, namespace || ns);
+			},
+			off: function(event, handler) {
+				EngineEvents.off(event, handler);
+			},
+			emit: function(event, data) { EngineEvents.emit(event, data); },
+			emitCancellable: function(event, data) { return EngineEvents.emitCancellable(event, data); }
+		};
 	}
 
 	// ============================================================
@@ -235,10 +404,19 @@ var EnginePlugins = (function() {
 	function initPlugin(descriptor) {
 		if (!descriptor || typeof descriptor.init !== 'function') return;
 		try {
-			var handle = descriptor.init(EngineConfig, EngineEvents, frozenApi);
-			if (handle && typeof handle.destroy === 'function') {
-				descriptor._handle = handle;
-			}
+			var trackedApi = buildTrackedApi(descriptor.name || 'unnamed');
+			var trackedEvents = buildTrackedEvents(descriptor.name || 'unnamed');
+			var handle = descriptor.init(EngineConfig, trackedEvents, trackedApi);
+			// Composite destroy: manual first (if any), then auto-cleanup
+			descriptor._handle = {
+				destroy: function() {
+					if (handle && typeof handle.destroy === 'function') {
+						try { handle.destroy(); }
+						catch (e) { console.warn('[EnginePlugins] Error in manual destroy:', e); }
+					}
+					trackedApi._destroy();
+				}
+			};
 		} catch (e) {
 			console.error('[EnginePlugins] Plugin "' + (descriptor.name || 'unknown') + '" crashed during init:', e);
 		}
@@ -297,9 +475,6 @@ var EnginePlugins = (function() {
 	}
 
 	function initAllPending() {
-		if (!frozenApi) {
-			frozenApi = Object.freeze(buildApi());
-		}
 		for (var i = 0; i < registry.length; i++) {
 			if (!registry[i]._initialized) {
 				registry[i]._initialized = true;
@@ -349,29 +524,22 @@ var EnginePlugins = (function() {
 					cb.addEventListener('change', function() {
 						if (cb.checked) {
 							EngineConfig.set(configKey, true);
-							if (desc._disabled && desc._handle && typeof desc._handle.destroy === 'function') {
+							if (desc._disabled) {
 								desc._disabled = false;
 								initPlugin(desc);
-							} else if (desc._disabled) {
-								desc._disabled = false;
 							}
 						} else {
 							EngineConfig.set(configKey, false);
 							if (desc._handle && typeof desc._handle.destroy === 'function') {
 								desc._handle.destroy();
-								desc._disabled = true;
-							} else {
-								desc._disabled = true;
 							}
+							desc._disabled = true;
 						}
 					});
 
 					label.appendChild(cb);
 					var text = ' ' + (desc.name || 'unnamed');
 					if (desc.version) text += ' v' + desc.version;
-					if (!desc._handle || typeof desc._handle.destroy !== 'function') {
-						text += ' (reload to apply)';
-					}
 					label.appendChild(document.createTextNode(text));
 					content.appendChild(label);
 
@@ -706,7 +874,6 @@ var EnginePlugins = (function() {
 
 			if (isReady) {
 				descriptor._initialized = true;
-				if (!frozenApi) frozenApi = Object.freeze(buildApi());
 				initPlugin(descriptor);
 			}
 		},
@@ -726,8 +893,8 @@ var EnginePlugins = (function() {
 			return false;
 		},
 
-		/** Build the API object (exposed for testing). */
-		_buildApi: buildApi,
+		/** Build a tracked API object (exposed for testing). */
+		_buildApi: function() { return buildTrackedApi('__test__'); },
 
 		/** Build the plugin settings panel inside a container, before a reference element. */
 		buildSettingsPanel: buildSettingsPanel,
