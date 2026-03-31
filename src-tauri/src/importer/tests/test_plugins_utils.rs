@@ -248,3 +248,114 @@ fn test_promote_nonexistent_fails() {
     let result = promote_plugin_to_global(55558, "nope.js", &serde_json::json!({"all":true}), engine_dir);
     assert!(result.is_err());
 }
+
+// =====================================================================
+// parse_plugin_assets tests
+// =====================================================================
+
+#[test]
+fn test_parse_plugin_assets_valid_block() {
+    let code = r#"
+/**
+ * My Plugin
+ *
+ * @assets
+ * voice_blip1.opus = https://example.com/voice_blip1.opus
+ * voice_blip2.opus = https://example.com/voice_blip2.opus
+ * voice_blip3.opus = https://example.com/voice_blip3.opus
+ */
+EnginePlugins.register({ name: 'test', init: function() {} });
+"#;
+    let assets = parse_plugin_assets(code);
+    assert_eq!(assets.len(), 3);
+    assert_eq!(assets[0].0, "voice_blip1.opus");
+    assert_eq!(assets[0].1, "https://example.com/voice_blip1.opus");
+    assert_eq!(assets[2].0, "voice_blip3.opus");
+}
+
+#[test]
+fn test_parse_plugin_assets_no_block() {
+    let code = r#"
+/**
+ * Plugin without assets
+ */
+EnginePlugins.register({ name: 'test', init: function() {} });
+"#;
+    let assets = parse_plugin_assets(code);
+    assert!(assets.is_empty());
+}
+
+#[test]
+fn test_parse_plugin_assets_malformed_lines() {
+    let code = r#"
+/**
+ * @assets
+ * no_equals_here
+ * = https://example.com/no_filename
+ * valid.opus = https://example.com/valid.opus
+ *
+ * just_text
+ */
+"#;
+    let assets = parse_plugin_assets(code);
+    assert_eq!(assets.len(), 1);
+    assert_eq!(assets[0].0, "valid.opus");
+}
+
+#[test]
+fn test_parse_plugin_assets_extra_whitespace() {
+    let code = r#"
+/**
+ *   @assets
+ *   voice.opus   =   https://example.com/voice.opus
+ *    font.woff =https://example.com/font.woff
+ */
+"#;
+    let assets = parse_plugin_assets(code);
+    assert_eq!(assets.len(), 2);
+    assert_eq!(assets[0].0, "voice.opus");
+    assert_eq!(assets[0].1, "https://example.com/voice.opus");
+    assert_eq!(assets[1].0, "font.woff");
+    assert_eq!(assets[1].1, "https://example.com/font.woff");
+}
+
+#[test]
+fn test_parse_plugin_assets_ignores_single_line_comments() {
+    let code = r#"
+// @assets
+// voice.opus = https://example.com/voice.opus
+EnginePlugins.register({ name: 'test', init: function() {} });
+"#;
+    let assets = parse_plugin_assets(code);
+    assert!(assets.is_empty(), "Single-line comments should not be parsed for @assets");
+}
+
+#[test]
+fn test_parse_plugin_assets_stops_at_next_tag() {
+    let code = r#"
+/**
+ * @assets
+ * voice.opus = https://example.com/voice.opus
+ * @param config - some param
+ * font.woff = https://example.com/font.woff
+ */
+"#;
+    let assets = parse_plugin_assets(code);
+    assert_eq!(assets.len(), 1, "@param should end the @assets section");
+    assert_eq!(assets[0].0, "voice.opus");
+}
+
+#[test]
+fn test_parse_plugin_assets_non_http_url_skipped() {
+    let code = r#"
+/**
+ * @assets
+ * valid.opus = https://example.com/valid.opus
+ * local.opus = ./local/path.opus
+ * ftp.opus = ftp://example.com/file.opus
+ */
+"#;
+    let assets = parse_plugin_assets(code);
+    assert_eq!(assets.len(), 1);
+    assert_eq!(assets[0].0, "valid.opus");
+}

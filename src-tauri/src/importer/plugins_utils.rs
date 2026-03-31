@@ -231,3 +231,72 @@ pub fn promote_plugin_to_global(
 
     Ok(())
 }
+
+/// Parse `@assets` block from plugin JS code.
+/// Looks for `@assets` inside a JSDoc comment (`/** ... */`) and extracts
+/// lines matching `filename = url`. Returns Vec<(local_filename, remote_url)>.
+pub fn parse_plugin_assets(code: &str) -> Vec<(String, String)> {
+    let mut results = Vec::new();
+
+    // Find a JSDoc block (/** ... */) containing @assets
+    let mut in_jsdoc = false;
+    let mut found_assets = false;
+    for line in code.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("/**") {
+            in_jsdoc = true;
+            // Check if @assets is on the same line as /**
+            if trimmed.contains("@assets") {
+                found_assets = true;
+            }
+            if trimmed.ends_with("*/") && trimmed.len() > 3 {
+                in_jsdoc = false;
+                found_assets = false;
+            }
+            continue;
+        }
+
+        if !in_jsdoc {
+            continue;
+        }
+
+        if trimmed.contains("*/") {
+            in_jsdoc = false;
+            found_assets = false;
+            continue;
+        }
+
+        if trimmed.contains("@assets") {
+            found_assets = true;
+            continue;
+        }
+
+        if !found_assets {
+            continue;
+        }
+
+        // Strip leading * and whitespace
+        let content = trimmed.trim_start_matches('*').trim();
+        if content.is_empty() {
+            continue;
+        }
+
+        // Another @tag ends the @assets section
+        if content.starts_with('@') {
+            found_assets = false;
+            continue;
+        }
+
+        // Parse "filename = url"
+        if let Some((left, right)) = content.split_once('=') {
+            let filename = left.trim().to_string();
+            let url = right.trim().to_string();
+            if !filename.is_empty() && url.starts_with("http") {
+                results.push((filename, url));
+            }
+        }
+    }
+
+    results
+}
