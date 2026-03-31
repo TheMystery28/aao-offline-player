@@ -5,79 +5,90 @@ use tauri::State;
 use crate::app_state::AppState;
 use crate::importer;
 
-/// Import a .aaoplug plugin file into one or more existing cases.
+/// Import a .aaoplug plugin file with scoped activation.
 #[tauri::command]
 pub async fn import_plugin(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
     target_case_ids: Vec<u32>,
+    origin: Option<String>,
 ) -> Result<Vec<u32>, String> {
     let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.data_dir.clone(), s.http_client.clone())
     };
     let path = std::path::PathBuf::from(&source_path);
-    importer::import_aaoplug(&path, &target_case_ids, &data_dir, &client).await
+    let origin = origin.unwrap_or_else(|| "case".to_string());
+    importer::import_aaoplug(&path, &target_case_ids, &data_dir, &client, &origin).await
 }
 
-/// Import a .aaoplug ZIP as a global plugin.
+/// Import a .aaoplug ZIP as a global plugin (backward compat — delegates to import_plugin).
 #[tauri::command]
 pub async fn import_aaoplug_global(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<u32>, String> {
     let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.data_dir.clone(), s.http_client.clone())
     };
     let path = std::path::PathBuf::from(&source_path);
-    importer::import_aaoplug_global(&path, &data_dir, &client).await
+    importer::import_aaoplug(&path, &[], &data_dir, &client, "global").await
 }
 
-/// Attach raw plugin JS code to one or more existing cases.
-/// Downloads any @assets declared in the plugin code.
+/// Attach raw plugin JS code with scoped activation.
 #[tauri::command]
 pub async fn attach_plugin_code(
     state: State<'_, Mutex<AppState>>,
     code: String,
     filename: String,
     target_case_ids: Vec<u32>,
+    origin: Option<String>,
 ) -> Result<Vec<u32>, String> {
     let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.data_dir.clone(), s.http_client.clone())
     };
-    importer::attach_plugin_code(&code, &filename, &target_case_ids, &data_dir, &client).await
+    let origin = origin.unwrap_or_else(|| if target_case_ids.is_empty() { "global".to_string() } else { "case".to_string() });
+    importer::attach_plugin_code(&code, &filename, &target_case_ids, &data_dir, &client, &origin).await
 }
 
-/// List plugins installed for a given case.
+/// Attach raw plugin code as a global plugin (backward compat — delegates to attach_plugin_code).
+#[tauri::command]
+pub async fn attach_global_plugin_code(
+    state: State<'_, Mutex<AppState>>,
+    code: String,
+    filename: String,
+) -> Result<Vec<u32>, String> {
+    let (data_dir, client) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        (s.data_dir.clone(), s.http_client.clone())
+    };
+    importer::attach_plugin_code(&code, &filename, &[], &data_dir, &client, "global").await
+}
+
+/// List plugins active for a given case.
 #[tauri::command]
 pub fn list_plugins(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
 ) -> Result<serde_json::Value, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
     importer::list_plugins(case_id, &data_dir)
 }
 
-/// Remove a plugin from a case by filename.
+/// Remove a plugin's scope for a case. If no scopes remain, deletes the plugin.
 #[tauri::command]
 pub fn remove_plugin(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
     filename: String,
 ) -> Result<(), String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
     importer::remove_plugin(case_id, &filename, &data_dir)
 }
 
-/// Toggle a plugin's enabled/disabled state.
+/// Toggle a plugin for a case (backward compat — delegates to toggle_plugin_for_scope).
 #[tauri::command]
 pub fn toggle_plugin(
     state: State<'_, Mutex<AppState>>,
@@ -85,14 +96,11 @@ pub fn toggle_plugin(
     filename: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
     importer::toggle_plugin(case_id, &filename, enabled, &data_dir)
 }
 
-/// List global plugins.
+/// List all plugins (global manifest).
 #[tauri::command]
 pub fn list_global_plugins(
     state: State<'_, Mutex<AppState>>,
@@ -101,32 +109,35 @@ pub fn list_global_plugins(
     importer::list_global_plugins(&data_dir)
 }
 
-/// Attach raw plugin code as a global plugin.
-/// Downloads any @assets declared in the plugin code.
-#[tauri::command]
-pub async fn attach_global_plugin_code(
-    state: State<'_, Mutex<AppState>>,
-    code: String,
-    filename: String,
-) -> Result<(), String> {
-    let (data_dir, client) = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        (s.data_dir.clone(), s.http_client.clone())
-    };
-    importer::attach_global_plugin_code(&code, &filename, &data_dir, &client).await
-}
-
-/// Remove a global plugin.
+/// Remove a global plugin entirely (removes all scopes + deletes file).
 #[tauri::command]
 pub fn remove_global_plugin(
     state: State<'_, Mutex<AppState>>,
     filename: String,
 ) -> Result<(), String> {
     let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
-    importer::remove_global_plugin(&filename, &data_dir)
+    // Remove with case_id 0 — the function handles no-scope-remaining by deleting
+    // Actually, we need to force-delete: remove ALL scopes then delete
+    let manifest_path = data_dir.join("plugins").join("manifest.json");
+    if manifest_path.exists() {
+        let text = fs::read_to_string(&manifest_path).unwrap_or_default();
+        if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(arr) = val.get_mut("scripts").and_then(|s| s.as_array_mut()) {
+                arr.retain(|s| s.as_str() != Some(&filename));
+            }
+            if let Some(plugins) = val.get_mut("plugins").and_then(|p| p.as_object_mut()) {
+                plugins.remove(&filename);
+            }
+            let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap());
+        }
+    }
+    // Delete the file
+    let plugin_file = data_dir.join("plugins").join(&filename);
+    let _ = fs::remove_file(&plugin_file);
+    Ok(())
 }
 
-/// Toggle a global plugin's enabled/disabled state.
+/// Toggle a global plugin (backward compat — sets scope.all).
 #[tauri::command]
 pub fn toggle_global_plugin(
     state: State<'_, Mutex<AppState>>,
@@ -134,10 +145,10 @@ pub fn toggle_global_plugin(
     enabled: bool,
 ) -> Result<(), String> {
     let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
-    importer::toggle_global_plugin(&filename, enabled, &data_dir)
+    importer::toggle_plugin_for_scope(&filename, "global", "", enabled, &data_dir)
 }
 
-/// Toggle a plugin's enabled/disabled state for a specific scope.
+/// Toggle a plugin for a specific scope.
 #[tauri::command]
 pub fn toggle_plugin_for_scope(
     state: State<'_, Mutex<AppState>>,
@@ -150,7 +161,7 @@ pub fn toggle_plugin_for_scope(
     importer::toggle_plugin_for_scope(&filename, &scope_type, &scope_key, enabled, &data_dir)
 }
 
-/// Check for duplicate plugin code across global and all case plugins.
+/// Check for duplicate plugin code.
 #[tauri::command]
 pub fn check_plugin_duplicate(
     state: State<'_, Mutex<AppState>>,
@@ -160,7 +171,7 @@ pub fn check_plugin_duplicate(
     Ok(importer::check_plugin_duplicate(&code, &data_dir))
 }
 
-/// Set params for a global plugin at a specific cascade level.
+/// Set params for a plugin at a specific cascade level.
 #[tauri::command]
 pub fn set_global_plugin_params(
     state: State<'_, Mutex<AppState>>,
@@ -173,8 +184,7 @@ pub fn set_global_plugin_params(
     importer::set_global_plugin_params(&filename, &level, &key, &params, &data_dir)
 }
 
-/// Get all param overrides for a plugin across all cascade levels.
-/// Returns { default: {...}, by_collection: {...}, by_sequence: {...}, by_case: {...} }
+/// Get all param overrides for a plugin.
 #[tauri::command]
 pub fn get_plugin_params(
     state: State<'_, Mutex<AppState>>,
@@ -189,18 +199,14 @@ pub fn get_plugin_params(
         .map_err(|e| format!("Failed to read manifest: {}", e))?;
     let val: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("Failed to parse manifest: {}", e))?;
-
-    let params = val.get("plugins")
+    Ok(val.get("plugins")
         .and_then(|p| p.get(&filename))
         .and_then(|e| e.get("params"))
         .cloned()
-        .unwrap_or(serde_json::json!({}));
-
-    Ok(params)
+        .unwrap_or(serde_json::json!({})))
 }
 
-/// Get param descriptors for a plugin (extracted from JS source at attach time).
-/// Returns null if descriptors were not extracted (parse failure or old plugin).
+/// Get param descriptors for a plugin.
 #[tauri::command]
 pub fn get_plugin_descriptors(
     state: State<'_, Mutex<AppState>>,
@@ -215,24 +221,11 @@ pub fn get_plugin_descriptors(
         .map_err(|e| format!("Failed to read manifest: {}", e))?;
     let val: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("Failed to parse manifest: {}", e))?;
-
     Ok(val.get("plugins")
         .and_then(|p| p.get(&filename))
         .and_then(|e| e.get("descriptors"))
         .cloned()
         .unwrap_or(serde_json::Value::Null))
-}
-
-/// Promote a case plugin to a global plugin.
-#[tauri::command]
-pub fn promote_plugin_to_global(
-    state: State<'_, Mutex<AppState>>,
-    case_id: u32,
-    filename: String,
-    scope: serde_json::Value,
-) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
-    importer::promote_plugin_to_global(case_id, &filename, &scope, &data_dir)
 }
 
 /// Export a case's plugins as a .aaoplug file.

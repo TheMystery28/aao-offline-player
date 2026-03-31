@@ -1,11 +1,11 @@
 use super::*;
 use std::io;
 
-/// Sync wrapper for attach_plugin_code in tests (no @assets, no downloads needed).
+/// Sync wrapper for attach_plugin_code in tests.
 fn attach_plugin_code_sync(code: &str, filename: &str, case_ids: &[u32], engine_dir: &std::path::Path) -> Result<Vec<u32>, String> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let client = reqwest::Client::new();
-    rt.block_on(attach_plugin_code(code, filename, case_ids, engine_dir, &client))
+    rt.block_on(attach_plugin_code(code, filename, case_ids, engine_dir, &client, "case"))
 }
 
 #[test]

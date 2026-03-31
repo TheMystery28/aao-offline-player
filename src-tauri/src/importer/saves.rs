@@ -7,6 +7,25 @@ use crate::utils::format_timestamp;
 
 use super::shared::*;
 
+/// Get active plugin script names for a case from the global manifest.
+fn get_active_plugin_scripts_for_case(case_id: u32, engine_dir: &Path) -> Vec<String> {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() { return Vec::new(); }
+    let text = match fs::read_to_string(&manifest_path) { Ok(t) => t, Err(_) => return Vec::new() };
+    let manifest: serde_json::Value = match serde_json::from_str(&text) { Ok(v) => v, Err(_) => return Vec::new() };
+
+    let scripts = manifest.get("scripts").and_then(|s| s.as_array()).cloned().unwrap_or_default();
+    let mut active = Vec::new();
+    for s in &scripts {
+        if let Some(name) = s.as_str() {
+            if super::is_plugin_active_for_case(&manifest, name, case_id, engine_dir) {
+                active.push(name.to_string());
+            }
+        }
+    }
+    active
+}
+
 /// Export saves as a .aaosave ZIP file.
 ///
 /// ZIP format:
@@ -43,7 +62,8 @@ pub fn export_aaosave(
     for &case_id in case_ids {
         let case_dir = engine_dir.join("case").join(case_id.to_string());
         let title = if let Ok(manifest) = read_manifest(&case_dir) {
-            if include_plugins && manifest.has_plugins {
+            let case_has_plugins = include_plugins && !get_active_plugin_scripts_for_case(case_id, engine_dir).is_empty();
+            if case_has_plugins {
                 has_plugins = true;
             }
             manifest.title
@@ -83,12 +103,33 @@ pub fn export_aaosave(
 
     // Add plugins and case_config if requested
     if include_plugins {
+        let global_plugins_dir = engine_dir.join("plugins");
         for &case_id in case_ids {
             let case_dir = engine_dir.join("case").join(case_id.to_string());
-            let plugins_dir = case_dir.join("plugins");
-            if plugins_dir.is_dir() {
+
+            // Check if this case has active plugins from global manifest
+            let active_plugins = get_active_plugin_scripts_for_case(case_id, engine_dir);
+            if !active_plugins.is_empty() && global_plugins_dir.is_dir() {
                 let prefix = format!("plugins/{}", case_id);
-                add_dir_to_zip_recursive(&mut zip, &plugins_dir, &prefix, options)?;
+                // Create a minimal manifest for the export
+                let manifest = serde_json::json!({ "scripts": active_plugins });
+                let manifest_zip_name = format!("{}/manifest.json", prefix);
+                zip.start_file(&manifest_zip_name, options)
+                    .map_err(|e| format!("Failed to add plugin manifest: {}", e))?;
+                io::Write::write_all(&mut zip, serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+                    .map_err(|e| format!("Failed to write plugin manifest: {}", e))?;
+                // Copy each active plugin JS
+                for script in &active_plugins {
+                    let src = global_plugins_dir.join(script);
+                    if src.is_file() {
+                        let zip_name = format!("{}/{}", prefix, script);
+                        let data = fs::read(&src).unwrap_or_default();
+                        zip.start_file(&zip_name, options)
+                            .map_err(|e| format!("Failed to add {}: {}", script, e))?;
+                        io::Write::write_all(&mut zip, &data)
+                            .map_err(|e| format!("Failed to write {}: {}", script, e))?;
+                    }
+                }
             }
 
             let config_path = case_dir.join("case_config.json");

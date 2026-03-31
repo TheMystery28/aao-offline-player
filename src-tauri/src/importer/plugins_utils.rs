@@ -154,11 +154,12 @@ pub fn set_global_plugin_params(
     })
 }
 
-/// Export a case's plugins as a .aaoplug ZIP file.
+/// Export a case's active plugins as a .aaoplug ZIP file.
+/// Reads from the global plugins/ folder, filtered to plugins active for this case.
 pub fn export_case_plugins(case_id: u32, dest_path: &Path, data_dir: &Path) -> Result<u64, String> {
-    let plugins_dir = data_dir.join("case").join(case_id.to_string()).join("plugins");
+    let plugins_dir = data_dir.join("plugins");
     if !plugins_dir.is_dir() {
-        return Err(format!("Case {} has no plugins", case_id));
+        return Err(format!("No plugins installed"));
     }
 
     let file = fs::File::create(dest_path)
@@ -175,61 +176,6 @@ pub fn export_case_plugins(case_id: u32, dest_path: &Path, data_dir: &Path) -> R
     let meta = fs::metadata(dest_path)
         .map_err(|e| format!("Failed to get file size: {}", e))?;
     Ok(meta.len())
-}
-
-/// Promote a case plugin to global.
-pub fn promote_plugin_to_global(
-    case_id: u32,
-    filename: &str,
-    scope: &serde_json::Value,
-    engine_dir: &Path,
-) -> Result<(), String> {
-    let case_dir = engine_dir.join("case").join(case_id.to_string());
-    let case_plugin_path = case_dir.join("plugins").join(filename);
-    if !case_plugin_path.exists() {
-        return Err(format!("Plugin {} not found in case {}", filename, case_id));
-    }
-
-    // Copy to global
-    let global_dir = engine_dir.join("plugins");
-    fs::create_dir_all(&global_dir)
-        .map_err(|e| format!("Failed to create global plugins dir: {}", e))?;
-    let global_path = global_dir.join(filename);
-    fs::copy(&case_plugin_path, &global_path)
-        .map_err(|e| format!("Failed to copy plugin to global: {}", e))?;
-
-    // Update global manifest
-    migrate_global_manifest(engine_dir)?;
-    let manifest_path = global_dir.join("manifest.json");
-    let mut manifest: serde_json::Value = if manifest_path.exists() {
-        let text = fs::read_to_string(&manifest_path).unwrap_or_default();
-        serde_json::from_str(&text).unwrap_or(serde_json::json!({ "scripts": [], "plugins": {} }))
-    } else {
-        serde_json::json!({ "scripts": [], "plugins": {} })
-    };
-
-    // Add to scripts if not already there
-    let scripts = manifest.get_mut("scripts").and_then(|s| s.as_array_mut()).unwrap();
-    if !scripts.iter().any(|s| s.as_str() == Some(filename)) {
-        scripts.push(serde_json::Value::String(filename.to_string()));
-    }
-    // Add plugin config with scope
-    let plugins = manifest.get_mut("plugins").and_then(|p| p.as_object_mut()).unwrap();
-    plugins.insert(filename.to_string(), serde_json::json!({
-        "scope": scope,
-        "params": {}
-    }));
-
-    fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap())
-        .map_err(|e| format!("Failed to write global manifest: {}", e))?;
-
-    // Remove from case manifest
-    remove_plugin(case_id, filename, engine_dir)?;
-
-    // Delete the case file
-    let _ = fs::remove_file(&case_plugin_path);
-
-    Ok(())
 }
 
 /// Parse `@assets` block from plugin JS code.

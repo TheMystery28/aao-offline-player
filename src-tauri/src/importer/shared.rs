@@ -85,17 +85,6 @@ where F: FnOnce(&mut serde_json::Value) -> Result<(), String>
     Ok(())
 }
 
-/// Add or remove a string value from a JSON array.
-pub(super) fn toggle_in_string_array(arr: &mut Vec<serde_json::Value>, value: &str, add: bool) {
-    if add {
-        if !arr.iter().any(|s| s.as_str() == Some(value)) {
-            arr.push(serde_json::Value::String(value.to_string()));
-        }
-    } else {
-        arr.retain(|s| s.as_str() != Some(value));
-    }
-}
-
 /// Read a text file from a ZIP archive.
 pub(super) fn read_zip_text(archive: &mut zip::ZipArchive<fs::File>, name: &str) -> Result<String, String> {
     let mut entry = archive.by_name(name)

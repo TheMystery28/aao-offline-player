@@ -204,7 +204,6 @@ pub fn run() {
             set_global_plugin_params,
             get_plugin_params,
             get_plugin_descriptors,
-            promote_plugin_to_global,
             export_case_plugins,
             cancel_download,
             pick_export_plugin_file,
