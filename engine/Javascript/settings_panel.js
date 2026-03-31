@@ -122,19 +122,22 @@ var SettingsPanel = (function() {
 				widths[i] = cs.width;
 			}
 		}
-		// Freeze screens: use offsetWidth (pre-zoom base) as flex-basis.
-		// Screens has zoom applied on top, and flex-basis is pre-zoom,
+		// Freeze screens: use offsetWidth (pre-transform base) as flex-basis.
+		// Screens has transform: scale() applied on top, and flex-basis is pre-transform,
 		// so offsetWidth gives the correct value without double-scaling.
 		var screensW = screens ? screens.offsetWidth + 'px' : '256px';
 
-		// Freeze screens: lock flex-basis AND zoom so neither changes during drag
+		// Freeze screens: lock flex-basis, transform, AND margins so nothing shifts during drag
 		if (screens && !screens.hasAttribute('data-frozen')) {
-			var currentZoom = getComputedStyle(screens).zoom || '1';
+			var currentTransform = screens.style.transform || getComputedStyle(screens).transform || 'none';
+			var cs = getComputedStyle(screens);
 			screens.setAttribute('data-frozen', '1');
 			screens.style.flex = '0 0 ' + screensW;
 			screens.style.minWidth = screensW;
 			screens.style.maxWidth = screensW;
-			screens.style.zoom = currentZoom;
+			screens.style.transform = currentTransform;
+			screens.style.marginRight = cs.marginRight;
+			screens.style.marginBottom = cs.marginBottom;
 			screens.style.contain = 'size layout';
 		}
 		// Freeze cr + settings
@@ -169,7 +172,9 @@ var SettingsPanel = (function() {
 				allPanels[i].style.flex = '';
 				allPanels[i].style.minWidth = '';
 				allPanels[i].style.maxWidth = '';
-				allPanels[i].style.zoom = '';
+				allPanels[i].style.transform = '';
+				allPanels[i].style.marginRight = '';
+				allPanels[i].style.marginBottom = '';
 				allPanels[i].style.contain = '';
 			}
 		}
@@ -247,7 +252,8 @@ var SettingsPanel = (function() {
 		ghostOverlay = null;
 	}
 
-	function addSlider(container, configPath, labelKey, min, max, step) {
+	function addSlider(container, configPath, labelKey, min, max, step, options) {
+		var isLayout = options && options.layout;
 		const wrapper = document.createElement('label');
 		addClass(wrapper, 'regular_label');
 
@@ -272,21 +278,25 @@ var SettingsPanel = (function() {
 		// Prevent native gestures from stealing pointer capture
 		slider.style.touchAction = 'none';
 
-		// Freeze panels + show ghosts during drag to prevent flickering
-		slider.addEventListener('pointerdown', function(e) {
-			freezePanels();
-			createGhosts();
-			if (slider.setPointerCapture) {
-				slider.setPointerCapture(e.pointerId);
-			}
-		});
+		if (isLayout) {
+			// Freeze panels + show ghosts during drag to prevent layout flickering
+			slider.addEventListener('pointerdown', function(e) {
+				freezePanels();
+				createGhosts();
+				if (slider.setPointerCapture) {
+					slider.setPointerCapture(e.pointerId);
+				}
+			});
+		}
 		slider.addEventListener('input', function() {
 			valueDisplay.textContent = slider.value;
 			EngineConfig.set(configPath, parseFloat(slider.value));
-			updateGhosts();
+			if (isLayout) updateGhosts();
 		});
-		slider.addEventListener('pointerup', unfreezePanels);
-		slider.addEventListener('pointercancel', unfreezePanels);
+		if (isLayout) {
+			slider.addEventListener('pointerup', unfreezePanels);
+			slider.addEventListener('pointercancel', unfreezePanels);
+		}
 
 		container.appendChild(wrapper);
 		translateNode(wrapper);
@@ -605,14 +615,14 @@ var SettingsPanel = (function() {
 		const layoutContent = document.createElement('div');
 		addClass(layoutContent, 'settings-section-content');
 
-		addSlider(layoutContent, 'layout.bodyWidth', 'body_width', 0.5, 2.0, 0.01);
+		addSlider(layoutContent, 'layout.bodyWidth', 'body_width', 0.5, 2.0, 0.01, { layout: true });
 		// Capture body width slider for dynamic min clamping
 		var bwLabel = layoutContent.lastElementChild;
 		bodyWidthSlider = bwLabel ? bwLabel.querySelector('input[type="range"]') : null;
 		bodyWidthDisplay = bwLabel ? bwLabel.querySelector('.slider-value') : null;
-		addSlider(layoutContent, 'layout.screenScale', 'screen_scale', 0.5, 2.0, 0.1);
-		addSlider(layoutContent, 'layout.evidenceWidth', 'evidence_width', 0.3, 2.0, 0.1);
-		addSlider(layoutContent, 'layout.settingsWidth', 'settings_width', 0.3, 2.0, 0.1);
+		addSlider(layoutContent, 'layout.screenScale', 'screen_scale', 0.5, 2.0, 0.1, { layout: true });
+		addSlider(layoutContent, 'layout.evidenceWidth', 'evidence_width', 0.3, 2.0, 0.1, { layout: true });
+		addSlider(layoutContent, 'layout.settingsWidth', 'settings_width', 0.3, 2.0, 0.1, { layout: true });
 		buildLayoutPicker(layoutContent, 'layout.panelArrangement');
 		addSelect(layoutContent, 'layout.narrowMode', 'narrow_mode', [
 			{ value: 'tabs', label: 'Tabs' },

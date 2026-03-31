@@ -134,20 +134,22 @@ var ThemeManager = (function() {
 
 		let singleScreenWidth, singleScreenHeight;
 
+		// Base screens height: meta + 2 gaps + 2 screens (+ 32px if examination mode).
+		// Hoisted before tier check so margin compensation works for ALL tiers.
+		let totalPreZoomH = metaHeight + (2 * gapPx) + (2 * 192);
+		var screenBottom = document.getElementById('screen-bottom');
+		if (screenBottom && screenBottom.classList.contains('examination')) {
+			totalPreZoomH += 32;
+		}
+
 		if (currentLayoutTier === 'narrow') {
 			// In narrow mode, fit screens to section width (not height)
 			singleScreenWidth = sectionWidth;
 			singleScreenHeight = singleScreenWidth * (192 / 256);
 		} else {
 			// In wide/medium mode, fit total #screens height to section height.
-			// Zoom applies to everything inside #screens (meta + gaps + both screens),
-			// so divide sectionHeight by the total pre-zoom height to get the scale.
-			let totalPreZoomH = metaHeight + (2 * gapPx) + (2 * 192);
-			// Account for examination mode's extra bottom bar (32px padding on #screens)
-			var screenBottom = document.getElementById('screen-bottom');
-			if (screenBottom && screenBottom.classList.contains('examination')) {
-				totalPreZoomH += 32;
-			}
+			// Transform applies to everything inside #screens (meta + gaps + both screens),
+			// so divide sectionHeight by the total pre-scale height to get the scale.
 			let fitScale = sectionHeight / totalPreZoomH;
 			singleScreenWidth = 256 * fitScale;
 			singleScreenHeight = 192 * fitScale;
@@ -178,6 +180,13 @@ var ThemeManager = (function() {
 		root.style.setProperty('--screen-auto-width', singleScreenWidth + 'px');
 		root.style.setProperty('--screen-auto-height', singleScreenHeight + 'px');
 		root.style.setProperty('--screen-content-scale', String(contentScale));
+
+		// Margin compensation for transform: scale() (replaces zoom flow behavior).
+		// margin = base_dimension × (scale - 1)
+		var marginRight = 256 * (contentScale - 1);
+		var marginBottom = totalPreZoomH * (contentScale - 1);
+		root.style.setProperty('--screen-margin-right', marginRight + 'px');
+		root.style.setProperty('--screen-margin-bottom', marginBottom + 'px');
 	}
 
 	function applyBodyWidth() {
@@ -196,6 +205,18 @@ var ThemeManager = (function() {
 		}
 		if (mobileScale !== undefined) {
 			document.documentElement.style.setProperty('--mobile-screen-scale', String(mobileScale));
+			// Compute mobile margin-bottom (including examination mode)
+			var metaHeight = 18;
+			var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
+			var totalH = metaHeight + (2 * gapPx) + (2 * 192);
+			var screenBottom = document.getElementById('screen-bottom');
+			if (screenBottom && screenBottom.classList.contains('examination')) {
+				totalH += 32;
+			}
+			document.documentElement.style.setProperty(
+				'--screen-margin-bottom-mobile',
+				(totalH * (mobileScale - 1)) + 'px'
+			);
 		}
 		computeAutoFitScreenSize();
 	}

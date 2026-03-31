@@ -10,6 +10,9 @@
 	--screen-auto-width: 256px;
 	--screen-auto-height: 192px;
 	--screen-content-scale: 1;
+	--screen-margin-right: 0px;
+	--screen-margin-bottom: 0px;
+	--screen-margin-bottom-mobile: 0px;
 
 	--body-max-width: 85vw;
 	--header-height: 3.8em;
@@ -213,7 +216,8 @@ body > #content > section.layout-stack #screens {
 /* When examination mode is active, #screen-examination extends ~32px below
    the normal #screens flow height (16px top + 16px bottom padding on #examination).
    Add matching bottom padding so panels below don't get overlapped.
-   Zoom on #screens scales this padding proportionally. */
+   Transform on #screens scales this padding proportionally.
+   The JS margin compensation accounts for this via totalPreZoomH. */
 #screens:has(#screen-bottom.examination) {
 	padding-bottom: 32px;
 }
@@ -241,10 +245,13 @@ body > #content > section.layout-stack #screens {
 #screens
 {
 	position: relative;
-	width: var(--screen-width);
 	flex-shrink: 0;
 	align-self: flex-start;
-	zoom: var(--screen-content-scale, 1);
+	width: var(--screen-width, 256px);
+	transform: scale(var(--screen-content-scale, 1));
+	transform-origin: top left;
+	margin-right: var(--screen-margin-right, 0px);
+	margin-bottom: var(--screen-margin-bottom, 0px);
 }
 
 #screens.pixelated
@@ -257,8 +264,11 @@ body > #content > section.layout-stack #screens {
 @media (orientation: portrait) and (hover: none) {
 	#screens
 	{
-		zoom: var(--mobile-screen-scale, 1.4);
-		margin: 0 auto;
+		transform: scale(var(--mobile-screen-scale, 1.4));
+		transform-origin: top center;
+		margin-left: auto;
+		margin-right: auto;
+		margin-bottom: var(--screen-margin-bottom-mobile, 0px);
 	}
 }
 
