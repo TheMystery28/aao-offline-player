@@ -221,6 +221,26 @@ export function initPlayer(ctx) {
       } catch (err) {
         console.warn('[MAIN] Failed to toggle fullscreen:', err);
       }
+    } else if (e.data.type === 'aao-attach-code') {
+      // Persist plugin code from the player's in-game Attach Code to Rust backend
+      var caseIds = e.data.caseId ? [e.data.caseId] : [];
+      invoke("attach_plugin_code", {
+        code: e.data.code,
+        filename: e.data.filename,
+        targetCaseIds: caseIds
+      }).then(function() {
+        if (gameFrame.contentWindow) {
+          gameFrame.contentWindow.postMessage({
+            type: 'aao-attach-code-result', success: true
+          }, '*');
+        }
+      }).catch(function(err) {
+        if (gameFrame.contentWindow) {
+          gameFrame.contentWindow.postMessage({
+            type: 'aao-attach-code-result', success: false, error: String(err)
+          }, '*');
+        }
+      });
     }
   });
 

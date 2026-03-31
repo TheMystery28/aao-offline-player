@@ -692,7 +692,38 @@ var EnginePlugins = (function() {
 				var afterCount = registry.length;
 				if (afterCount > beforeCount) {
 					var newPlugin = registry[afterCount - 1];
+					var detectedFilename = (newPlugin.name || 'unnamed') + '.js';
 					console.log('[EnginePlugins] Loaded plugin from paste: ' + (newPlugin.name || 'unnamed'));
+
+					// Persist to Rust backend via postMessage bridge
+					if (window.parent && window.parent !== window) {
+						var onResponse = function(event) {
+							if (event.data && event.data.type === 'aao-attach-code-result') {
+								window.removeEventListener('message', onResponse);
+								clearTimeout(responseTimeout);
+								if (event.data.success) {
+									detectedName.textContent = 'Saved: ' + detectedFilename;
+									detectedName.style.color = '#8f8';
+								} else {
+									detectedName.textContent = 'Save failed: ' + (event.data.error || 'unknown');
+									detectedName.style.color = '#f88';
+								}
+								setTimeout(function() { detectedName.style.color = '#888'; }, 3000);
+							}
+						};
+						window.addEventListener('message', onResponse);
+						var responseTimeout = setTimeout(function() {
+							window.removeEventListener('message', onResponse);
+						}, 5000);
+
+						window.parent.postMessage({
+							type: 'aao-attach-code',
+							code: code,
+							filename: detectedFilename,
+							caseId: (typeof trial_information !== 'undefined' && trial_information)
+								? trial_information.id : null
+						}, '*');
+					}
 				}
 				textarea.value = '';
 				detectedName.textContent = '';
