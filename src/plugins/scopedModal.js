@@ -28,20 +28,20 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
     invoke("list_global_plugins").then(function (manifest) {
       var scripts = (manifest && manifest.scripts) || [];
       var plugins = (manifest && manifest.plugins) || {};
-      var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
       listContainer.innerHTML = "";
 
       if (scripts.length === 0) {
         var empty = document.createElement("div");
         empty.className = "muted";
-        empty.textContent = "No global plugins installed.";
+        empty.textContent = "No plugins installed.";
         listContainer.appendChild(empty);
         return;
       }
 
       for (var i = 0; i < scripts.length; i++) {
         (function (filename) {
-          var globallyDisabled = disabledList.indexOf(filename) !== -1;
+          var pe = plugins[filename] || {};
+          var globallyDisabled = !((pe.scope || {}).all === true);
           var pluginEntry = plugins[filename] || {};
 
           // Determine effective state for this scope

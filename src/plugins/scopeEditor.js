@@ -47,10 +47,10 @@ export function showScopeEditorModal(ctx, pluginFilename) {
 
   function refreshScopeEditor() {
     invoke("list_global_plugins").then(function (manifest) {
-      var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
       var plugins = (manifest && manifest.plugins) || {};
       var entry = plugins[pluginFilename] || {};
-      var globallyDisabled = disabledList.indexOf(pluginFilename) !== -1;
+      var scope = entry.scope || {};
+      var globallyDisabled = !(scope.all === true);
 
       contentEl.innerHTML = "";
 
@@ -64,7 +64,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       globalToggle.style.width = "1rem";
       globalToggle.style.height = "1rem";
       globalToggle.addEventListener("change", function () {
-        invoke("toggle_global_plugin", { filename: pluginFilename, enabled: globalToggle.checked })
+        invoke("toggle_plugin_for_scope", { filename: pluginFilename, scopeType: "global", scopeKey: "", enabled: globalToggle.checked })
           .then(refreshScopeEditor)
           .catch(function (e) { statusMsg.textContent = "Error: " + e; });
       });
@@ -86,8 +86,23 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       contentEl.appendChild(sectionLabel);
 
       // Build override list
-      var overrideField = globallyDisabled ? "enabled_for" : "disabled_for";
-      var overrides = entry[overrideField] || {};
+      // In unified model, enabled_for/disabled_for are under scope
+      var overrides = {};
+      if (globallyDisabled) {
+        // Show what's explicitly enabled
+        overrides = {
+          cases: scope.enabled_for || [],
+          sequences: scope.enabled_for_sequences || [],
+          collections: scope.enabled_for_collections || []
+        };
+      } else {
+        // Show what's explicitly disabled
+        overrides = {
+          cases: scope.disabled_for || [],
+          sequences: [],
+          collections: []
+        };
+      }
       var overrideItems = [];
 
       var colArr = overrides.collections || [];

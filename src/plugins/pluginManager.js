@@ -173,17 +173,18 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
     invoke("list_global_plugins")
       .then(function (manifest) {
         var scripts = (manifest && manifest.scripts) || [];
-        var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
+        var plugins = (manifest && manifest.plugins) || {};
         globalListContainer.innerHTML = "";
         if (scripts.length === 0) {
           var empty = document.createElement("div");
           empty.className = "plugin-list-empty";
-          empty.textContent = "No global plugins.";
+          empty.textContent = "No plugins installed.";
           globalListContainer.appendChild(empty);
         } else {
           for (var i = 0; i < scripts.length; i++) {
             (function (filename) {
-              var isDisabled = disabledList.indexOf(filename) !== -1;
+              var pe = plugins[filename] || {};
+              var isDisabled = !((pe.scope || {}).all === true);
               var item = document.createElement("div");
               item.className = "plugin-list-item" + (isDisabled ? " disabled" : "");
 
@@ -195,7 +196,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
               toggle.style.height = "1rem";
               toggle.style.flexShrink = "0";
               toggle.addEventListener("change", function () {
-                invoke("toggle_global_plugin", { filename: filename, enabled: toggle.checked })
+                invoke("toggle_plugin_for_scope", { filename: filename, scopeType: "global", scopeKey: "", enabled: toggle.checked })
                   .then(function () { refreshGlobalList(); })
                   .catch(function (e) { statusMsg.textContent = "Error: " + e; });
               });
@@ -209,7 +210,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
               removeBtn.textContent = "Remove";
               removeBtn.addEventListener("click", function () {
                 showConfirmModal("Remove global plugin \"" + filename + "\"?", "Remove", function () {
-                  invoke("remove_global_plugin", { filename: filename })
+                  invoke("remove_global_plugin", { filename: filename })  // backward-compat
                     .then(function () { refreshGlobalList(); })
                     .catch(function (e) { statusMsg.textContent = "Error: " + e; });
                 });

@@ -24,7 +24,7 @@ export function initPluginPanel(ctx) {
       .then(function (manifest) {
         var scripts = (manifest && manifest.scripts) || [];
         var plugins = (manifest && manifest.plugins) || {};
-        var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
+        // No more top-level disabled array — each plugin has scope.all
         globalPluginsList.innerHTML = "";
         if (scripts.length === 0) {
           var empty = document.createElement("div");
@@ -34,7 +34,9 @@ export function initPluginPanel(ctx) {
         } else {
           for (var i = 0; i < scripts.length; i++) {
             (function (filename) {
-              var isDisabled = disabledList.indexOf(filename) !== -1;
+              var pluginEntry = plugins[filename] || {};
+              var scope = pluginEntry.scope || {};
+              var isDisabled = !(scope.all === true);
               var row = document.createElement("div");
               row.className = "global-plugin-row" + (isDisabled ? " disabled" : "");
 
@@ -46,7 +48,7 @@ export function initPluginPanel(ctx) {
               toggle.style.height = "1rem";
               toggle.style.flexShrink = "0";
               toggle.addEventListener("change", function () {
-                invoke("toggle_global_plugin", { filename: filename, enabled: toggle.checked })
+                invoke("toggle_plugin_for_scope", { filename: filename, scopeType: "global", scopeKey: "", enabled: toggle.checked })
                   .then(function () { loadGlobalPluginsPanel(); })
                   .catch(function (e) { statusMsg.textContent = "Error: " + e; });
               });
@@ -56,30 +58,29 @@ export function initPluginPanel(ctx) {
               name.textContent = filename;
 
               // Scope badge
-              var pluginEntry = plugins[filename] || {};
               var scopeBadge = document.createElement("span");
               scopeBadge.className = "scope-badge";
-              scopeBadge.textContent = "All cases";
+              // Build scope summary
+              if (scope.all) {
+                scopeBadge.textContent = "All cases";
+              } else {
+                var scopeParts = [];
+                var ef = scope.enabled_for || [];
+                var efs = scope.enabled_for_sequences || [];
+                var efc = scope.enabled_for_collections || [];
+                if (ef.length > 0) scopeParts.push(ef.length + " case" + (ef.length !== 1 ? "s" : ""));
+                if (efs.length > 0) scopeParts.push(efs.length + " seq");
+                if (efc.length > 0) scopeParts.push(efc.length + " col");
+                scopeBadge.textContent = scopeParts.length > 0 ? scopeParts.join(", ") : "Disabled";
+                if (scopeParts.length === 0) scopeBadge.style.color = "#888";
+              }
 
-              // Override summary badge
               var overrideBadge = document.createElement("span");
               overrideBadge.className = "scope-badge";
-              if (isDisabled) {
-                // Globally disabled - count enabled_for entries
-                var ef = pluginEntry.enabled_for || {};
-                var efCount = ((ef.cases || []).length) + ((ef.sequences || []).length) + ((ef.collections || []).length);
-                if (efCount > 0) {
-                  overrideBadge.textContent = efCount + " enabled";
-                  overrideBadge.style.color = "#6a6";
-                }
-              } else {
-                // Globally enabled - count disabled_for entries
-                var df = pluginEntry.disabled_for || {};
-                var dfCount = ((df.cases || []).length) + ((df.sequences || []).length) + ((df.collections || []).length);
-                if (dfCount > 0) {
-                  overrideBadge.textContent = dfCount + " exception" + (dfCount !== 1 ? "s" : "");
-                  overrideBadge.style.color = "#a66";
-                }
+              if (pluginEntry.origin) {
+                overrideBadge.textContent = pluginEntry.origin;
+                overrideBadge.style.color = "#888";
+                overrideBadge.style.fontSize = "0.7rem";
               }
 
               var paramsBtn = document.createElement("button");
@@ -95,7 +96,7 @@ export function initPluginPanel(ctx) {
               removeBtn.textContent = "Remove";
               removeBtn.addEventListener("click", function () {
                 showConfirmModal("Remove global plugin \"" + filename + "\"?", "Remove", function () {
-                  invoke("remove_global_plugin", { filename: filename })
+                  invoke("remove_global_plugin", { filename: filename })  // backward-compat command
                     .then(function () { loadGlobalPluginsPanel(); })
                     .catch(function (e) { statusMsg.textContent = "Error: " + e; });
                 });
@@ -379,9 +380,11 @@ export function initPluginPanel(ctx) {
 
       close();
       statusMsg.textContent = "Attaching global plugin...";
-      invoke("attach_global_plugin_code", {
+      invoke("attach_plugin_code", {
         code: code,
-        filename: filename
+        filename: filename,
+        targetCaseIds: [],
+        origin: "global"
       })
       .then(function () {
         // If specific scopes selected, enable for each
@@ -473,9 +476,9 @@ export function initPluginPanel(ctx) {
           return;
         }
         statusMsg.textContent = "Importing global plugin...";
-        invoke("import_aaoplug_global", { sourcePath: selected })
-          .then(function (filenames) {
-            statusMsg.textContent = "Imported " + filenames.length + " plugin(s) globally.";
+        invoke("import_plugin", { sourcePath: selected, targetCaseIds: [], origin: "global" })
+          .then(function () {
+            statusMsg.textContent = "Plugin imported globally.";
             loadGlobalPluginsPanel();
           })
           .catch(function (e) {
