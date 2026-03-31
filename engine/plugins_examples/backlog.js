@@ -16,7 +16,7 @@ EnginePlugins.register({
 				log.push({ name: data.speakerName, html: data.dialogueHTML });
 				refreshLog();
 			}
-		}, 0, 'backlog');
+		});
 
 		var contentEl = null;
 
@@ -68,6 +68,14 @@ EnginePlugins.register({
 			panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
 			if (panel.style.display === 'block') {
 				contentEl.scrollTop = contentEl.scrollHeight;
+			}
+		};
+
+		// Manual destroy for raw DOM elements (CSS + events are auto-cleaned)
+		return {
+			destroy: function() {
+				if (btn.parentNode) btn.parentNode.removeChild(btn);
+				if (panel.parentNode) panel.parentNode.removeChild(panel);
 			}
 		};
 	}

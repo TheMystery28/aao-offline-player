@@ -5,7 +5,7 @@
  */
 EnginePlugins.register({
 	name: 'better_layout',
-	version: '1.0',
+	version: '1.1',
 	init: function(config, events, api) {
 		api.settings.addSection('Custom Layout', [
 			{ type: 'checkbox', key: 'plugins.betterLayout.zoom2x', label: '2x Screen Size' },
@@ -13,7 +13,7 @@ EnginePlugins.register({
 			{ type: 'slider', key: 'plugins.betterLayout.dialogueOpacity', label: 'Dialogue Opacity', min: 0.3, max: 1.0, step: 0.1 }
 		]);
 
-		var styleEl = null;
+		var currentStyle = null;
 		function updateStyles() {
 			var css = '';
 			if (config.get('plugins.betterLayout.zoom2x')) {
@@ -26,21 +26,20 @@ EnginePlugins.register({
 			if (opacity !== undefined && opacity < 1) {
 				css += '.textbox { opacity: ' + opacity + ' !important; }\n';
 			}
-			if (styleEl) styleEl.parentNode.removeChild(styleEl);
-			styleEl = api.dom.injectCSS(css);
+			if (currentStyle) currentStyle.remove();
+			currentStyle = api.dom.injectCSS(css);
 		}
 
 		events.on('config:changed', function(data) {
 			if (data.path && data.path.indexOf('plugins.betterLayout.') === 0) {
 				updateStyles();
 			}
-		}, 0, 'better_layout');
+		});
 		updateStyles();
 
+		// Manual destroy for settings section (CSS + events are auto-cleaned)
 		return {
 			destroy: function() {
-				if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
-				events.clearNamespace('better_layout');
 				api.settings.removeSection('Custom Layout');
 			}
 		};

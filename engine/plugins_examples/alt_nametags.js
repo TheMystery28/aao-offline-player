@@ -12,11 +12,8 @@ EnginePlugins.register({
 	},
 	init: function(config, events, api) {
 		var params = config.getPluginParams('alt_nametags');
-		var style = api.dom.injectCSS(
+		api.dom.injectCSS(
 			'div.textbox .name { font-family: ' + params.font + ' !important; font-size: ' + params.size + 'px !important; }'
 		);
-		return {
-			destroy: function() { if (style && style.parentNode) style.parentNode.removeChild(style); }
-		};
 	}
 });
