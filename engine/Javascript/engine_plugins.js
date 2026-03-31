@@ -782,54 +782,6 @@ var EnginePlugins = (function() {
 		}
 	}
 
-	function loadCasePlugins() {
-		if (typeof trial_information === 'undefined' || !trial_information) return;
-		var caseBase = 'case/' + trial_information.id + '/';
-		var manifestUrl = caseBase + 'plugins/manifest.json';
-
-		try {
-			var xhr = new XMLHttpRequest();
-			xhr.open('GET', manifestUrl, false); // synchronous
-			xhr.send();
-			if (xhr.status !== 200) return; // no plugins
-
-			var manifest = JSON.parse(xhr.responseText);
-			if (!manifest || !Array.isArray(manifest.scripts)) return;
-
-			// Load case config if declared
-			if (manifest.config) {
-				var configUrl = caseBase + 'case_config.json';
-				try {
-					var cxhr = new XMLHttpRequest();
-					cxhr.open('GET', configUrl, false);
-					cxhr.send();
-					if (cxhr.status === 200) {
-						var caseConfig = JSON.parse(cxhr.responseText);
-						EngineConfig.loadCaseConfig(caseConfig);
-					}
-				} catch (ce) {
-					console.warn('[EnginePlugins] Failed to load case_config.json:', ce.message);
-				}
-			}
-
-			// Inject plugin script tags (skip disabled ones)
-			var disabledList = Array.isArray(manifest.disabled) ? manifest.disabled : [];
-			for (var i = 0; i < manifest.scripts.length; i++) {
-				if (disabledList.indexOf(manifest.scripts[i]) !== -1) {
-					console.log('[EnginePlugins] Skipping disabled plugin: ' + manifest.scripts[i]);
-					continue;
-				}
-				var scriptUrl = caseBase + 'plugins/' + manifest.scripts[i];
-				var script = document.createElement('script');
-				script.src = scriptUrl;
-				script.async = false; // preserve order
-				document.head.appendChild(script);
-			}
-		} catch (e) {
-			console.warn('[EnginePlugins] Failed to load plugins manifest:', e.message);
-		}
-	}
-
 	// ============================================================
 	// SECTION: Public API
 	// ============================================================
@@ -840,7 +792,6 @@ var EnginePlugins = (function() {
 			EngineEvents.on('player:init', function() {
 				isReady = true;
 				loadGlobalPlugins();
-				loadCasePlugins();
 				initAllPending();
 				// Rebuild the settings panel after plugins load (it was created empty by settings_panel.js)
 				setTimeout(function() {

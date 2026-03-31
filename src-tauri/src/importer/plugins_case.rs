@@ -373,7 +373,7 @@ pub fn toggle_plugin(case_id: u32, filename: &str, enabled: bool, engine_dir: &P
 // ============================================================
 
 /// Insert or update a plugin entry in the global manifest.
-fn upsert_plugin_manifest(
+pub(super) fn upsert_plugin_manifest(
     engine_dir: &Path,
     filename: &str,
     origin: &str,

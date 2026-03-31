@@ -543,3 +543,124 @@ fn test_import_aaoplug_global_skips_assets() {
     // Assets SHOULD be extracted to global plugins dir (unified storage)
     assert!(engine_dir.join("plugins/assets/sound.mp3").exists());
 }
+
+// =====================================================================
+// Migration tests
+// =====================================================================
+
+#[test]
+fn test_migrate_case_plugins_to_global() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    // Create a case with local plugins
+    let case_id = 77001u32;
+    let case_dir = engine_dir.join("case").join(case_id.to_string());
+    let local_plugins = case_dir.join("plugins");
+    fs::create_dir_all(&local_plugins).unwrap();
+    fs::write(local_plugins.join("manifest.json"), r#"{"scripts":["my_plugin.js"]}"#).unwrap();
+    fs::write(local_plugins.join("my_plugin.js"), "// old case plugin").unwrap();
+    fs::create_dir_all(local_plugins.join("assets")).unwrap();
+    fs::write(local_plugins.join("assets/sound.opus"), "fake audio").unwrap();
+
+    // Create case manifest
+    let manifest = CaseManifest {
+        case_id, title: "Test".into(), author: "A".into(), language: "en".into(),
+        download_date: "2025-01-01".into(), format: "v6".into(), sequence: None,
+        assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
+        asset_map: std::collections::HashMap::new(),
+        failed_assets: vec![], has_plugins: true, has_case_config: false,
+    };
+    write_manifest(&manifest, &case_dir).unwrap();
+
+    // Run migration
+    let count = migrate_case_plugins_to_global(engine_dir).unwrap();
+    assert_eq!(count, 1);
+
+    // Verify: plugin JS in global plugins/
+    assert!(engine_dir.join("plugins/my_plugin.js").exists());
+    let content = fs::read_to_string(engine_dir.join("plugins/my_plugin.js")).unwrap();
+    assert_eq!(content, "// old case plugin");
+
+    // Verify: assets copied
+    assert!(engine_dir.join("plugins/assets/sound.opus").exists());
+
+    // Verify: global manifest has the plugin scoped to this case
+    let gm_text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let gm: serde_json::Value = serde_json::from_str(&gm_text).unwrap();
+    assert!(gm["scripts"].as_array().unwrap().iter().any(|s| s == "my_plugin.js"));
+    let enabled = gm["plugins"]["my_plugin.js"]["scope"]["enabled_for"].as_array().unwrap();
+    assert!(enabled.iter().any(|v| v.as_u64() == Some(77001)));
+
+    // Verify: case-local plugins/ deleted
+    assert!(!local_plugins.exists());
+
+    // Verify: case manifest has_plugins = false
+    let updated = read_manifest(&case_dir).unwrap();
+    assert!(!updated.has_plugins);
+}
+
+#[test]
+fn test_migrate_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    // No case plugins — should do nothing
+    let count = migrate_case_plugins_to_global(engine_dir).unwrap();
+    assert_eq!(count, 0);
+
+    // Create a case, run migration, run again
+    let case_dir = engine_dir.join("case/77002");
+    let local_plugins = case_dir.join("plugins");
+    fs::create_dir_all(&local_plugins).unwrap();
+    fs::write(local_plugins.join("manifest.json"), r#"{"scripts":["x.js"]}"#).unwrap();
+    fs::write(local_plugins.join("x.js"), "// x").unwrap();
+    let manifest = CaseManifest {
+        case_id: 77002, title: "T".into(), author: "A".into(), language: "en".into(),
+        download_date: "2025-01-01".into(), format: "v6".into(), sequence: None,
+        assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
+        asset_map: std::collections::HashMap::new(),
+        failed_assets: vec![], has_plugins: true, has_case_config: false,
+    };
+    write_manifest(&manifest, &case_dir).unwrap();
+
+    let c1 = migrate_case_plugins_to_global(engine_dir).unwrap();
+    assert_eq!(c1, 1);
+
+    // Second run — should be 0 (plugins dir already deleted)
+    let c2 = migrate_case_plugins_to_global(engine_dir).unwrap();
+    assert_eq!(c2, 0);
+}
+
+#[test]
+fn test_migrate_merges_scopes() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+
+    // Two cases with the same plugin
+    for id in [77003u32, 77004] {
+        let case_dir = engine_dir.join("case").join(id.to_string());
+        let local_plugins = case_dir.join("plugins");
+        fs::create_dir_all(&local_plugins).unwrap();
+        fs::write(local_plugins.join("manifest.json"), r#"{"scripts":["shared.js"]}"#).unwrap();
+        fs::write(local_plugins.join("shared.js"), "// shared plugin").unwrap();
+        let manifest = CaseManifest {
+            case_id: id, title: "T".into(), author: "A".into(), language: "en".into(),
+            download_date: "2025-01-01".into(), format: "v6".into(), sequence: None,
+            assets: AssetSummary { case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0 },
+            asset_map: std::collections::HashMap::new(),
+            failed_assets: vec![], has_plugins: true, has_case_config: false,
+        };
+        write_manifest(&manifest, &case_dir).unwrap();
+    }
+
+    let count = migrate_case_plugins_to_global(engine_dir).unwrap();
+    assert_eq!(count, 2); // 1 script per case, same plugin → 2 upserts
+
+    // Verify scope has both case IDs
+    let gm_text = fs::read_to_string(engine_dir.join("plugins/manifest.json")).unwrap();
+    let gm: serde_json::Value = serde_json::from_str(&gm_text).unwrap();
+    let enabled = gm["plugins"]["shared.js"]["scope"]["enabled_for"].as_array().unwrap();
+    assert!(enabled.iter().any(|v| v.as_u64() == Some(77003)));
+    assert!(enabled.iter().any(|v| v.as_u64() == Some(77004)));
+}

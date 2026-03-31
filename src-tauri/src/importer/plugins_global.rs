@@ -196,10 +196,150 @@ pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), String> {
 /// Reads global manifest, collections, and case manifest to determine scope matches.
 /// Merges params cascade: plugin defaults → global → collection → sequence → case.
 /// Writes `case/{id}/resolved_plugins.json`.
+/// Migrate case-local plugins to the global pool.
+/// Scans all `case/*/plugins/` directories, copies JS + assets to `plugins/`,
+/// updates global manifest with `origin: "case"` and `enabled_for: [case_id]`,
+/// then deletes the case-local `plugins/` directories.
+/// Idempotent: does nothing if no case-local plugins exist.
+/// Error-tolerant: logs and skips individual failures.
+/// Returns the count of migrated plugin scripts.
+pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, String> {
+    let cases_dir = data_dir.join("case");
+    if !cases_dir.is_dir() {
+        return Ok(0);
+    }
+
+    // Quick check: are there any case/*/plugins/ dirs?
+    let mut has_case_plugins = false;
+    if let Ok(entries) = fs::read_dir(&cases_dir) {
+        for entry in entries.flatten() {
+            if entry.path().join("plugins").join("manifest.json").exists() {
+                has_case_plugins = true;
+                break;
+            }
+        }
+    }
+    if !has_case_plugins {
+        return Ok(0);
+    }
+
+    let global_plugins_dir = data_dir.join("plugins");
+    let _ = fs::create_dir_all(&global_plugins_dir);
+
+    let mut migrated_count = 0;
+
+    let entries: Vec<_> = fs::read_dir(&cases_dir)
+        .map_err(|e| format!("Failed to read case dir: {}", e))?
+        .flatten()
+        .collect();
+
+    for entry in entries {
+        let case_dir = entry.path();
+        if !case_dir.is_dir() { continue; }
+
+        let case_id: u32 = match case_dir.file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|s| s.parse().ok())
+        {
+            Some(id) => id,
+            None => continue,
+        };
+
+        let local_plugins_dir = case_dir.join("plugins");
+        let local_manifest_path = local_plugins_dir.join("manifest.json");
+        if !local_manifest_path.exists() { continue; }
+
+        eprintln!("[MIGRATE] Found case-local plugins in case {}", case_id);
+
+        // Read the case-local manifest
+        let scripts: Vec<String> = match fs::read_to_string(&local_manifest_path) {
+            Ok(text) => {
+                match serde_json::from_str::<serde_json::Value>(&text) {
+                    Ok(val) => val.get("scripts")
+                        .and_then(|s| s.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default(),
+                    Err(e) => {
+                        eprintln!("[MIGRATE] Failed to parse manifest for case {}: {}", case_id, e);
+                        continue;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[MIGRATE] Failed to read manifest for case {}: {}", case_id, e);
+                continue;
+            }
+        };
+
+        // Copy each script to global plugins/
+        for script in &scripts {
+            let src = local_plugins_dir.join(script);
+            let dest = global_plugins_dir.join(script);
+            if src.is_file() && !dest.exists() {
+                if let Err(e) = fs::copy(&src, &dest) {
+                    eprintln!("[MIGRATE] Failed to copy {} for case {}: {}", script, case_id, e);
+                    continue;
+                }
+            }
+
+            // Read code for descriptors
+            let code = fs::read_to_string(&dest).unwrap_or_default();
+            let descriptors = extract_plugin_descriptors(&code);
+
+            // Update global manifest with scope
+            if let Err(e) = upsert_plugin_manifest(data_dir, script, "case", &[case_id], descriptors) {
+                eprintln!("[MIGRATE] Failed to update manifest for {}: {}", script, e);
+                continue;
+            }
+            migrated_count += 1;
+        }
+
+        // Copy assets/ if present
+        let local_assets = local_plugins_dir.join("assets");
+        if local_assets.is_dir() {
+            let global_assets = global_plugins_dir.join("assets");
+            let _ = fs::create_dir_all(&global_assets);
+            if let Ok(asset_entries) = fs::read_dir(&local_assets) {
+                for ae in asset_entries.flatten() {
+                    let src = ae.path();
+                    if src.is_file() {
+                        let dest = global_assets.join(ae.file_name());
+                        if !dest.exists() {
+                            let _ = fs::copy(&src, &dest);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Delete the case-local plugins/ directory
+        if let Err(e) = fs::remove_dir_all(&local_plugins_dir) {
+            eprintln!("[MIGRATE] Failed to delete case/{}/plugins/: {}", case_id, e);
+        } else {
+            eprintln!("[MIGRATE] Migrated {} scripts from case {} to global", scripts.len(), case_id);
+        }
+
+        // Update case manifest: has_plugins = false (now global)
+        if let Ok(mut cm) = read_manifest(&case_dir) {
+            cm.has_plugins = false;
+            let _ = crate::downloader::manifest::write_manifest(&cm, &case_dir);
+        }
+    }
+
+    if migrated_count > 0 {
+        eprintln!("[MIGRATE] Total: migrated {} plugin scripts to global pool", migrated_count);
+    }
+
+    Ok(migrated_count)
+}
+
 pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_json::Value, String> {
     let global_manifest_path = data_dir.join("plugins").join("manifest.json");
 
-    // Migrate if needed
+    // Migrate case-local plugins to global on first resolve
+    let _ = migrate_case_plugins_to_global(data_dir);
+
+    // Migrate old global manifest format if needed
     migrate_global_manifest(data_dir)?;
 
     // Read global manifest
