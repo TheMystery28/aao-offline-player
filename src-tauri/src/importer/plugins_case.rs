@@ -698,7 +698,7 @@ pub(super) fn check_auto_promote(filename: &str, engine_dir: &Path) {
     let mut promoted_cases: Vec<u32> = Vec::new();
     let mut promoted_seqs: Vec<String> = Vec::new();
 
-    for (title, cases) in &seq_cases {
+    for (title, _cases) in &seq_cases {
         if title.starts_with("__full_") { continue; }
         let full_key = format!("__full_{}", title);
         if let Some(full_seq) = seq_cases.get(&full_key) {

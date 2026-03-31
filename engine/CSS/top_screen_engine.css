@@ -166,7 +166,8 @@ div.textbox .name
 
 div.textbox .dialogue
 {
-	width:244px; min-height:52px;
+	box-sizing: border-box;
+	width:256px; min-height:60px;
 	margin: 0;
 	padding:2px 2px 2px 6px;
 	
