@@ -49,16 +49,17 @@ EnginePlugins.register({
 		contentEl = api.dom.create('div');
 		contentEl.id = 'backlog_content';
 		panel.appendChild(contentEl);
-		var screens = api.dom.query('#screens');
-		if (screens) {
-			screens.insertBefore(panel, api.dom.query('#screen-top'));
+		var screenTop = api.dom.query('#screen-top');
+		if (screenTop) {
+			screenTop.appendChild(panel);
 		}
 
 		api.dom.injectCSS(
-			'#backlog { position:absolute; z-index:999; width:256px; height:185px;' +
+			'#backlog { position:absolute; top:0; left:0; z-index:999;' +
+			'width:100%; height:100%; box-sizing:border-box;' +
 			'background:rgba(0,0,0,0.85); color:white; font:12px sans-serif;' +
 			'border:2px ridge rgba(136,136,136,0.75); border-radius:3px; padding:2px; }' +
-			'#backlog_content { overflow-y:auto; height:165px; padding:5px; }' +
+			'#backlog_content { overflow-y:auto; height:calc(100% - 10px); padding:5px; }' +
 			'.backlog-name { background:rgba(27,34,108,0.75); font-size:10px; padding:0 2px;' +
 			'border:2px ridge rgba(136,136,136,0.75); border-radius:3px; }' +
 			'.backlog-text { margin-bottom:4px; }'
