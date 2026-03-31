@@ -7,6 +7,7 @@ export function initPlayer(ctx) {
   var invoke = ctx.invoke;
   var statusMsg = ctx.statusMsg;
   var loadLibrary = ctx.loadLibrary;
+  var loadGlobalPluginsPanel = ctx.loadGlobalPluginsPanel;
   var writeGameSaves = ctx.writeGameSaves;
   var nextBridgeId = ctx.nextBridgeId;
 
@@ -115,6 +116,7 @@ export function initPlayer(ctx) {
       playerContainer.classList.add("hidden");
       launcher.classList.remove("hidden");
       statusMsg.textContent = "";
+      loadGlobalPluginsPanel();
 
       if (savesDataString) {
         try {

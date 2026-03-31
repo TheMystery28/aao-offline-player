@@ -156,6 +156,7 @@ window.addEventListener("DOMContentLoaded", function () {
     invoke: invoke,
     statusMsg: statusMsg,
     loadLibrary: function () { ctx.loadLibrary(); },
+    loadGlobalPluginsPanel: function () { if (ctx.loadGlobalPluginsPanel) ctx.loadGlobalPluginsPanel(); },
     writeGameSaves: function (saves) { return ctx.writeGameSaves(saves); },
     nextBridgeId: function () { return savesFns.nextBridgeId("backup"); }
   });

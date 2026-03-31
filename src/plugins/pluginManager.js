@@ -137,6 +137,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
         })
         .then(function () {
           statusMsg.textContent = "Plugin installed.";
+          refreshGlobalList();
           refreshList();
         })
         .catch(function (e) {
@@ -149,7 +150,10 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
   });
 
   attachBtn.addEventListener("click", function () {
-    ctx.showAttachCodeModal(caseId, caseTitle, refreshList);
+    ctx.showAttachCodeModal(caseId, caseTitle, function () {
+      refreshGlobalList();
+      refreshList();
+    });
   });
 
   closeBtn.addEventListener("click", close);
