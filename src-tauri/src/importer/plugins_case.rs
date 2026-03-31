@@ -548,21 +548,24 @@ pub(super) fn is_plugin_active_for_case(manifest: &serde_json::Value, filename: 
     }
 
     // Check enabled_for
+    let mut active = false;
     if let Some(enabled) = scope.get("enabled_for").and_then(|e| e.as_array()) {
         if enabled.iter().any(|v| v.as_u64() == Some(case_id as u64)) {
-            return true;
+            active = true;
         }
     }
 
     // Check enabled_for_sequences
-    if let Some(seqs) = scope.get("enabled_for_sequences").and_then(|e| e.as_array()) {
-        if !seqs.is_empty() {
-            let case_dir = engine_dir.join("case").join(case_id.to_string());
-            if let Ok(case_manifest) = read_manifest(&case_dir) {
-                if let Some(seq) = &case_manifest.sequence {
-                    if let Some(title) = seq.get("title").and_then(|t| t.as_str()) {
-                        if seqs.iter().any(|s| s.as_str() == Some(title)) {
-                            return true;
+    if !active {
+        if let Some(seqs) = scope.get("enabled_for_sequences").and_then(|e| e.as_array()) {
+            if !seqs.is_empty() {
+                let case_dir = engine_dir.join("case").join(case_id.to_string());
+                if let Ok(case_manifest) = read_manifest(&case_dir) {
+                    if let Some(seq) = &case_manifest.sequence {
+                        if let Some(title) = seq.get("title").and_then(|t| t.as_str()) {
+                            if seqs.iter().any(|s| s.as_str() == Some(title)) {
+                                active = true;
+                            }
                         }
                     }
                 }
@@ -571,33 +574,45 @@ pub(super) fn is_plugin_active_for_case(manifest: &serde_json::Value, filename: 
     }
 
     // Check enabled_for_collections
-    if let Some(cols) = scope.get("enabled_for_collections").and_then(|e| e.as_array()) {
-        if !cols.is_empty() {
-            let collections = crate::collections::load_collections(engine_dir);
-            for col in &collections.collections {
-                if cols.iter().any(|c| c.as_str() == Some(&col.id)) {
-                    // Check if this case is in this collection
-                    let case_dir = engine_dir.join("case").join(case_id.to_string());
-                    let case_seq_title = read_manifest(&case_dir).ok()
-                        .and_then(|m| m.sequence.and_then(|s| s.get("title").and_then(|t| t.as_str().map(|s| s.to_string()))));
+    if !active {
+        if let Some(cols) = scope.get("enabled_for_collections").and_then(|e| e.as_array()) {
+            if !cols.is_empty() {
+                let collections = crate::collections::load_collections(engine_dir);
+                for col in &collections.collections {
+                    if cols.iter().any(|c| c.as_str() == Some(&col.id)) {
+                        let case_dir = engine_dir.join("case").join(case_id.to_string());
+                        let case_seq_title = read_manifest(&case_dir).ok()
+                            .and_then(|m| m.sequence.and_then(|s| s.get("title").and_then(|t| t.as_str().map(|s| s.to_string()))));
 
-                    for item in &col.items {
-                        match item {
-                            crate::collections::CollectionItem::Case { case_id: cid } if *cid == case_id => return true,
-                            crate::collections::CollectionItem::Sequence { title } => {
-                                if case_seq_title.as_deref() == Some(title.as_str()) {
-                                    return true;
+                        for item in &col.items {
+                            match item {
+                                crate::collections::CollectionItem::Case { case_id: cid } if *cid == case_id => { active = true; break; }
+                                crate::collections::CollectionItem::Sequence { title } => {
+                                    if case_seq_title.as_deref() == Some(title.as_str()) {
+                                        active = true;
+                                        break;
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
+                    if active { break; }
                 }
             }
         }
     }
 
-    false
+    // Final exclusion: disabled_for overrides any activation
+    if active {
+        if let Some(disabled) = scope.get("disabled_for").and_then(|d| d.as_array()) {
+            if disabled.iter().any(|v| v.as_u64() == Some(case_id as u64)) {
+                return false;
+            }
+        }
+    }
+
+    active
 }
 
 /// Get sequence titles for a list of case IDs.

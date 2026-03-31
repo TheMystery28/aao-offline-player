@@ -664,3 +664,30 @@ fn test_migrate_merges_scopes() {
     assert!(enabled.iter().any(|v| v.as_u64() == Some(77003)));
     assert!(enabled.iter().any(|v| v.as_u64() == Some(77004)));
 }
+
+#[test]
+fn test_disabled_for_overrides_collection_scope() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    // Plugin enabled via collection, but case 55555 is in disabled_for
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"disabled_for":[55555],"enabled_for_collections":["col-1"]},"params":{},"origin":"global"}}}"#).unwrap();
+
+    // Set up collection with case 55555 and 55556
+    std::fs::write(engine_dir.join("collections.json"),
+        r#"{"collections":[{"id":"col-1","title":"Test Col","created_date":"2026-01-01","items":[{"type":"case","case_id":55555},{"type":"case","case_id":55556}]}]}"#).unwrap();
+    std::fs::create_dir_all(engine_dir.join("case/55555")).unwrap();
+    std::fs::create_dir_all(engine_dir.join("case/55556")).unwrap();
+
+    // Case 55555 should be EXCLUDED (in disabled_for)
+    let resolved = resolve_plugins_for_case(55555, engine_dir).unwrap();
+    assert_eq!(resolved["active"].as_array().unwrap().len(), 0, "case 55555 should be excluded by disabled_for");
+    assert_eq!(resolved["available"].as_array().unwrap().len(), 1);
+
+    // Case 55556 should still be ACTIVE (in collection, not excluded)
+    let resolved2 = resolve_plugins_for_case(55556, engine_dir).unwrap();
+    assert_eq!(resolved2["active"].as_array().unwrap().len(), 1, "case 55556 should be active via collection");
+}

@@ -170,7 +170,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
           addBtn.textContent = "Hide Picker";
           if (!pickerBuilt) {
             pickerBuilt = true;
-            buildPicker(overrideField, overrides, globallyDisabled);
+            buildPicker(overrides, globallyDisabled);
           }
         } else {
           pickerContainer.style.display = "none";
@@ -178,7 +178,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
         }
       });
 
-      function buildPicker(field, currentOverrides, isGloballyDisabled) {
+      function buildPicker(currentOverrides, isGloballyDisabled) {
         pickerContainer.innerHTML = "";
 
         // Use cached data (already populated by loadLibrary)
