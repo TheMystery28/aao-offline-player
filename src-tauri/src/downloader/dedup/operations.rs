@@ -3,6 +3,7 @@ use std::path::Path;
 
 use super::helpers::{hash_file, rewrite_value_recursive};
 use super::index::DedupIndex;
+use crate::downloader::DownloaderError;
 use crate::downloader::manifest::{read_manifest, write_manifest};
 use crate::downloader::paths::normalize_path;
 
@@ -38,13 +39,13 @@ pub fn finalize_case_import(case_id: u32, data_dir: &Path) -> (usize, u64) {
 
 /// Dedup a single case's assets against all indexed files (defaults + other cases).
 /// Opens its own DedupIndex. For use from download/import pipelines.
-pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), String> {
+pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), DownloaderError> {
     let case_dir = data_dir.join("case").join(case_id.to_string());
     let assets_dir = case_dir.join("assets");
     if !assets_dir.is_dir() {
         return Ok((0, 0));
     }
-    let index = DedupIndex::open(data_dir)?;
+    let index = DedupIndex::open(data_dir).map_err(DownloaderError::Other)?;
     // Scan both defaults and case assets so cross-case lookups work
     index.scan_and_register(data_dir, "defaults")?;
     index.scan_and_register_cases(data_dir)?;
@@ -58,7 +59,7 @@ pub fn dedup_case_assets_with_index(
     case_id: u32,
     data_dir: &Path,
     index: &DedupIndex,
-) -> Result<(usize, u64), String> {
+) -> Result<(usize, u64), DownloaderError> {
     let case_dir = data_dir.join("case").join(case_id.to_string());
     let assets_dir = case_dir.join("assets");
     if !assets_dir.is_dir() {
@@ -439,7 +440,7 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
 }
 
 /// List all case directories under `data_dir/case/` with parseable numeric IDs.
-pub fn list_case_dirs(data_dir: &Path) -> Result<Vec<(u32, std::path::PathBuf)>, String> {
+pub fn list_case_dirs(data_dir: &Path) -> Result<Vec<(u32, std::path::PathBuf)>, DownloaderError> {
     let cases_dir = data_dir.join("case");
     if !cases_dir.is_dir() {
         return Ok(Vec::new());

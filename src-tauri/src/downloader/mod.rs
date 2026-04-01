@@ -40,6 +40,12 @@ impl From<DownloaderError> for String {
     }
 }
 
+impl From<String> for DownloaderError {
+    fn from(s: String) -> Self {
+        DownloaderError::Other(s)
+    }
+}
+
 /// Site paths extracted from AAO's bridge.js.php cfg variable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SitePaths {
