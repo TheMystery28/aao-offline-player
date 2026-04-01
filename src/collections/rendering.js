@@ -577,16 +577,25 @@ export function exportCollection(ctx, collection, caseIds, anyHasPlugins) {
         });
       }
 
-      // Smart prompts
-      invoke("read_saves_for_export", { caseIds: caseIds }).then(function (saves) {
+      // Smart prompts (live check for plugins across all cases)
+      var pluginChecks = caseIds.map(function (id) { return invoke("list_plugins", { caseId: id }); });
+      Promise.all([
+        invoke("read_saves_for_export", { caseIds: caseIds }),
+        Promise.all(pluginChecks)
+      ]).then(function (results) {
+        var saves = results[0];
+        var pluginStates = results[1];
         var hasSaves = saves !== null;
-        if (!hasSaves && !anyHasPlugins) {
-          doCollExport(null, true);
-        } else if (hasSaves && !anyHasPlugins) {
+        var collHasPlugins = pluginStates.some(function (ps) {
+          return ps.scripts.length > 0 || ps.disabled.length > 0;
+        });
+        if (!hasSaves && !collHasPlugins) {
+          doCollExport(null, false);
+        } else if (hasSaves && !collHasPlugins) {
           showConfirmModal("Include saves?", "Include Saves",
-            function () { doCollExport(saves, true); },
-            function () { doCollExport(null, true); });
-        } else if (!hasSaves && anyHasPlugins) {
+            function () { doCollExport(saves, false); },
+            function () { doCollExport(null, false); });
+        } else if (!hasSaves && collHasPlugins) {
           showConfirmModal("Include plugins?", "Include Plugins",
             function () { doCollExport(null, true); },
             function () { doCollExport(null, false); });

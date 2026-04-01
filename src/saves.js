@@ -188,8 +188,20 @@ export function initSaves(ctx) {
     buttons.appendChild(importSavesBtn);
     buttons.appendChild(pasteSaveBtn);
 
-    // Plugins section (only if has plugins)
-    if (hasPlugins) {
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "modal-btn modal-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", close);
+    buttons.appendChild(cancelBtn);
+
+    // Plugins section (live check — show only if case has active plugins)
+    var pluginChecks = caseIds.map(function (id) { return invoke("list_plugins", { caseId: id }); });
+    Promise.all(pluginChecks).then(function (pluginStates) {
+      var anyPlugins = pluginStates.some(function (ps) {
+        return ps.scripts.length > 0 || ps.disabled.length > 0;
+      });
+      if (!anyPlugins) return;
+
       var pluginsLabel = document.createElement("div");
       pluginsLabel.style.cssText = "font-size:0.75rem;color:#999;text-transform:uppercase;letter-spacing:0.04em;margin-top:0.75rem;margin-bottom:0.35rem;";
       pluginsLabel.textContent = "Plugins";
@@ -212,16 +224,9 @@ export function initSaves(ctx) {
         });
       });
 
-      buttons.appendChild(pluginsLabel);
-      buttons.appendChild(exportPluginsBtn);
-    }
-
-    var cancelBtn = document.createElement("button");
-    cancelBtn.className = "modal-btn modal-btn-cancel";
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", close);
-
-    buttons.appendChild(cancelBtn);
+      buttons.insertBefore(pluginsLabel, cancelBtn);
+      buttons.insertBefore(exportPluginsBtn, cancelBtn);
+    });
 
     overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
 
@@ -296,18 +301,30 @@ export function initSaves(ctx) {
       caseIds = [caseIds];
     }
     statusMsg.textContent = "Reading saves...";
-    invoke("read_saves_for_export", { caseIds: caseIds }).then(function (saves) {
+    var pluginChecks = caseIds.map(function (id) { return invoke("list_plugins", { caseId: id }); });
+    Promise.all([
+      invoke("read_saves_for_export", { caseIds: caseIds }),
+      Promise.all(pluginChecks)
+    ]).then(function (results) {
+      var saves = results[0];
+      var pluginStates = results[1];
       if (!saves) {
         statusMsg.textContent = "No saves found for " + (caseIds.length > 1 ? "these cases" : "this case") + ".";
         return;
       }
-
-      showConfirmModal(
-        "Include plugins in save export?",
-        "Include Plugins",
-        function () { doExportSave(caseIds, title, saves, true); },
-        function () { doExportSave(caseIds, title, saves, false); }
-      );
+      var anyHasPlugins = pluginStates.some(function (ps) {
+        return ps.scripts.length > 0 || ps.disabled.length > 0;
+      });
+      if (!anyHasPlugins) {
+        doExportSave(caseIds, title, saves, false);
+      } else {
+        showConfirmModal(
+          "Include plugins in save export?",
+          "Include Plugins",
+          function () { doExportSave(caseIds, title, saves, true); },
+          function () { doExportSave(caseIds, title, saves, false); }
+        );
+      }
     });
   }
 

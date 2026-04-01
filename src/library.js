@@ -458,20 +458,24 @@ export function initLibrary(ctx) {
                 });
               }
 
-              // Smart prompts
-              var seqHasPlugins = false;
-              for (var sp = 0; sp < downloadedCases.length; sp++) {
-                if (downloadedCases[sp].has_plugins) { seqHasPlugins = true; break; }
-              }
-
-              invoke("read_saves_for_export", { caseIds: ids }).then(function (saves) {
+              // Smart prompts (live check for plugins across all cases)
+              var pluginChecks = ids.map(function (id) { return invoke("list_plugins", { caseId: id }); });
+              Promise.all([
+                invoke("read_saves_for_export", { caseIds: ids }),
+                Promise.all(pluginChecks)
+              ]).then(function (results) {
+                var saves = results[0];
+                var pluginStates = results[1];
                 var hasSaves = saves !== null;
+                var seqHasPlugins = pluginStates.some(function (ps) {
+                  return ps.scripts.length > 0 || ps.disabled.length > 0;
+                });
                 if (!hasSaves && !seqHasPlugins) {
-                  doSeqExport(null, true);
+                  doSeqExport(null, false);
                 } else if (hasSaves && !seqHasPlugins) {
                   showConfirmModal("Include saves?", "Include Saves",
-                    function () { doSeqExport(saves, true); },
-                    function () { doSeqExport(null, true); });
+                    function () { doSeqExport(saves, false); },
+                    function () { doSeqExport(null, false); });
                 } else if (!hasSaves && seqHasPlugins) {
                   showConfirmModal("Include plugins?", "Include Plugins",
                     function () { doSeqExport(null, true); },
@@ -808,16 +812,22 @@ export function initLibrary(ctx) {
           });
         }
 
-        // Smart prompts: only ask about what exists
-        invoke("read_saves_for_export", { caseIds: [caseId] }).then(function (saves) {
+        // Smart prompts: only ask about what exists (live check for plugins)
+        Promise.all([
+          invoke("read_saves_for_export", { caseIds: [caseId] }),
+          invoke("list_plugins", { caseId: caseId })
+        ]).then(function (results) {
+          var saves = results[0];
+          var pluginState = results[1];
           var hasSaves = saves !== null;
-          if (!hasSaves && !hasPlugins) {
-            doExport(null, true);
-          } else if (hasSaves && !hasPlugins) {
+          var caseHasPlugins = pluginState.scripts.length > 0 || pluginState.disabled.length > 0;
+          if (!hasSaves && !caseHasPlugins) {
+            doExport(null, false);
+          } else if (hasSaves && !caseHasPlugins) {
             showConfirmModal("Include game saves?", "Include Saves",
-              function () { doExport(saves, true); },
-              function () { doExport(null, true); });
-          } else if (!hasSaves && hasPlugins) {
+              function () { doExport(saves, false); },
+              function () { doExport(null, false); });
+          } else if (!hasSaves && caseHasPlugins) {
             showConfirmModal("Include plugins?", "Include Plugins",
               function () { doExport(null, true); },
               function () { doExport(null, false); });
