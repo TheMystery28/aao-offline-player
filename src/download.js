@@ -268,7 +268,7 @@ export function initDownload(ctx) {
         downloadResult.innerHTML =
           '<strong>' + escapeHtml(manifest.title) + '</strong> updated!';
         downloadResult.className = "result-success";
-        loadLibrary();
+        if (!onDone) loadLibrary(); // Skip when called from batch (e.g., Update All)
       })
       .catch(function (e) {
         console.error("[UPDATE] update_case error:", e);

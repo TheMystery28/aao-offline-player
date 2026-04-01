@@ -35,7 +35,20 @@ export function initLibrary(ctx) {
   var cachedCases = [];
   var cachedCollections = [];
 
+  // Coalesce rapid loadLibrary() calls via requestAnimationFrame.
+  // Multiple calls in the same JS execution block result in a single refresh.
+  var isLibraryRefreshScheduled = false;
+
   function loadLibrary() {
+    if (isLibraryRefreshScheduled) return;
+    isLibraryRefreshScheduled = true;
+    requestAnimationFrame(function () {
+      isLibraryRefreshScheduled = false;
+      loadLibraryImpl();
+    });
+  }
+
+  function loadLibraryImpl() {
     console.log("[LIBRARY] loadLibrary called");
     libraryLoading.classList.remove("hidden");
     emptyLibrary.classList.add("hidden");
