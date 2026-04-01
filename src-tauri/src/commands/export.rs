@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -8,6 +8,34 @@ use crate::app_state::AppState;
 use crate::collections as coll;
 use crate::downloader::asset_downloader::DownloadEvent;
 use crate::importer;
+
+/// Resolve export destination: on Android, content:// URIs need a temp file.
+fn resolve_export_path(dest_path: &str, data_dir: &Path) -> (PathBuf, Option<String>) {
+    if dest_path.starts_with("content://") {
+        let temp = data_dir.join("_export_temp.aaocase");
+        (temp, Some(dest_path.to_string()))
+    } else {
+        (PathBuf::from(dest_path), None)
+    }
+}
+
+/// Copy a temp export file to an Android content:// URI, then clean up the temp.
+fn write_to_content_uri(app: &tauri::AppHandle, export_path: &Path, uri: &str) -> Result<(), String> {
+    use tauri_plugin_fs::FsExt;
+    use std::io::Write;
+    let data = fs::read(export_path)
+        .map_err(|e| format!("Failed to read temp export: {}", e))?;
+    let dest_url = reqwest::Url::parse(uri)
+        .map_err(|e| format!("Failed to parse content URI: {}", e))?;
+    let dest_fp = tauri_plugin_fs::FilePath::from(dest_url);
+    let opts = tauri_plugin_fs::OpenOptions::new().write(true).create(true).clone();
+    let mut file = app.fs().open(dest_fp, opts)
+        .map_err(|e| format!("Failed to open content URI for writing: {}", e))?;
+    file.write_all(&data)
+        .map_err(|e| format!("Failed to write to content URI: {}", e))?;
+    let _ = fs::remove_file(export_path);
+    Ok(())
+}
 
 /// Export a case as a .aaocase ZIP file.
 /// If `saves` is provided, includes it as saves.json in the ZIP.
@@ -27,12 +55,7 @@ pub async fn export_case(
         s.data_dir.clone()
     };
 
-    let (export_path, content_uri) = if dest_path.starts_with("content://") {
-        let temp = data_dir.join("_export_temp.aaocase");
-        (temp, Some(dest_path.clone()))
-    } else {
-        (PathBuf::from(&dest_path), None)
-    };
+    let (export_path, content_uri) = resolve_export_path(&dest_path, &data_dir);
 
     let _ = on_event.send(DownloadEvent::Started { total: 0 });
 
@@ -53,21 +76,8 @@ pub async fn export_case(
         importer::export_aaocase(case_id, &data_dir_clone, &export_path_clone, Some(&progress_cb), saves.as_ref(), include_plugins_flag)
     }).await.map_err(|e| format!("Export task failed: {}", e))??;
 
-    // Copy temp file to content URI on Android
-    if let Some(uri) = content_uri {
-        use tauri_plugin_fs::FsExt;
-        use std::io::Write;
-        let data = fs::read(&export_path)
-            .map_err(|e| format!("Failed to read temp export: {}", e))?;
-        let dest_url = reqwest::Url::parse(&uri)
-            .map_err(|e| format!("Failed to parse content URI: {}", e))?;
-        let dest_fp = tauri_plugin_fs::FilePath::from(dest_url);
-        let opts = tauri_plugin_fs::OpenOptions::new().write(true).create(true).clone();
-        let mut file = app.fs().open(dest_fp, opts)
-            .map_err(|e| format!("Failed to open content URI for writing: {}", e))?;
-        file.write_all(&data)
-            .map_err(|e| format!("Failed to write to content URI: {}", e))?;
-        let _ = fs::remove_file(&export_path);
+    if let Some(ref uri) = content_uri {
+        write_to_content_uri(&app, &export_path, uri)?;
     }
 
     let _ = on_event.send(DownloadEvent::Finished {
@@ -107,12 +117,7 @@ pub async fn export_sequence(
         s.data_dir.clone()
     };
 
-    let (export_path, content_uri) = if dest_path.starts_with("content://") {
-        let temp = data_dir.join("_export_temp.aaocase");
-        (temp, Some(dest_path.clone()))
-    } else {
-        (PathBuf::from(&dest_path), None)
-    };
+    let (export_path, content_uri) = resolve_export_path(&dest_path, &data_dir);
 
     let _ = on_event.send(DownloadEvent::Started { total: 0 });
 
@@ -142,20 +147,8 @@ pub async fn export_sequence(
         )
     }).await.map_err(|e| format!("Export task failed: {}", e))??;
 
-    if let Some(uri) = content_uri {
-        use tauri_plugin_fs::FsExt;
-        use std::io::Write;
-        let data = fs::read(&export_path)
-            .map_err(|e| format!("Failed to read temp export: {}", e))?;
-        let dest_url = reqwest::Url::parse(&uri)
-            .map_err(|e| format!("Failed to parse content URI: {}", e))?;
-        let dest_fp = tauri_plugin_fs::FilePath::from(dest_url);
-        let opts = tauri_plugin_fs::OpenOptions::new().write(true).create(true).clone();
-        let mut file = app.fs().open(dest_fp, opts)
-            .map_err(|e| format!("Failed to open content URI for writing: {}", e))?;
-        file.write_all(&data)
-            .map_err(|e| format!("Failed to write to content URI: {}", e))?;
-        let _ = fs::remove_file(&export_path);
+    if let Some(ref uri) = content_uri {
+        write_to_content_uri(&app, &export_path, uri)?;
     }
 
     let _ = on_event.send(DownloadEvent::Finished {
