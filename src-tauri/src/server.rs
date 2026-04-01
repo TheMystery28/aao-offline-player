@@ -98,9 +98,9 @@ pub(crate) fn serve_file(
         }
     };
 
-    // Read file
-    let data = match fs::read(&file_path) {
-        Ok(d) => d,
+    // Get file size from metadata (no full read yet)
+    let file_size = match fs::metadata(&file_path) {
+        Ok(m) => m.len() as usize,
         Err(_) => {
             return ServeResult {
                 status: 500,
@@ -111,7 +111,6 @@ pub(crate) fn serve_file(
     };
 
     let mime = mime_type(&file_path);
-    let file_size = data.len();
 
     // Determine caching strategy
     let cache_value = if relative.starts_with("case/") || relative.starts_with("defaults/") {
@@ -134,10 +133,26 @@ pub(crate) fn serve_file(
         headers.push(("Accept-Ranges".into(), "bytes".into()));
     }
 
-    // Handle Range request
+    // Handle Range request — only read the requested byte range
     if let Some(range_str) = range_header {
         if let Some((start, end)) = parse_range(range_str, file_size) {
-            let slice = data[start..=end].to_vec();
+            use std::io::{Read, Seek, SeekFrom};
+            let slice = match std::fs::File::open(&file_path) {
+                Ok(mut f) => {
+                    let len = end - start + 1;
+                    let mut buf = vec![0u8; len];
+                    if f.seek(SeekFrom::Start(start as u64)).is_err() {
+                        return ServeResult { status: 500, headers: vec![], data: b"Seek failed".to_vec() };
+                    }
+                    if f.read_exact(&mut buf).is_err() {
+                        return ServeResult { status: 500, headers: vec![], data: b"Read failed".to_vec() };
+                    }
+                    buf
+                }
+                Err(_) => {
+                    return ServeResult { status: 500, headers: vec![], data: b"500 Internal Server Error".to_vec() };
+                }
+            };
             headers.push((
                 "Content-Range".into(),
                 format!("bytes {}-{}/{}", start, end, file_size),
@@ -161,7 +176,18 @@ pub(crate) fn serve_file(
         }
     }
 
-    // Full 200 response
+    // Full 200 response — read entire file
+    let data = match fs::read(&file_path) {
+        Ok(d) => d,
+        Err(_) => {
+            return ServeResult {
+                status: 500,
+                headers: vec![],
+                data: b"500 Internal Server Error".to_vec(),
+            };
+        }
+    };
+
     headers.push(("Content-Length".into(), file_size.to_string()));
     ServeResult {
         status: 200,
