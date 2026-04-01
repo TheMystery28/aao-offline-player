@@ -275,3 +275,114 @@ pub fn parse_plugin_assets(code: &str) -> Vec<(String, String)> {
 
     results
 }
+
+/// Resolve asset filename collisions when attaching a new plugin.
+/// If another installed plugin already owns an asset with the same filename,
+/// rename the new plugin's asset and rewrite all references in its code.
+/// Returns the (possibly modified) code and assets list.
+pub fn resolve_asset_collisions(
+    code: &str,
+    assets: &[(String, String)],
+    plugin_filename: &str,
+    plugins_dir: &Path,
+) -> (String, Vec<(String, String)>) {
+    if assets.is_empty() {
+        return (code.to_string(), assets.to_vec());
+    }
+
+    let assets_dir = plugins_dir.join("assets");
+    let mut new_code = code.to_string();
+    let mut new_assets = Vec::new();
+
+    for (asset_name, url) in assets {
+        if !assets_dir.join(asset_name).exists() {
+            new_assets.push((asset_name.clone(), url.clone()));
+            continue;
+        }
+
+        // File exists — check if another plugin owns it
+        if !is_asset_owned_by_other(asset_name, plugin_filename, plugins_dir) {
+            // Same plugin re-attached or orphan file — overwrite is fine
+            new_assets.push((asset_name.clone(), url.clone()));
+            continue;
+        }
+
+        // Collision: generate a unique name and rewrite code
+        let renamed = unique_asset_name(asset_name, &assets_dir);
+        new_code = new_code.replace(asset_name.as_str(), &renamed);
+        new_assets.push((renamed, url.clone()));
+    }
+
+    (new_code, new_assets)
+}
+
+/// Check if any other installed plugin declares the given asset filename.
+fn is_asset_owned_by_other(asset_name: &str, current_plugin: &str, plugins_dir: &Path) -> bool {
+    let manifest_path = plugins_dir.join("manifest.json");
+    let text = match fs::read_to_string(&manifest_path) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    let val: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let scripts = match val["scripts"].as_array() {
+        Some(s) => s,
+        None => return false,
+    };
+    for script in scripts {
+        let name = match script.as_str() {
+            Some(n) => n,
+            None => continue,
+        };
+        if name == current_plugin {
+            continue;
+        }
+        if let Ok(other_code) = fs::read_to_string(plugins_dir.join(name)) {
+            if parse_plugin_assets(&other_code).iter().any(|(f, _)| f == asset_name) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Generate a unique asset filename by appending `_2`, `_3`, etc. before the extension.
+fn unique_asset_name(name: &str, assets_dir: &Path) -> String {
+    let (stem, ext) = match name.rfind('.') {
+        Some(pos) => (&name[..pos], &name[pos..]),
+        None => (name.as_ref(), ""),
+    };
+    for i in 2..100 {
+        let candidate = format!("{}_{}{}", stem, i, ext);
+        if !assets_dir.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+    // Fallback — should never happen in practice
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("{}_{}{}", stem, ts, ext)
+}
+
+/// Delete assets declared in a plugin's `@assets` block.
+/// Reads the plugin JS source, parses asset filenames, and removes them from `plugins/assets/`.
+pub fn delete_plugin_assets(filename: &str, plugins_dir: &Path) {
+    let plugin_file = plugins_dir.join(filename);
+    let code = match fs::read_to_string(&plugin_file) {
+        Ok(c) => c,
+        Err(_) => return, // File already gone or unreadable — nothing to clean
+    };
+    let assets = parse_plugin_assets(&code);
+    if assets.is_empty() {
+        return;
+    }
+    let assets_dir = plugins_dir.join("assets");
+    for (asset_filename, _url) in &assets {
+        let asset_path = assets_dir.join(asset_filename);
+        let _ = fs::remove_file(&asset_path);
+    }
+}

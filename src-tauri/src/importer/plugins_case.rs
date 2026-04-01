@@ -198,20 +198,23 @@ pub async fn attach_plugin_code(
     fs::create_dir_all(&plugins_dir)
         .map_err(|e| format!("Failed to create plugins dir: {}", e))?;
 
-    // Write the JS file to global plugins/
+    // Resolve asset filename collisions before writing anything
+    let raw_assets = parse_plugin_assets(code);
+    let (final_code, final_assets) = resolve_asset_collisions(code, &raw_assets, filename, &plugins_dir);
+
+    // Write the (possibly rewritten) JS file to global plugins/
     let dest = plugins_dir.join(filename);
-    fs::write(&dest, code)
+    fs::write(&dest, &final_code)
         .map_err(|e| format!("Failed to write plugin file: {}", e))?;
 
     // Download @assets declared in the plugin code
-    let assets = parse_plugin_assets(code);
-    if !assets.is_empty() {
+    if !final_assets.is_empty() {
         let assets_dir = plugins_dir.join("assets");
-        download_plugin_assets(client, &assets, &assets_dir).await;
+        download_plugin_assets(client, &final_assets, &assets_dir).await;
     }
 
-    // Extract descriptors
-    let descriptors = extract_plugin_descriptors(code);
+    // Extract descriptors from the final code (in case @assets block was rewritten)
+    let descriptors = extract_plugin_descriptors(&final_code);
 
     // Update global manifest with scope
     upsert_plugin_manifest(engine_dir, filename, origin, target_case_ids, descriptors)?;
@@ -290,11 +293,10 @@ pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<
         if let Some(plugins) = val.get_mut("plugins").and_then(|p| p.as_object_mut()) {
             plugins.remove(filename);
         }
-        // Delete the JS file
-        let plugin_file = engine_dir.join("plugins").join(filename);
-        let _ = fs::remove_file(&plugin_file);
-        // Note: assets are shared across plugins — don't delete them here
-        // (a future optimization could track which assets belong to which plugin)
+        // Delete the plugin's declared assets, then the JS file itself
+        let plugins_dir = engine_dir.join("plugins");
+        delete_plugin_assets(filename, &plugins_dir);
+        let _ = fs::remove_file(plugins_dir.join(filename));
     }
 
     fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())

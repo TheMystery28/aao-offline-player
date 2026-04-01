@@ -31,7 +31,9 @@ fn remove_global_plugin_test(filename: &str, engine_dir: &std::path::Path) -> Re
             let _ = std::fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap());
         }
     }
-    let _ = std::fs::remove_file(engine_dir.join("plugins").join(filename));
+    let plugins_dir = engine_dir.join("plugins");
+    delete_plugin_assets(filename, &plugins_dir);
+    let _ = std::fs::remove_file(plugins_dir.join(filename));
     Ok(())
 }
 

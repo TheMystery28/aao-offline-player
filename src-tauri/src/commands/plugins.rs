@@ -131,9 +131,10 @@ pub fn remove_global_plugin(
             let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap());
         }
     }
-    // Delete the file
-    let plugin_file = data_dir.join("plugins").join(&filename);
-    let _ = fs::remove_file(&plugin_file);
+    // Delete the plugin's declared assets, then the JS file itself
+    let plugins_dir = data_dir.join("plugins");
+    importer::delete_plugin_assets(&filename, &plugins_dir);
+    let _ = fs::remove_file(plugins_dir.join(&filename));
     Ok(())
 }
 
