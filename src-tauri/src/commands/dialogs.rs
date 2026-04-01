@@ -63,86 +63,38 @@ pub async fn pick_import_file(app: tauri::AppHandle) -> Result<Option<String>, S
     }
 }
 
-/// Open a native "Save As" dialog for exporting a .aaocase file.
-/// `default_name` is the suggested filename (e.g. "My Case.aaocase").
+/// Shared helper for "Save As" dialogs. Handles Android (no extension filters) and desktop.
+fn pick_save_file(app: &tauri::AppHandle, title: &str, filter_name: &str, ext: &str, default_name: &str) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut builder = app.dialog().file()
+        .set_title(title)
+        .set_file_name(default_name);
+    if !cfg!(target_os = "android") {
+        builder = builder.add_filter(filter_name, &[ext]);
+    }
+    match builder.blocking_save_file() {
+        Some(file_path) => {
+            if let Some(path) = file_path.as_path() {
+                Ok(Some(path.to_string_lossy().to_string()))
+            } else {
+                Ok(Some(file_path.to_string()))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
 #[tauri::command]
 pub async fn pick_export_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, String> {
-    use tauri_plugin_dialog::DialogExt;
-    let mut builder = app
-        .dialog()
-        .file()
-        .set_title("Export case as .aaocase")
-        .set_file_name(&default_name);
-
-    // On Android, extension filters don't work — use MIME type
-    if !cfg!(target_os = "android") {
-        builder = builder.add_filter("AAO Case", &["aaocase"]);
-    }
-
-    let result = builder.blocking_save_file();
-    match result {
-        Some(file_path) => {
-            // On desktop: filesystem path. On Android: content:// URI.
-            if let Some(path) = file_path.as_path() {
-                Ok(Some(path.to_string_lossy().to_string()))
-            } else {
-                Ok(Some(file_path.to_string()))
-            }
-        }
-        None => Ok(None),
-    }
+    pick_save_file(&app, "Export case as .aaocase", "AAO Case", "aaocase", &default_name)
 }
 
-/// Open a native "Save As" dialog for exporting a .aaoplug file.
 #[tauri::command]
 pub async fn pick_export_plugin_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, String> {
-    use tauri_plugin_dialog::DialogExt;
-    let mut builder = app
-        .dialog()
-        .file()
-        .set_title("Export plugins as .aaoplug")
-        .set_file_name(&default_name);
-
-    if !cfg!(target_os = "android") {
-        builder = builder.add_filter("AAO Plugin", &["aaoplug"]);
-    }
-
-    let result = builder.blocking_save_file();
-    match result {
-        Some(file_path) => {
-            if let Some(path) = file_path.as_path() {
-                Ok(Some(path.to_string_lossy().to_string()))
-            } else {
-                Ok(Some(file_path.to_string()))
-            }
-        }
-        None => Ok(None),
-    }
+    pick_save_file(&app, "Export plugins as .aaoplug", "AAO Plugin", "aaoplug", &default_name)
 }
 
-/// Open a native "Save As" dialog for exporting a .aaosave file.
 #[tauri::command]
 pub async fn pick_export_save_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, String> {
-    use tauri_plugin_dialog::DialogExt;
-    let mut builder = app
-        .dialog()
-        .file()
-        .set_title("Export saves as .aaosave")
-        .set_file_name(&default_name);
-
-    if !cfg!(target_os = "android") {
-        builder = builder.add_filter("AAO Save", &["aaosave"]);
-    }
-
-    let result = builder.blocking_save_file();
-    match result {
-        Some(file_path) => {
-            if let Some(path) = file_path.as_path() {
-                Ok(Some(path.to_string_lossy().to_string()))
-            } else {
-                Ok(Some(file_path.to_string()))
-            }
-        }
-        None => Ok(None),
-    }
+    pick_save_file(&app, "Export saves as .aaosave", "AAO Save", "aaosave", &default_name)
 }
