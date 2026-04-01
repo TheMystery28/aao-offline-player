@@ -371,27 +371,20 @@ pub(crate) fn resolve_path(config: &ServerConfig, relative: &str) -> Option<Path
         candidate = case_insensitive_resolve(&base);
     }
 
-    // VFS pointer resolution: if the file is a lightweight alias, serve the target instead.
+    // VFS pointer resolution: follow aliases to the real file (supports multi-hop chains).
     if let Some(path) = candidate {
-        if let Ok(meta) = path.metadata() {
-            if meta.len() < 256 {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    if let Some(target_rel) = content.strip_prefix("AAO_VFS_ALIAS:") {
-                        let target = if target_rel.starts_with("case/") || target_rel.starts_with("defaults/") {
-                            config.data_dir.join(target_rel)
-                        } else {
-                            config.engine_dir.join(target_rel)
-                        };
-                        if target.is_file() {
-                            return Some(target);
-                        }
-                        // Broken pointer — fall through to return None (404)
-                        return None;
-                    }
-                }
+        let resolved = crate::downloader::vfs::resolve_path(&path, &config.data_dir, &config.engine_dir);
+        // If the file is a VFS pointer whose target is missing, resolve_path returns the
+        // pointer itself — don't serve the pointer content, return 404 instead.
+        if resolved == path {
+            if crate::downloader::vfs::read_vfs_pointer(&path).is_some() {
+                return None; // Broken pointer
             }
         }
-        return Some(path);
+        if resolved.is_file() {
+            return Some(resolved);
+        }
+        return None;
     }
 
     None
