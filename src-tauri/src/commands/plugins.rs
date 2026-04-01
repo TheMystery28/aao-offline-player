@@ -116,29 +116,7 @@ pub fn remove_global_plugin(
     filename: String,
 ) -> Result<(), String> {
     let data_dir = state.data_dir()?;
-    // Remove with case_id 0 — the function handles no-scope-remaining by deleting
-    // Actually, we need to force-delete: remove ALL scopes then delete
-    let manifest_path = data_dir.join("plugins").join("manifest.json");
-    if manifest_path.exists() {
-        let text = fs::read_to_string(&manifest_path).unwrap_or_default();
-        if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&text) {
-            if let Some(arr) = val.get_mut("scripts").and_then(|s| s.as_array_mut()) {
-                arr.retain(|s| s.as_str() != Some(&filename));
-            }
-            if let Some(plugins) = val.get_mut("plugins").and_then(|p| p.as_object_mut()) {
-                plugins.remove(&filename);
-            }
-            match serde_json::to_string_pretty(&val) {
-                Ok(json) => {
-                    if let Err(e) = fs::write(&manifest_path, json) {
-                        eprintln!("[PLUGINS] Failed to write {}: {}", manifest_path.display(), e);
-                    }
-                }
-                Err(e) => eprintln!("[PLUGINS] Failed to serialize manifest: {}", e),
-            }
-        }
-    }
-    // Delete the plugin's declared assets, then the JS file itself
+    importer::remove_global_plugin_from_manifest(&filename, &data_dir)?;
     let plugins_dir = data_dir.join("plugins");
     importer::delete_plugin_assets(&filename, &plugins_dir);
     let _ = fs::remove_file(plugins_dir.join(&filename));

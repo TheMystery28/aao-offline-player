@@ -339,6 +339,24 @@ pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, String> 
     Ok(migrated_count)
 }
 
+/// Remove a plugin from the global manifest (scripts array + plugins object).
+/// Does NOT delete the JS file or assets — the caller handles that.
+pub fn remove_global_plugin_from_manifest(filename: &str, engine_dir: &Path) -> Result<(), String> {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() {
+        return Ok(()); // Nothing to remove
+    }
+    shared::with_global_manifest(engine_dir, |val| {
+        if let Some(arr) = val.get_mut("scripts").and_then(|s| s.as_array_mut()) {
+            arr.retain(|s| s.as_str() != Some(filename));
+        }
+        if let Some(plugins) = val.get_mut("plugins").and_then(|p| p.as_object_mut()) {
+            plugins.remove(filename);
+        }
+        Ok(())
+    })
+}
+
 pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_json::Value, String> {
     let global_manifest_path = data_dir.join("plugins").join("manifest.json");
 
