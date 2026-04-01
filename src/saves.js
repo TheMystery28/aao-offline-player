@@ -354,7 +354,7 @@ export function initSaves(ctx) {
 
     invoke("import_save", { sourcePath: path })
       .then(function (result) {
-        var savesPromise = writeGameSaves(result.saves).then(function (writeResult) {
+        return writeGameSaves(result.saves).then(function (writeResult) {
           var mergedCount = (writeResult && writeResult.merged) || 0;
 
           var cases = (result.metadata && result.metadata.cases) || [];
