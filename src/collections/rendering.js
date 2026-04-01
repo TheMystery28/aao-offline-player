@@ -202,10 +202,10 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
 }
 
 /**
- * Render a sequence group inside a container (used within collection items).
- * Reuses the same logic as appendSequenceGroup but appends to a given container.
+ * Build the shared core of a sequence group: header, parts, and common footer buttons.
+ * Returns handles so callers can add extra buttons before appending to the DOM.
  */
-export function appendSequenceGroupInto(ctx, container, sequenceTitle, sequenceList, downloadedCases, searchQuery) {
+export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloadedCases, searchQuery) {
   var invoke = ctx.invoke;
   var statusMsg = ctx.statusMsg;
 
@@ -386,8 +386,24 @@ export function appendSequenceGroupInto(ctx, container, sequenceTitle, sequenceL
 
   groupEl.appendChild(header);
   groupEl.appendChild(partsContainer);
-  groupEl.appendChild(seqFooter);
-  container.appendChild(groupEl);
+
+  return {
+    group: groupEl,
+    footer: seqFooter,
+    downloadedIds: downloadedIds,
+    missingIds: missingIds,
+    renderedParts: renderedParts
+  };
+}
+
+/**
+ * Append a sequence group into a container (used inside collections).
+ */
+export function appendSequenceGroupInto(ctx, container, sequenceTitle, sequenceList, downloadedCases, searchQuery) {
+  var core = buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloadedCases, searchQuery);
+  if (searchQuery && core.renderedParts === 0) return;
+  core.group.appendChild(core.footer);
+  container.appendChild(core.group);
 }
 
 /**

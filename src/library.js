@@ -1,4 +1,5 @@
-import { formatBytes, formatDate, escapeHtml, showFailedAssetsModal, showUpdateModal, showConfirmModal } from './helpers.js';
+import { formatBytes, escapeHtml, showUpdateModal, showConfirmModal } from './helpers.js';
+import { buildSequenceGroupCore } from './collections/rendering.js';
 
 /**
  * Initialise the Library section: case list rendering, search/sort, and case actions.
@@ -183,184 +184,14 @@ export function initLibrary(ctx) {
   }
 
   function appendSequenceGroup(sequenceTitle, sequenceList, downloadedCases, searchQuery) {
-    var totalParts = sequenceList.length;
-    var downloadedCount = downloadedCases.length;
-    var totalSize = 0;
-    var downloadedIds = [];
-    for (var i = 0; i < downloadedCases.length; i++) {
-      totalSize += downloadedCases[i].assets.total_size_bytes;
-      downloadedIds.push(downloadedCases[i].case_id);
-    }
-    var missingIds = [];
-    for (var j = 0; j < sequenceList.length; j++) {
-      if (downloadedIds.indexOf(sequenceList[j].id) === -1) {
-        missingIds.push(sequenceList[j].id);
-      }
-    }
-
-    var group = document.createElement("div");
-    group.className = "sequence-group";
-
-    // Header
-    var header = document.createElement("div");
-    header.className = "sequence-header";
-    header.innerHTML =
-      '<span class="sequence-header-toggle">&#9660;</span> ' +
-      '<strong>' + escapeHtml(sequenceTitle) + '</strong>' +
-      '<span class="sequence-meta">' +
-        downloadedCount + '/' + totalParts + ' parts' +
-        ' &middot; ' + formatBytes(totalSize) +
-      '</span>';
-
-    var seqPluginsBtn = document.createElement("button");
-    seqPluginsBtn.className = "small-btn header-plugins-btn";
-    seqPluginsBtn.textContent = "Plugins";
-    seqPluginsBtn.title = "Configure plugin params for this sequence";
-    seqPluginsBtn.addEventListener("click", (function (title) {
-      return function (e) {
-        e.stopPropagation();
-        invoke("list_global_plugins").then(function (manifest) {
-          var scripts = (manifest && manifest.scripts) || [];
-          if (scripts.length === 0) {
-            statusMsg.textContent = "No global plugins installed. Open the Plugins panel to add one.";
-            ctx.pluginsPanel.classList.remove("hidden");
-            ctx.pluginsToggle.classList.add("open");
-            ctx.loadGlobalPluginsPanel();
-            ctx.pluginsToggle.scrollIntoView({ behavior: "smooth" });
-            return;
-          }
-          ctx.showScopedPluginModal("sequence", title, 'Sequence "' + title + '"');
-        });
-      };
-    })(sequenceTitle));
-    header.appendChild(seqPluginsBtn);
-
-    var partsContainer = document.createElement("div");
-    partsContainer.className = "sequence-parts";
-
-    header.addEventListener("click", function () {
-      var isOpen = !partsContainer.classList.contains("hidden");
-      if (isOpen) {
-        partsContainer.classList.add("hidden");
-        header.querySelector(".sequence-header-toggle").innerHTML = "&#9654;";
-      } else {
-        partsContainer.classList.remove("hidden");
-        header.querySelector(".sequence-header-toggle").innerHTML = "&#9660;";
-      }
-    });
-
-    // Part rows
-    var renderedParts = 0;
-    for (var k = 0; k < sequenceList.length; k++) {
-      var partInfo = sequenceList[k];
-
-      // When searching, skip parts that don't match the query
-      if (searchQuery) {
-        var partTitle = (partInfo.title || "").toLowerCase();
-        var partId = String(partInfo.id);
-        if (partTitle.indexOf(searchQuery) === -1 && partId.indexOf(searchQuery) === -1) {
-          continue;
-        }
-      }
-
-      var downloaded = null;
-      for (var d = 0; d < downloadedCases.length; d++) {
-        if (downloadedCases[d].case_id === partInfo.id) {
-          downloaded = downloadedCases[d];
-          break;
-        }
-      }
-      appendSequencePart(partsContainer, partInfo, k + 1, downloaded);
-      renderedParts++;
-    }
-
-    // Don't render the group at all if search filtered out all parts
-    if (searchQuery && renderedParts === 0) {
+    var core = buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloadedCases, searchQuery);
+    if (searchQuery && core.renderedParts === 0) {
       return;
     }
+    var footer = core.footer;
+    var downloadedIds = core.downloadedIds;
 
-    // Footer actions
-    var footer = document.createElement("div");
-    footer.className = "sequence-actions";
-
-    // Play from Part 1 button
-    if (downloadedCases.length > 0) {
-      var firstCase = null;
-      for (var f = 0; f < sequenceList.length; f++) {
-        for (var fc = 0; fc < downloadedCases.length; fc++) {
-          if (downloadedCases[fc].case_id === sequenceList[f].id) {
-            firstCase = downloadedCases[fc];
-            break;
-          }
-        }
-        if (firstCase) break;
-      }
-      if (firstCase) {
-        var playFirstBtn = document.createElement("button");
-        playFirstBtn.className = "play-btn";
-        playFirstBtn.innerHTML = "&#9654; Play from Part 1";
-        playFirstBtn.addEventListener("click", (function (c) {
-          return function () { playCase(c.case_id, c.title); };
-        })(firstCase));
-        footer.appendChild(playFirstBtn);
-      }
-    }
-
-    // Continue (play from last save) button
-    if (downloadedCases.length > 0) {
-      var continueBtn = document.createElement("button");
-      continueBtn.className = "play-btn continue-btn";
-      continueBtn.innerHTML = "&#9654; Continue";
-      continueBtn.title = "Resume from your most recent save across all parts";
-      continueBtn.addEventListener("click", (function (seqList, dlCases) {
-        return function () {
-          statusMsg.textContent = "Checking saves...";
-          ctx.findLastSequenceSave(seqList).then(function (lastSave) {
-            if (!lastSave) {
-              statusMsg.textContent = "No saves found for this sequence. Use 'Play from Part 1' to start.";
-              return;
-            }
-            // Find the matching downloaded case for the title
-            var matchTitle = "Part " + lastSave.partId;
-            for (var mc = 0; mc < dlCases.length; mc++) {
-              if (dlCases[mc].case_id === lastSave.partId) {
-                matchTitle = dlCases[mc].title;
-                break;
-              }
-            }
-            statusMsg.textContent = "Resuming from save in \"" + matchTitle + "\"...";
-            invoke("open_game", { caseId: lastSave.partId })
-              .then(function (url) {
-                // Append save_data to the URL
-                var sep = url.indexOf("?") === -1 ? "?" : "&";
-                var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
-                ctx.showPlayer(matchTitle, fullUrl);
-              })
-              .catch(function (e) {
-                statusMsg.textContent = "Error: " + e;
-              });
-          });
-        };
-      })(sequenceList, downloadedCases));
-      footer.appendChild(continueBtn);
-    }
-
-    // Download remaining button
-    if (missingIds.length > 0) {
-      var dlRemBtn = document.createElement("button");
-      dlRemBtn.className = "update-btn";
-      dlRemBtn.textContent = "Download " + missingIds.length + " remaining";
-      dlRemBtn.addEventListener("click", (function (ids, title) {
-        return function () {
-          if (ctx.downloadInProgress()) {
-            statusMsg.textContent = "A download is already in progress.";
-            return;
-          }
-          ctx.startSequenceDownload(ids, title);
-        };
-      })(missingIds, sequenceTitle));
-      footer.appendChild(dlRemBtn);
-    }
+    // Library-specific footer buttons (not shown in collection view)
 
     // Update All button
     if (downloadedCases.length > 0) {
@@ -481,10 +312,8 @@ export function initLibrary(ctx) {
     })(downloadedCases, sequenceTitle));
     footer.appendChild(delAllBtn);
 
-    group.appendChild(header);
-    group.appendChild(partsContainer);
-    group.appendChild(footer);
-    caseList.appendChild(group);
+    core.group.appendChild(footer);
+    caseList.appendChild(core.group);
   }
 
   function appendSequencePart(container, partInfo, partNum, manifest) {
@@ -592,102 +421,7 @@ export function initLibrary(ctx) {
   }
 
   function appendCaseCard(c) {
-    var card = document.createElement("div");
-    card.className = "case-card";
-    card.dataset.caseId = c.case_id;
-
-    var sizeStr = formatBytes(c.assets.total_size_bytes);
-    var assetCount = c.assets.total_downloaded;
-    var dateStr = c.download_date ? formatDate(c.download_date) : "";
-    var failedCount = c.failed_assets ? c.failed_assets.length : 0;
-
-    card.innerHTML =
-      '<div class="case-info">' +
-        "<strong>" + escapeHtml(c.title) + "</strong>" +
-        '<p class="case-meta">' +
-          "by " + escapeHtml(c.author) +
-          " &middot; " + escapeHtml(c.language.toUpperCase()) +
-          " &middot; " + assetCount + " assets (" + sizeStr + ")" +
-          (failedCount > 0 ? ' &middot; <span class="case-failed" style="cursor:pointer;text-decoration:underline" title="Click for details">' + failedCount + " failed</span>" : "") +
-          (dateStr ? ' &middot; <span class="case-date">' + dateStr + "</span>" : "") +
-          (c.has_plugins ? ' &middot; <span class="case-plugins">Plugins</span>' : "") +
-        "</p>" +
-      "</div>" +
-      '<div class="case-actions">' +
-        '<button class="play-btn">&#9654; Play</button>' +
-        '<button class="case-continue-btn play-btn" title="Resume from last save">&#9654; Continue</button>' +
-        '<button class="update-btn">Update</button>' +
-        (failedCount > 0 ? '<button class="retry-btn" title="Retry only previously failed assets">Retry (' + failedCount + ')</button>' : "") +
-        '<button class="link-btn" title="Copy AAO link">Link</button>' +
-        '<button class="export-btn">Export</button>' +
-        '<button class="save-btn" title="Saves &amp; plugins">Saves</button>' +
-        '<button class="plugin-btn" title="Manage plugins">Plugins</button>' +
-        '<button class="delete-btn">Delete</button>' +
-      "</div>";
-
-    card.querySelector(".play-btn").addEventListener("click", function () {
-      playCase(c.case_id, c.title);
-    });
-
-    (function (caseId, caseTitle) {
-      card.querySelector(".case-continue-btn").addEventListener("click", function () {
-        statusMsg.textContent = "Checking saves...";
-        ctx.findLastSequenceSave([{ id: caseId }]).then(function (lastSave) {
-          if (!lastSave) {
-            statusMsg.textContent = "No saves found for this case.";
-            return;
-          }
-          statusMsg.textContent = 'Resuming "' + caseTitle + '"...';
-          invoke("open_game", { caseId: caseId })
-            .then(function (url) {
-              var sep = url.indexOf("?") === -1 ? "?" : "&";
-              var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
-              ctx.showPlayer(caseTitle, fullUrl);
-            })
-            .catch(function (e) { statusMsg.textContent = "Error: " + e; });
-        });
-      });
-    })(c.case_id, c.title);
-
-    card.querySelector(".update-btn").addEventListener("click", function () {
-      ctx.updateCase(c.case_id);
-    });
-
-    var retryBtn = card.querySelector(".retry-btn");
-    if (retryBtn) {
-      retryBtn.addEventListener("click", function () {
-        ctx.retryCase(c.case_id, c.failed_assets);
-      });
-    }
-
-    var failedSpan = card.querySelector(".case-failed");
-    if (failedSpan && c.failed_assets) {
-      failedSpan.addEventListener("click", (function (fa) {
-        return function (e) { e.stopPropagation(); showFailedAssetsModal(fa); };
-      })(c.failed_assets));
-    }
-
-    card.querySelector(".link-btn").addEventListener("click", function () {
-      ctx.copyTrialLink(c.case_id);
-    });
-
-    card.querySelector(".export-btn").addEventListener("click", function () {
-      exportCase(c.case_id, c.title);
-    });
-
-    card.querySelector(".save-btn").addEventListener("click", function () {
-      ctx.showSavesPluginsModal([c.case_id], c.title);
-    });
-
-    card.querySelector(".plugin-btn").addEventListener("click", function () {
-      ctx.showPluginManagerModal(c.case_id, c.title);
-    });
-
-    card.querySelector(".delete-btn").addEventListener("click", function () {
-      deleteCase(c.case_id, c.title);
-    });
-
-    caseList.appendChild(card);
+    ctx.appendCaseCardInto(caseList, c);
   }
 
   // --- Case Action Functions ---
