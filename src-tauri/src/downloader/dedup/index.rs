@@ -249,28 +249,42 @@ impl DedupIndex {
                 Ok(rd) => rd,
                 Err(_) => continue,
             };
-            for file_entry in files.flatten() {
-                let path = file_entry.path();
-                if !path.is_file() {
-                    continue;
+
+            // Batch: collect all existing keys in one read transaction
+            let file_entries: Vec<_> = files.flatten()
+                .filter(|e| e.path().is_file())
+                .collect();
+            let existing_keys: std::collections::HashSet<String> = {
+                let txn = self.db.begin_read()?;
+                match txn.open_table(HASH_BY_PATH) {
+                    Ok(table) => {
+                        let mut set = std::collections::HashSet::new();
+                        for fe in &file_entries {
+                            if let Some(name) = fe.path().file_name().and_then(|n| n.to_str()) {
+                                let key = crate::downloader::asset_paths::case_asset(case_id, name);
+                                if table.get(&*key).ok().flatten().is_some() {
+                                    set.insert(key);
+                                }
+                            }
+                        }
+                        set
+                    }
+                    Err(_) => std::collections::HashSet::new(),
                 }
+            };
+
+            // Collect new entries to register
+            let mut pending: Vec<(String, u64, u64)> = Vec::new();
+            for file_entry in &file_entries {
+                let path = file_entry.path();
                 let filename = match path.file_name().and_then(|n| n.to_str()) {
                     Some(n) => n.to_string(),
                     None => continue,
                 };
                 let reg_key = crate::downloader::asset_paths::case_asset(case_id, &filename);
-
-                let already_exists = {
-                    let txn = self.db.begin_read()?;
-                    match txn.open_table(HASH_BY_PATH) {
-                        Ok(table) => table.get(&*reg_key)?.is_some(),
-                        Err(_) => false,
-                    }
-                };
-                if already_exists {
+                if existing_keys.contains(&reg_key) {
                     continue;
                 }
-
                 let size = match path.metadata() {
                     Ok(m) => m.len(),
                     Err(_) => continue,
@@ -279,10 +293,16 @@ impl DedupIndex {
                     Ok(h) => h,
                     Err(_) => continue,
                 };
-                // register() returns String error — convert at boundary
-                self.register(&reg_key, size, hash)
-                    .map_err(|e| DownloaderError::Other(e))?;
-                count += 1;
+                pending.push((reg_key, size, hash));
+            }
+
+            // Single batch write per case
+            if !pending.is_empty() {
+                let batch: Vec<(&str, u64, u64)> = pending.iter()
+                    .map(|(k, s, h)| (k.as_str(), *s, *h))
+                    .collect();
+                self.register_batch(&batch)?;
+                count += pending.len();
             }
         }
         Ok(count)
