@@ -5,6 +5,7 @@ pub mod case_fetcher;
 pub mod dedup;
 pub mod manifest;
 pub mod paths;
+pub mod pipeline;
 pub mod vfs;
 
 use serde::{Deserialize, Serialize};
