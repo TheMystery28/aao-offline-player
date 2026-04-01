@@ -1,4 +1,4 @@
-import { escapeHtml, showConfirmModal, createModal } from '../helpers.js';
+import { escapeHtml, showConfirmModal, createModal, groupCasesBySequence } from '../helpers.js';
 
 /**
  * Show the "New Collection" modal — gathers cases/sequences and opens the picker.
@@ -11,20 +11,9 @@ export function showNewCollectionModal(ctx) {
   invoke("list_cases").then(function (cases) {
     invoke("list_collections").catch(function () { return []; }).then(function (collections) {
       // Build sequence groups
-      var sequenceGroups = {};
-      var standalone = [];
-      for (var i = 0; i < cases.length; i++) {
-        var c = cases[i];
-        var seq = c.sequence;
-        if (seq && seq.title && seq.list && seq.list.length > 1) {
-          if (!sequenceGroups[seq.title]) {
-            sequenceGroups[seq.title] = { list: seq.list, cases: [] };
-          }
-          sequenceGroups[seq.title].cases.push(c);
-        } else {
-          standalone.push(c);
-        }
-      }
+      var grouped = groupCasesBySequence(cases);
+      var sequenceGroups = grouped.sequenceGroups;
+      var standalone = grouped.standalone;
 
       // Determine which items are already claimed
       var claimedCaseIds = {};
@@ -378,20 +367,9 @@ export function showAddItemsSubModal(ctx, currentEditItems, currentCollectionId,
 
   invoke("list_cases").then(function (cases) {
     invoke("list_collections").catch(function () { return []; }).then(function (collections) {
-      var sequenceGroups = {};
-      var standalone = [];
-      for (var i = 0; i < cases.length; i++) {
-        var c = cases[i];
-        var seq = c.sequence;
-        if (seq && seq.title && seq.list && seq.list.length > 1) {
-          if (!sequenceGroups[seq.title]) {
-            sequenceGroups[seq.title] = { list: seq.list, cases: [] };
-          }
-          sequenceGroups[seq.title].cases.push(c);
-        } else {
-          standalone.push(c);
-        }
-      }
+      var grouped = groupCasesBySequence(cases);
+      var sequenceGroups = grouped.sequenceGroups;
+      var standalone = grouped.standalone;
 
       // Items claimed by OTHER collections (exclude current collection being edited)
       var claimedCaseIds = {};

@@ -1,4 +1,4 @@
-import { createModal } from '../helpers.js';
+import { createModal, groupCasesBySequence } from '../helpers.js';
 
 /**
  * Plugin Target Modal — lets user select which cases to install a plugin into.
@@ -26,20 +26,13 @@ export function showPluginTargetModal(ctx, onConfirm) {
     var checkboxes = [];
 
     // Group by sequence
+    var grouped = groupCasesBySequence(cases);
     var sequenceGroups = {};
-    var standalone = [];
-    for (var i = 0; i < cases.length; i++) {
-      var c = cases[i];
-      var seq = c.sequence;
-      if (seq && seq.title && seq.list && seq.list.length > 1) {
-        if (!sequenceGroups[seq.title]) {
-          sequenceGroups[seq.title] = [];
-        }
-        sequenceGroups[seq.title].push(c);
-      } else {
-        standalone.push(c);
-      }
+    var groupKeys = Object.keys(grouped.sequenceGroups);
+    for (var g = 0; g < groupKeys.length; g++) {
+      sequenceGroups[groupKeys[g]] = grouped.sequenceGroups[groupKeys[g]].cases;
     }
+    var standalone = grouped.standalone;
 
     var groupKeys = Object.keys(sequenceGroups);
     if (groupKeys.length > 0) {

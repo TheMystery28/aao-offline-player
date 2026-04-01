@@ -1,4 +1,4 @@
-import { parseCaseId, formatBytes, formatDuration, escapeHtml, showConfirmModal, showUpdateModal, createModal } from './helpers.js';
+import { parseCaseId, formatBytes, formatDuration, escapeHtml, showConfirmModal, showUpdateModal, createModal, applySpoilerBlur, removeSpoilerBlur } from './helpers.js';
 
 /**
  * Initialise the Download section UI and event listeners.
@@ -25,19 +25,6 @@ export function initDownload(ctx) {
   var downloadInProgress = false;
   var downloadQueue = [];
 
-  // Helper: apply or remove spoiler blur based on the setting
-  function applySpoilerBlur() {
-    var blurEl = document.getElementById("settings-blur-spoilers");
-    if (blurEl && blurEl.checked) {
-      progressText.classList.add("spoiler-blur");
-    } else {
-      progressText.classList.remove("spoiler-blur");
-    }
-  }
-  function removeSpoilerBlur() {
-    progressText.classList.remove("spoiler-blur");
-  }
-
   function createDownloadProgressHandler(options) {
     return function (msg) {
       if (options.logPrefix) console.log(options.logPrefix, JSON.stringify(msg));
@@ -55,7 +42,7 @@ export function initDownload(ctx) {
           var fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
-          applySpoilerBlur();
+          applySpoilerBlur(progressText);
         }
         if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
           var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
@@ -68,7 +55,7 @@ export function initDownload(ctx) {
       } else if (msg.event === "finished") {
         progressBarInner.style.width = "100%";
         progressPhase.textContent = options.finishedLabel || "Complete!";
-        removeSpoilerBlur();
+        removeSpoilerBlur(progressText);
         var failedText = msg.data.failed > 0
           ? ", " + msg.data.failed + " " + (options.failedLabel || "failed")
           : "";
@@ -522,8 +509,6 @@ export function initDownload(ctx) {
     startSequenceDownload: startSequenceDownload,
     processQueue: processQueue,
     isDownloadInProgress: function () { return downloadInProgress; },
-    applySpoilerBlur: applySpoilerBlur,
-    removeSpoilerBlur: removeSpoilerBlur,
     progressContainer: progressContainer,
     progressPhase: progressPhase,
     progressBarInner: progressBarInner,

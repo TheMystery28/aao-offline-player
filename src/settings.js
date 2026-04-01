@@ -1,4 +1,4 @@
-import { formatBytes, showConfirmModal } from './helpers.js';
+import { formatBytes, showConfirmModal, applySpoilerBlur, removeSpoilerBlur } from './helpers.js';
 
 /**
  * @param {function(string, Object=): Promise} invoke
@@ -23,18 +23,6 @@ export function initSettings(invoke, Channel, statusMsg) {
   var progressText = document.getElementById("progress-text");
 
   var settingsSaveTimeout = null;
-
-  function applySpoilerBlur() {
-    var blurEl = document.getElementById("settings-blur-spoilers");
-    if (blurEl && blurEl.checked) {
-      progressText.classList.add("spoiler-blur");
-    } else {
-      progressText.classList.remove("spoiler-blur");
-    }
-  }
-  function removeSpoilerBlur() {
-    progressText.classList.remove("spoiler-blur");
-  }
 
   settingsToggle.addEventListener("click", function () {
     var isOpen = !settingsPanel.classList.contains("hidden");
@@ -181,7 +169,7 @@ export function initSettings(invoke, Channel, statusMsg) {
           var fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
-          applySpoilerBlur();
+          applySpoilerBlur(progressText);
         }
       }
     };
@@ -189,7 +177,7 @@ export function initSettings(invoke, Channel, statusMsg) {
     invoke("optimize_storage", { onEvent: onEvent }).then(function (result) {
       optimizeStorageBtn.textContent = "Optimize Storage";
       optimizeStorageBtn.disabled = false;
-      removeSpoilerBlur();
+      removeSpoilerBlur(progressText);
       progressContainer.classList.add("hidden");
       if (result.deduped > 0) {
         statusMsg.textContent = "Optimized: " + result.deduped + " files deduplicated, " + formatBytes(result.bytes_saved) + " saved.";

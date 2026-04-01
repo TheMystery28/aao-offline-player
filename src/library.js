@@ -1,4 +1,4 @@
-import { formatBytes, escapeHtml, showUpdateModal, showConfirmModal } from './helpers.js';
+import { formatBytes, escapeHtml, showUpdateModal, showConfirmModal, groupCasesBySequence } from './helpers.js';
 import { buildSequenceGroupCore } from './collections/rendering.js';
 
 /**
@@ -134,22 +134,9 @@ export function initLibrary(ctx) {
     }
 
     // Group cases by sequence title
-    var sequenceGroups = {}; // title -> { list: [...], cases: [...] }
-    var standalone = [];
-
-    for (var i = 0; i < cases.length; i++) {
-      var c = cases[i];
-      var seq = c.sequence;
-      if (seq && seq.title && seq.list && seq.list.length > 1) {
-        var key = seq.title;
-        if (!sequenceGroups[key]) {
-          sequenceGroups[key] = { list: seq.list, cases: [] };
-        }
-        sequenceGroups[key].cases.push(c);
-      } else {
-        standalone.push(c);
-      }
-    }
+    var grouped = groupCasesBySequence(cases);
+    var sequenceGroups = grouped.sequenceGroups;
+    var standalone = grouped.standalone;
 
     // Sort sequence groups
     var groupKeys = Object.keys(sequenceGroups);

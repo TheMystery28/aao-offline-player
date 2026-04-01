@@ -77,6 +77,40 @@ export function base64DecodeUtf8(str) {
  * @param {{ body?: HTMLElement|string, footer?: HTMLElement|string, className?: string, onClose?: function }} [options]
  * @returns {{ overlay: HTMLElement, modal: HTMLElement, close: function }}
  */
+/** Group cases into sequence groups + standalone. Eliminates duplicated grouping logic. */
+export function groupCasesBySequence(cases) {
+  var sequenceGroups = {};
+  var standalone = [];
+  for (var i = 0; i < cases.length; i++) {
+    var c = cases[i];
+    var seq = c.sequence;
+    if (seq && seq.title && seq.list && seq.list.length > 1) {
+      if (!sequenceGroups[seq.title]) {
+        sequenceGroups[seq.title] = { list: seq.list, cases: [] };
+      }
+      sequenceGroups[seq.title].cases.push(c);
+    } else {
+      standalone.push(c);
+    }
+  }
+  return { sequenceGroups: sequenceGroups, standalone: standalone };
+}
+
+/** Apply spoiler blur to an element if the setting is checked. */
+export function applySpoilerBlur(el) {
+  var blurEl = document.getElementById("settings-blur-spoilers");
+  if (blurEl && blurEl.checked) {
+    el.classList.add("spoiler-blur");
+  } else {
+    el.classList.remove("spoiler-blur");
+  }
+}
+
+/** Remove spoiler blur from an element. */
+export function removeSpoilerBlur(el) {
+  el.classList.remove("spoiler-blur");
+}
+
 export function createModal(titleHtml, options) {
   var opts = options || {};
   var overlay = document.createElement("div");
