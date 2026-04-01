@@ -19,6 +19,21 @@ export function initPlayer(ctx) {
   var playerTitle = document.getElementById("player-title");
   var settingsAutoSave = document.getElementById("settings-autosave");
 
+  // Update toolbar title when iframe navigates (added once, not per showPlayer call)
+  gameFrame.addEventListener("load", function () {
+    if (playerContainer.classList.contains("hidden")) return;
+    try {
+      var iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
+      var iframeTitle = iframeDoc.title;
+      if (iframeTitle && iframeTitle.indexOf(' - Ace Attorney Online') !== -1) {
+        iframeTitle = iframeTitle.replace(' - Ace Attorney Online', '');
+      }
+      if (iframeTitle && iframeTitle !== 'Ace Attorney Online - Trial Player') {
+        playerTitle.textContent = iframeTitle;
+      }
+    } catch (e) { /* cross-origin */ }
+  });
+
   // --- Player ---
 
   function showPlayer(title, url, author) {
@@ -34,21 +49,6 @@ export function initPlayer(ctx) {
 
     // Push history state so Android back button returns to launcher instead of blank screen
     history.pushState({ player: true }, "", "");
-
-    // Update toolbar title when iframe navigates to a new case (e.g., loading save from another sequence part)
-    gameFrame.addEventListener("load", function() {
-      try {
-        var iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
-        var iframeTitle = iframeDoc.title;
-        // Strip the " - Ace Attorney Online" suffix if present
-        if (iframeTitle && iframeTitle.indexOf(' - Ace Attorney Online') !== -1) {
-          iframeTitle = iframeTitle.replace(' - Ace Attorney Online', '');
-        }
-        if (iframeTitle && iframeTitle !== 'Ace Attorney Online - Trial Player') {
-          playerTitle.textContent = iframeTitle;
-        }
-      } catch (e) { /* cross-origin */ }
-    });
 
     // Debug: capture resource load errors from the iframe (one-time)
     gameFrame.addEventListener("load", function onFrameLoad() {
