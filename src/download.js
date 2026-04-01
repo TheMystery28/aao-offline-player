@@ -38,6 +38,50 @@ export function initDownload(ctx) {
     progressText.classList.remove("spoiler-blur");
   }
 
+  function createDownloadProgressHandler(options) {
+    return function (msg) {
+      if (options.logPrefix) console.log(options.logPrefix, JSON.stringify(msg));
+      if (msg.event === "sequence_progress" && options.onSequenceProgress) {
+        options.onSequenceProgress(msg.data);
+      } else if (msg.event === "started") {
+        progressPhase.textContent = (options.startedLabel || "Downloading") + " " + msg.data.total + " assets...";
+        progressText.textContent = "0 / " + msg.data.total;
+      } else if (msg.event === "progress") {
+        var pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
+        progressBarInner.style.width = pct + "%";
+        progressText.textContent =
+          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
+        if (msg.data.current_url) {
+          var fname = msg.data.current_url.split("/").pop();
+          if (fname.length > 40) fname = fname.substring(0, 37) + "...";
+          progressText.textContent += " — " + fname;
+          applySpoilerBlur();
+        }
+        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
+          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
+          progressText.textContent += " — " + formatBytes(speed) + "/s";
+          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
+            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
+            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
+          }
+        }
+      } else if (msg.event === "finished") {
+        progressBarInner.style.width = "100%";
+        progressPhase.textContent = options.finishedLabel || "Complete!";
+        removeSpoilerBlur();
+        var failedText = msg.data.failed > 0
+          ? ", " + msg.data.failed + " " + (options.failedLabel || "failed")
+          : "";
+        progressText.textContent =
+          msg.data.downloaded + " downloaded" + failedText +
+          " (" + formatBytes(msg.data.total_bytes) + ")";
+      } else if (msg.event === "error") {
+        progressPhase.textContent = "Error";
+        progressText.textContent = msg.data.message;
+      }
+    };
+  }
+
   function processQueue() {
     if (downloadInProgress || downloadQueue.length === 0) return;
     var next = downloadQueue.shift();
@@ -213,44 +257,10 @@ export function initDownload(ctx) {
     progressText.textContent = "";
 
     var onEvent = new Channel();
-    onEvent.onmessage = function (msg) {
-      console.log("[UPDATE EVENT]", JSON.stringify(msg));
-      if (msg.event === "started") {
-        progressPhase.textContent = "Downloading " + msg.data.total + " assets...";
-        progressText.textContent = "0 / " + msg.data.total;
-      } else if (msg.event === "progress") {
-        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
-        progressBarInner.style.width = pct + "%";
-        progressText.textContent =
-          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
-        if (msg.data.current_url) {
-          var fname = msg.data.current_url.split("/").pop();
-          if (fname.length > 40) fname = fname.substring(0, 37) + "...";
-          progressText.textContent += " — " + fname;
-          applySpoilerBlur();
-        }
-        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
-          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
-          progressText.textContent += " — " + formatBytes(speed) + "/s";
-          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
-            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
-            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
-          }
-        }
-      } else if (msg.event === "finished") {
-        var sizeStr = formatBytes(msg.data.total_bytes);
-        progressBarInner.style.width = "100%";
-        progressPhase.textContent = "Update complete!";
-        removeSpoilerBlur();
-        progressText.textContent =
-          msg.data.downloaded + " downloaded" +
-          (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
-          " (" + sizeStr + ")";
-      } else if (msg.event === "error") {
-        progressPhase.textContent = "Error";
-        progressText.textContent = msg.data.message;
-      }
-    };
+    onEvent.onmessage = createDownloadProgressHandler({
+      finishedLabel: "Update complete!",
+      logPrefix: "[UPDATE EVENT]"
+    });
 
     invoke("update_case", {
       caseId: caseId,
@@ -340,41 +350,12 @@ export function initDownload(ctx) {
     progressText.textContent = "";
 
     var onEvent = new Channel();
-    onEvent.onmessage = function (msg) {
-      console.log("[RETRY EVENT]", JSON.stringify(msg));
-      if (msg.event === "started") {
-        progressPhase.textContent = "Retrying " + msg.data.total + " assets...";
-        progressText.textContent = "0 / " + msg.data.total;
-      } else if (msg.event === "progress") {
-        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
-        progressBarInner.style.width = pct + "%";
-        progressText.textContent =
-          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
-        if (msg.data.current_url) {
-          var fname = msg.data.current_url.split("/").pop();
-          if (fname.length > 40) fname = fname.substring(0, 37) + "...";
-          progressText.textContent += " — " + fname;
-          applySpoilerBlur();
-        }
-        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
-          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
-          progressText.textContent += " — " + formatBytes(speed) + "/s";
-          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
-            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
-            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
-          }
-        }
-      } else if (msg.event === "finished") {
-        var sizeStr = formatBytes(msg.data.total_bytes);
-        progressBarInner.style.width = "100%";
-        progressPhase.textContent = "Retry complete!";
-        removeSpoilerBlur();
-        progressText.textContent =
-          msg.data.downloaded + " downloaded" +
-          (msg.data.failed > 0 ? ", " + msg.data.failed + " still failed" : "") +
-          " (" + sizeStr + ")";
-      }
-    };
+    onEvent.onmessage = createDownloadProgressHandler({
+      startedLabel: "Retrying",
+      finishedLabel: "Retry complete!",
+      failedLabel: "still failed",
+      logPrefix: "[RETRY EVENT]"
+    });
 
     invoke("retry_failed_assets", { caseId: caseId, onEvent: onEvent })
       .then(function (manifest) {
@@ -428,52 +409,16 @@ export function initDownload(ctx) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
 
-    var currentPartLabel = "";
-
     var onEvent = new Channel();
-    onEvent.onmessage = function (msg) {
-      console.log("[SEQUENCE EVENT]", JSON.stringify(msg));
-      if (msg.event === "sequence_progress") {
-        currentPartLabel = "Part " + msg.data.current_part + "/" + msg.data.total_parts +
-          ": " + msg.data.part_title;
-        progressPhase.textContent = currentPartLabel;
+    onEvent.onmessage = createDownloadProgressHandler({
+      finishedLabel: "Sequence download complete!",
+      logPrefix: "[SEQUENCE EVENT]",
+      onSequenceProgress: function (data) {
+        progressPhase.textContent = "Part " + data.current_part + "/" + data.total_parts + ": " + data.part_title;
         progressBarInner.style.width = "0%";
         progressText.textContent = "";
-      } else if (msg.event === "started") {
-        progressText.textContent = "0 / " + msg.data.total + " assets";
-      } else if (msg.event === "progress") {
-        var pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
-        progressBarInner.style.width = pct + "%";
-        progressText.textContent =
-          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
-        if (msg.data.current_url) {
-          var fname = msg.data.current_url.split("/").pop();
-          if (fname.length > 40) fname = fname.substring(0, 37) + "...";
-          progressText.textContent += " — " + fname;
-          applySpoilerBlur();
-        }
-        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
-          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
-          progressText.textContent += " — " + formatBytes(speed) + "/s";
-          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
-            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
-            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
-          }
-        }
-      } else if (msg.event === "finished") {
-        var sizeStr = formatBytes(msg.data.total_bytes);
-        progressBarInner.style.width = "100%";
-        progressPhase.textContent = "Sequence download complete!";
-        removeSpoilerBlur();
-        progressText.textContent =
-          msg.data.downloaded + " downloaded" +
-          (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
-          " (" + sizeStr + ")";
-      } else if (msg.event === "error") {
-        progressPhase.textContent = "Error";
-        progressText.textContent = msg.data.message;
       }
-    };
+    });
 
     invoke("download_sequence", { caseIds: caseIds, onEvent: onEvent })
       .then(function (manifests) {
@@ -523,44 +468,10 @@ export function initDownload(ctx) {
     progressText.textContent = "";
 
     var onEvent = new Channel();
-    onEvent.onmessage = function (msg) {
-      console.log("[DOWNLOAD EVENT]", JSON.stringify(msg));
-      if (msg.event === "started") {
-        progressPhase.textContent = "Downloading " + msg.data.total + " assets...";
-        progressText.textContent = "0 / " + msg.data.total;
-      } else if (msg.event === "progress") {
-        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
-        progressBarInner.style.width = pct + "%";
-        progressText.textContent =
-          msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
-        if (msg.data.current_url) {
-          var fname = msg.data.current_url.split("/").pop();
-          if (fname.length > 40) fname = fname.substring(0, 37) + "...";
-          progressText.textContent += " — " + fname;
-          applySpoilerBlur();
-        }
-        if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
-          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
-          progressText.textContent += " — " + formatBytes(speed) + "/s";
-          if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
-            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
-            progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
-          }
-        }
-      } else if (msg.event === "finished") {
-        var sizeStr = formatBytes(msg.data.total_bytes);
-        progressBarInner.style.width = "100%";
-        progressPhase.textContent = "Download complete!";
-        removeSpoilerBlur();
-        progressText.textContent =
-          msg.data.downloaded + " downloaded" +
-          (msg.data.failed > 0 ? ", " + msg.data.failed + " failed" : "") +
-          " (" + sizeStr + ")";
-      } else if (msg.event === "error") {
-        progressPhase.textContent = "Error";
-        progressText.textContent = msg.data.message;
-      }
-    };
+    onEvent.onmessage = createDownloadProgressHandler({
+      finishedLabel: "Download complete!",
+      logPrefix: "[DOWNLOAD EVENT]"
+    });
 
     invoke("download_case", { caseId: caseId, onEvent: onEvent })
       .then(function (manifest) {
