@@ -14,7 +14,8 @@ export function showScopeEditorModal(ctx, pluginFilename) {
   var m = createModal("<strong>Scope &mdash; " + escapeHtml(pluginFilename) + "</strong>", { wide: true });
 
   var contentEl = document.createElement("div");
-  contentEl.style.cssText = "margin: 10px 0; max-height: 400px; overflow-y: auto;";
+  contentEl.className = "scroll-panel";
+  contentEl.style.maxHeight = "400px";
 
   function close() {
     m.close();
@@ -127,7 +128,8 @@ export function showScopeEditorModal(ctx, pluginFilename) {
 
       // Global toggle
       var globalRow = document.createElement("div");
-      globalRow.style.cssText = "display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem; padding-bottom:0.5rem; border-bottom:1px solid #2a2a4a;";
+      globalRow.className = "flex-row";
+      globalRow.style.cssText = "margin-bottom:0.75rem; padding-bottom:0.5rem; border-bottom:1px solid #2a2a4a;";
       var globalToggle = document.createElement("input");
       globalToggle.type = "checkbox";
       globalToggle.checked = !globallyDisabled;
@@ -148,7 +150,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
 
       // Section label
       var sectionLabel = document.createElement("div");
-      sectionLabel.style.cssText = "color:#999; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.35rem;";
+      sectionLabel.className = "section-label";
       if (globallyDisabled) {
         sectionLabel.textContent = "Enabled for (overrides)";
       } else {
@@ -205,9 +207,9 @@ export function showScopeEditorModal(ctx, pluginFilename) {
             label.textContent = item.label;
 
             var paramsBtn = document.createElement("button");
-            paramsBtn.className = "small-btn";
+            paramsBtn.className = "small-btn btn-small";
             paramsBtn.textContent = "Params";
-            paramsBtn.style.cssText = "font-size:0.72rem; padding:1px 5px; margin-left:auto;";
+            paramsBtn.style.marginLeft = "auto";
             paramsBtn.addEventListener("click", function () {
               var paramLevel, paramKey;
               if (item.type === "collection") {
@@ -245,16 +247,16 @@ export function showScopeEditorModal(ctx, pluginFilename) {
 
             if (scopeParams && Object.keys(scopeParams).length > 0) {
               var summaryRow = document.createElement('div');
-              summaryRow.style.cssText = 'display:flex; align-items:center; gap:0.3rem; padding:0.15rem 0 0 1.2rem;';
+              summaryRow.className = 'flex-row';
+              summaryRow.style.cssText = 'gap:0.3rem; padding:0.15rem 0 0 1.2rem;';
               var summaryEl = document.createElement('span');
-              summaryEl.style.cssText = 'font-size:0.72rem; color:#9ab; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;';
+              summaryEl.className = 'param-summary';
               var summaryText = formatParamSummary(scopeParams, descriptors);
               summaryEl.textContent = summaryText;
               summaryEl.title = summaryText;
               var resetBtn = document.createElement('button');
-              resetBtn.className = 'small-btn';
+              resetBtn.className = 'small-btn btn-reset';
               resetBtn.textContent = 'Reset';
-              resetBtn.style.cssText = 'font-size:0.62rem; padding:0 4px; color:#a88; flex-shrink:0;';
               resetBtn.title = 'Clear param overrides at this scope and all sub-scopes within it';
               (function(scopeType, scopeKey) {
                 resetBtn.addEventListener('click', function() {
@@ -324,19 +326,19 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       var defaultRow = document.createElement('div');
       defaultRow.className = 'global-plugin-row';
       var defaultLabel = document.createElement('span');
-      defaultLabel.style.cssText = 'color:#999; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em;';
+      defaultLabel.className = 'section-label';
+      defaultLabel.style.marginBottom = '0';
       defaultLabel.textContent = 'Default';
       var defaultEditBtn = document.createElement('button');
-      defaultEditBtn.className = 'small-btn';
+      defaultEditBtn.className = 'small-btn btn-small';
       defaultEditBtn.textContent = 'Edit';
-      defaultEditBtn.style.cssText = 'font-size:0.72rem; padding:1px 5px; margin-left:auto;';
+      defaultEditBtn.style.marginLeft = 'auto';
       defaultEditBtn.addEventListener('click', function () {
         ctx.showPluginParamsModal(pluginFilename, 'Default', 'default', '');
       });
       var defaultResetBtn = document.createElement('button');
-      defaultResetBtn.className = 'small-btn';
+      defaultResetBtn.className = 'small-btn btn-reset';
       defaultResetBtn.textContent = 'Reset';
-      defaultResetBtn.style.cssText = 'font-size:0.62rem; padding:0 4px; color:#a88;';
       defaultResetBtn.title = 'Clear all default param overrides';
       defaultResetBtn.addEventListener('click', function() {
         invoke('set_global_plugin_params', { filename: pluginFilename, level: 'default', key: '', params: {} })
@@ -351,7 +353,8 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       var defaultKeys = Object.keys(defaultParams);
       if (defaultKeys.length > 0) {
         var defSummaryEl = document.createElement('div');
-        defSummaryEl.style.cssText = 'font-size:0.72rem; color:#9ab; padding:0.15rem 0 0 1.2rem;';
+        defSummaryEl.className = 'param-summary';
+        defSummaryEl.style.padding = '0.15rem 0 0 1.2rem';
         defSummaryEl.textContent = formatParamSummary(defaultParams, descriptors);
         defaultSection.appendChild(defSummaryEl);
       } else {
@@ -370,7 +373,8 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       addBtn.style.cssText = "margin-top:0.5rem; font-size:0.78rem;";
 
       var pickerContainer = document.createElement("div");
-      pickerContainer.style.cssText = "max-height:180px; overflow-y:auto; padding:0.3rem 0; display:none; margin-top:0.3rem;";
+      pickerContainer.className = "scroll-panel";
+      pickerContainer.style.cssText = "max-height:180px; padding:0.3rem 0; display:none; margin-top:0.3rem;";
 
       var pickerBuilt = false;
       addBtn.addEventListener("click", function () {

@@ -13,7 +13,7 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
   var m = createModal("<strong>Plugins &mdash; " + escapeHtml(scopeLabel) + "</strong>", { wide: true });
 
   var listContainer = document.createElement("div");
-  listContainer.style.cssText = "margin: 10px 0; max-height: 350px; overflow-y: auto;";
+  listContainer.className = "scroll-panel";
 
   function refreshScopedList() {
     invoke("list_global_plugins").then(function (manifest) {
@@ -104,7 +104,7 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
           var paramsBtn = document.createElement("button");
           paramsBtn.className = "small-btn";
           paramsBtn.textContent = "Params";
-          paramsBtn.style.cssText = "font-size:0.72rem; padding:0.1rem 0.5rem;";
+          paramsBtn.className += " btn-small";
           paramsBtn.addEventListener("click", (function (fn) {
             return function () {
               ctx.showPluginParamsModal(fn, scopeLabel, "by_" + scopeType, scopeKey);

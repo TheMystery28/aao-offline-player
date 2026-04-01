@@ -84,9 +84,8 @@ export function initPluginPanel(ctx) {
               }
 
               var paramsBtn = document.createElement("button");
-              paramsBtn.className = "small-btn";
+              paramsBtn.className = "small-btn btn-small";
               paramsBtn.textContent = "Params";
-              paramsBtn.style.cssText = "font-size:0.72rem; padding:0.1rem 0.5rem;";
               paramsBtn.addEventListener("click", function () {
                 ctx.showPluginParamsModal(filename, "Global Default", "default", "");
               });
@@ -103,9 +102,8 @@ export function initPluginPanel(ctx) {
               });
 
               var scopeBtn = document.createElement("button");
-              scopeBtn.className = "small-btn";
+              scopeBtn.className = "small-btn btn-small";
               scopeBtn.textContent = "Scope";
-              scopeBtn.style.cssText = "font-size:0.72rem; padding:0.1rem 0.5rem;";
               scopeBtn.addEventListener("click", (function (fn) {
                 return function () { ctx.showScopeEditorModal(fn); };
               })(filename));
@@ -192,7 +190,7 @@ export function initPluginPanel(ctx) {
     scopeSection.style.cssText = "margin: 0.75rem 0;";
 
     var scopeLabelEl = document.createElement("div");
-    scopeLabelEl.style.cssText = "color:#999; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.35rem;";
+    scopeLabelEl.className = "section-label";
     scopeLabelEl.textContent = "Enable for";
 
     var scopeAllRadio = document.createElement("input");
@@ -201,7 +199,8 @@ export function initPluginPanel(ctx) {
     scopeAllRadio.checked = true;
     scopeAllRadio.style.accentColor = "#4a90d9";
     var scopeAllLabel = document.createElement("label");
-    scopeAllLabel.style.cssText = "display:flex; align-items:center; gap:0.4rem; color:#ccc; font-size:0.85rem; margin-bottom:0.3rem; cursor:pointer;";
+    scopeAllLabel.className = "checkbox-label";
+    scopeAllLabel.style.cssText = "gap:0.4rem; font-size:0.85rem; padding:0; margin-bottom:0.3rem;";
     scopeAllLabel.appendChild(scopeAllRadio);
     scopeAllLabel.appendChild(document.createTextNode("All cases (disabled by default)"));
 
@@ -210,12 +209,14 @@ export function initPluginPanel(ctx) {
     scopeSpecificRadio.name = "scope-mode";
     scopeSpecificRadio.style.accentColor = "#4a90d9";
     var scopeSpecificLabel = document.createElement("label");
-    scopeSpecificLabel.style.cssText = "display:flex; align-items:center; gap:0.4rem; color:#ccc; font-size:0.85rem; margin-bottom:0.3rem; cursor:pointer;";
+    scopeSpecificLabel.className = "checkbox-label";
+    scopeSpecificLabel.style.cssText = "gap:0.4rem; font-size:0.85rem; padding:0; margin-bottom:0.3rem;";
     scopeSpecificLabel.appendChild(scopeSpecificRadio);
     scopeSpecificLabel.appendChild(document.createTextNode("Enable for specific scopes"));
 
     var scopeChecklist = document.createElement("div");
-    scopeChecklist.style.cssText = "max-height:180px; overflow-y:auto; padding:0.3rem 0; display:none;";
+    scopeChecklist.className = "scroll-panel";
+    scopeChecklist.style.cssText = "max-height:180px; padding:0.3rem 0; display:none;";
 
     function makeScopeGroupLabel(text) {
       var lbl = document.createElement("div");

@@ -129,7 +129,7 @@ export function initSaves(ctx) {
 
     // Saves section label
     var savesLabel = document.createElement("div");
-    savesLabel.style.cssText = "font-size:0.75rem;color:#999;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.35rem;";
+    savesLabel.className = "section-label";
     savesLabel.textContent = "Saves";
 
     var exportSavesBtn = document.createElement("button");
@@ -172,7 +172,8 @@ export function initSaves(ctx) {
       if (!anyPlugins) return;
 
       var pluginsLabel = document.createElement("div");
-      pluginsLabel.style.cssText = "font-size:0.75rem;color:#999;text-transform:uppercase;letter-spacing:0.04em;margin-top:0.75rem;margin-bottom:0.35rem;";
+      pluginsLabel.className = "section-label";
+      pluginsLabel.style.marginTop = "0.75rem";
       pluginsLabel.textContent = "Plugins";
 
       var exportPluginsBtn = document.createElement("button");
@@ -205,8 +206,7 @@ export function initSaves(ctx) {
     var m = createModal("What to include in the export?");
 
     var savesLabel = document.createElement("label");
-    savesLabel.className = "regular_label";
-    savesLabel.style.cssText = "display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;cursor:pointer;color:#ccc;font-size:0.9rem;";
+    savesLabel.className = "regular_label checkbox-label";
     var savesCb = document.createElement("input");
     savesCb.type = "checkbox";
     savesCb.checked = true;
@@ -214,8 +214,7 @@ export function initSaves(ctx) {
     savesLabel.appendChild(document.createTextNode(" Include saves"));
 
     var pluginsLabel = document.createElement("label");
-    pluginsLabel.className = "regular_label";
-    pluginsLabel.style.cssText = "display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;cursor:pointer;color:#ccc;font-size:0.9rem;";
+    pluginsLabel.className = "regular_label checkbox-label";
     var pluginsCb = document.createElement("input");
     pluginsCb.type = "checkbox";
     pluginsCb.checked = true;

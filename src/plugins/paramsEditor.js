@@ -13,7 +13,8 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
     "<small>Level: " + escapeHtml(levelLabel) + "</small>");
 
   var content = document.createElement("div");
-  content.style.cssText = "margin: 10px 0; max-height: 300px; overflow-y: auto;";
+  content.className = "scroll-panel";
+  content.style.maxHeight = "300px";
 
   var loadingMsg = document.createElement("div");
   loadingMsg.textContent = "Loading...";
@@ -44,7 +45,8 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
     for (var i = 0; i < allKeys.length; i++) {
       (function(paramKey) {
         var row = document.createElement("div");
-        row.style.cssText = "display:flex; align-items:center; gap:6px; margin:4px 0;";
+        row.className = "flex-row";
+        row.style.cssText = "gap:6px; margin:4px 0;";
 
         var desc = descriptorsCache && descriptorsCache[paramKey] ? descriptorsCache[paramKey] : null;
         var val = params[paramKey];
@@ -85,7 +87,8 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
             input.type = "number";
             input.value = String(val !== undefined ? val : 0);
             input.step = "any";
-            input.style.cssText = "width:80px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+            input.className = "dark-input";
+            input.style.width = "80px";
             input.addEventListener("input", function() { paramsData[paramKey] = parseFloat(input.value) || 0; });
             row.appendChild(keyLabel);
             row.appendChild(input);
@@ -99,7 +102,7 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
           row.appendChild(input);
         } else if (paramType === "select" && desc && desc.options) {
           input = document.createElement("select");
-          input.style.cssText = "background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+          input.className = "dark-input";
           var opts = desc.options || [];
           for (var oi = 0; oi < opts.length; oi++) {
             var opt = document.createElement("option");
@@ -121,7 +124,8 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
           input = document.createElement("input");
           input.type = "text";
           input.value = String(val !== undefined ? val : "");
-          input.style.cssText = "width:120px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+          input.className = "dark-input";
+          input.style.width = "120px";
           input.addEventListener("input", function() { paramsData[paramKey] = input.value; });
           row.appendChild(keyLabel);
           row.appendChild(input);
@@ -132,7 +136,7 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
           var delBtn = document.createElement("button");
           delBtn.textContent = "x";
           delBtn.className = "small-btn danger-btn";
-          delBtn.style.cssText = "padding:1px 6px; font-size:11px;";
+          delBtn.className += " btn-small";
           delBtn.addEventListener("click", function() {
             delete paramsData[paramKey];
             renderParams(paramsData);
@@ -146,15 +150,18 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
 
   // Add new param row
   var addRow = document.createElement("div");
-  addRow.style.cssText = "display:flex; gap:6px; margin-top:8px;";
+  addRow.className = "flex-row";
+  addRow.style.cssText = "gap:6px; margin-top:8px;";
   var addKeyInput = document.createElement("input");
   addKeyInput.type = "text";
   addKeyInput.placeholder = "param name";
-  addKeyInput.style.cssText = "width:100px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+  addKeyInput.className = "dark-input";
+  addKeyInput.style.width = "100px";
   var addValInput = document.createElement("input");
   addValInput.type = "text";
   addValInput.placeholder = "value";
-  addValInput.style.cssText = "width:80px; background:rgba(0,0,0,0.3); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:3px; padding:2px 4px;";
+  addValInput.className = "dark-input";
+  addValInput.style.width = "80px";
   var addBtn = document.createElement("button");
   addBtn.className = "small-btn";
   addBtn.textContent = "+ Add";

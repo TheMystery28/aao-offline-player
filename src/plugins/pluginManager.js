@@ -91,7 +91,8 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
               var paramsBtn = document.createElement("button");
               paramsBtn.className = "small-btn";
               paramsBtn.textContent = "Params";
-              paramsBtn.style.cssText = "font-size:11px; padding:1px 6px; margin-left:auto;";
+              paramsBtn.className += " btn-small";
+              paramsBtn.style.marginLeft = "auto";
               paramsBtn.addEventListener("click", function () {
                 ctx.showPluginParamsModal(filename, "Case " + caseId, "by_case", String(caseId));
               });
@@ -152,11 +153,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
 
   // Global plugins section
   var globalLabel = document.createElement("div");
-  globalLabel.style.color = "#999";
-  globalLabel.style.fontSize = "0.75rem";
-  globalLabel.style.textTransform = "uppercase";
-  globalLabel.style.letterSpacing = "0.04em";
-  globalLabel.style.marginBottom = "0.35rem";
+  globalLabel.className = "section-label";
   globalLabel.textContent = "Global Plugins";
 
   var globalListContainer = document.createElement("div");
@@ -250,12 +247,8 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
   }
 
   var caseLabel = document.createElement("div");
-  caseLabel.style.color = "#999";
-  caseLabel.style.fontSize = "0.75rem";
-  caseLabel.style.textTransform = "uppercase";
-  caseLabel.style.letterSpacing = "0.04em";
+  caseLabel.className = "section-label";
   caseLabel.style.marginTop = "0.75rem";
-  caseLabel.style.marginBottom = "0.35rem";
   caseLabel.textContent = "Case Plugins";
 
   m.content.appendChild(globalLabel);
