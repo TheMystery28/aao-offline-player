@@ -420,6 +420,13 @@ export function initLibrary(ctx) {
       })(manifest));
       actions.appendChild(deleteBtn);
 
+      // ARIA labels for screen readers
+      var partBtns = actions.querySelectorAll("button");
+      for (var pb = 0; pb < partBtns.length; pb++) {
+        var label = partBtns[pb].textContent.replace(/[^a-zA-Z ]/g, "").trim();
+        partBtns[pb].setAttribute("aria-label", label + " " + manifest.title);
+      }
+
       row.appendChild(actions);
     } else {
       row.innerHTML =

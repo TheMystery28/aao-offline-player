@@ -83,10 +83,13 @@ export function createModal(titleHtml, options) {
   overlay.className = "modal-overlay";
   var modal = document.createElement("div");
   modal.className = "modal-dialog" + (opts.wide ? " modal-dialog-wide" : "");
+  var titleId = "modal-title-" + Date.now();
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", titleId);
   var titleEl = document.createElement("div");
   titleEl.className = "modal-message";
+  titleEl.id = titleId;
   titleEl.innerHTML = titleHtml;
   var content = document.createElement("div");
 

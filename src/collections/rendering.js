@@ -462,6 +462,13 @@ export function appendCaseCardInto(ctx, container, c) {
       '<button class="delete-btn">Delete</button>' +
     "</div>";
 
+  // ARIA labels so screen readers distinguish buttons across case cards
+  var ariaButtons = card.querySelectorAll(".case-actions button");
+  for (var ab = 0; ab < ariaButtons.length; ab++) {
+    var btnText = ariaButtons[ab].textContent.replace(/[^a-zA-Z ]/g, "").trim();
+    ariaButtons[ab].setAttribute("aria-label", btnText + " " + c.title);
+  }
+
   card.querySelector(".play-btn").addEventListener("click", function () {
     ctx.playCase(c.case_id, c.title);
   });
