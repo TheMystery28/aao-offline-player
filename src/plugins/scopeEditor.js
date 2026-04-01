@@ -46,11 +46,89 @@ export function showScopeEditorModal(ctx, pluginFilename) {
   }
 
   function refreshScopeEditor() {
-    invoke("list_global_plugins").then(function (manifest) {
+    Promise.all([
+      invoke("list_global_plugins"),
+      invoke("get_plugin_params", { filename: pluginFilename }),
+      invoke("get_plugin_descriptors", { filename: pluginFilename }).catch(function() { return null; })
+    ]).then(function (results) {
+      var manifest = results[0];
+      var allParams = results[1] || {};
+      var descriptors = results[2]; // null if no descriptors
       var plugins = (manifest && manifest.plugins) || {};
       var entry = plugins[pluginFilename] || {};
       var scope = entry.scope || {};
       var globallyDisabled = !(scope.all === true);
+
+      function formatParamSummary(params, descs) {
+        if (!params || typeof params !== 'object') return '';
+        var keys = Object.keys(params);
+        if (keys.length === 0) return '';
+        var parts = [];
+        for (var fi = 0; fi < keys.length; fi++) {
+          var k = keys[fi];
+          var v = params[k];
+          var lbl = (descs && descs[k] && descs[k].label) ? descs[k].label : k;
+          if (typeof v === 'boolean') v = v ? 'enabled' : 'disabled';
+          else if (typeof v === 'string' && v.length > 25) v = '"' + v.substring(0, 22) + '..."';
+          else if (typeof v === 'string') v = '"' + v + '"';
+          else v = String(v);
+          parts.push(lbl + ' = ' + v);
+        }
+        return parts.join('  \u00b7  ');
+      }
+
+      function getSubScopeOverrides(scopeType, scopeKey) {
+        var subs = [];
+        var cachedCases = getCachedCases() || [];
+        var cachedCollections = getCachedCollections() || [];
+
+        if (scopeType === 'collection') {
+          var col = null;
+          for (var ci = 0; ci < cachedCollections.length; ci++) {
+            if (cachedCollections[ci].id === scopeKey) { col = cachedCollections[ci]; break; }
+          }
+          if (!col) return subs;
+          for (var ii = 0; ii < col.items.length; ii++) {
+            var colItem = col.items[ii];
+            if (colItem.type === 'sequence') {
+              var seqP = allParams.by_sequence && allParams.by_sequence[colItem.title];
+              if (seqP && Object.keys(seqP).length > 0) {
+                subs.push({ label: 'Seq: ' + colItem.title, params: seqP });
+              }
+              for (var sc = 0; sc < cachedCases.length; sc++) {
+                if (cachedCases[sc].sequence && cachedCases[sc].sequence.title === colItem.title) {
+                  var cid = String(cachedCases[sc].case_id);
+                  var cp = allParams.by_case && allParams.by_case[cid];
+                  if (cp && Object.keys(cp).length > 0) {
+                    subs.push({ label: 'Case: ' + cachedCases[sc].title, params: cp });
+                  }
+                }
+              }
+            } else if (colItem.type === 'case') {
+              var ck = String(colItem.case_id);
+              var caseP = allParams.by_case && allParams.by_case[ck];
+              if (caseP && Object.keys(caseP).length > 0) {
+                var cTitle = ck;
+                for (var ct = 0; ct < cachedCases.length; ct++) {
+                  if (cachedCases[ct].case_id === colItem.case_id) { cTitle = cachedCases[ct].title; break; }
+                }
+                subs.push({ label: 'Case: ' + cTitle, params: caseP });
+              }
+            }
+          }
+        } else if (scopeType === 'sequence') {
+          for (var si = 0; si < cachedCases.length; si++) {
+            if (cachedCases[si].sequence && cachedCases[si].sequence.title === scopeKey) {
+              var seqCaseId = String(cachedCases[si].case_id);
+              var seqCaseP = allParams.by_case && allParams.by_case[seqCaseId];
+              if (seqCaseP && Object.keys(seqCaseP).length > 0) {
+                subs.push({ label: 'Case: ' + cachedCases[si].title, params: seqCaseP });
+              }
+            }
+          }
+        }
+        return subs;
+      }
 
       contentEl.innerHTML = "";
 
@@ -132,12 +210,27 @@ export function showScopeEditorModal(ctx, pluginFilename) {
             var label = document.createElement("span");
             label.className = "plugin-name";
             label.textContent = item.label;
+
+            var paramsBtn = document.createElement("button");
+            paramsBtn.className = "small-btn";
+            paramsBtn.textContent = "Params";
+            paramsBtn.style.cssText = "font-size:0.72rem; padding:1px 5px; margin-left:auto;";
+            paramsBtn.addEventListener("click", function () {
+              var paramLevel, paramKey;
+              if (item.type === "collection") {
+                paramLevel = "by_collection"; paramKey = item.key;
+              } else if (item.type === "sequence") {
+                paramLevel = "by_sequence"; paramKey = item.key;
+              } else {
+                paramLevel = "by_case"; paramKey = item.key;
+              }
+              ctx.showPluginParamsModal(pluginFilename, item.label, paramLevel, paramKey);
+            });
+
             var removeBtn = document.createElement("button");
             removeBtn.className = "plugin-remove-btn";
             removeBtn.textContent = "Remove";
             removeBtn.addEventListener("click", function () {
-              // Remove override: if globally enabled, re-enable for this scope (removes from disabled_for)
-              // If globally disabled, re-disable for this scope (removes from enabled_for)
               invoke("toggle_plugin_for_scope", {
                 filename: pluginFilename,
                 scopeType: item.type,
@@ -147,11 +240,134 @@ export function showScopeEditorModal(ctx, pluginFilename) {
                 .catch(function (e) { statusMsg.textContent = "Error: " + e; });
             });
             row.appendChild(label);
+            row.appendChild(paramsBtn);
             row.appendChild(removeBtn);
             contentEl.appendChild(row);
+
+            // Inline param summary for this scope level
+            var scopeParams = null;
+            if (item.type === 'collection') scopeParams = allParams.by_collection && allParams.by_collection[item.key];
+            else if (item.type === 'sequence') scopeParams = allParams.by_sequence && allParams.by_sequence[item.key];
+            else if (item.type === 'case') scopeParams = allParams.by_case && allParams.by_case[item.key];
+
+            if (scopeParams && Object.keys(scopeParams).length > 0) {
+              var summaryRow = document.createElement('div');
+              summaryRow.style.cssText = 'display:flex; align-items:center; gap:0.3rem; padding:0.15rem 0 0 1.2rem;';
+              var summaryEl = document.createElement('span');
+              summaryEl.style.cssText = 'font-size:0.72rem; color:#9ab; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;';
+              var summaryText = formatParamSummary(scopeParams, descriptors);
+              summaryEl.textContent = summaryText;
+              summaryEl.title = summaryText;
+              var resetBtn = document.createElement('button');
+              resetBtn.className = 'small-btn';
+              resetBtn.textContent = 'Reset';
+              resetBtn.style.cssText = 'font-size:0.62rem; padding:0 4px; color:#a88; flex-shrink:0;';
+              resetBtn.title = 'Clear param overrides at this scope and all sub-scopes within it';
+              (function(scopeType, scopeKey) {
+                resetBtn.addEventListener('click', function() {
+                  // Build list of all levels to clear: this level + sub-scopes
+                  var clearOps = [];
+                  var pLevel = scopeType === 'collection' ? 'by_collection' : scopeType === 'sequence' ? 'by_sequence' : 'by_case';
+                  clearOps.push({ level: pLevel, key: scopeKey });
+
+                  // Also clear sub-scope overrides
+                  var subs = getSubScopeOverrides(scopeType, scopeKey);
+                  for (var ri = 0; ri < subs.length; ri++) {
+                    var subLabel = subs[ri].label;
+                    if (subLabel.indexOf('Seq: ') === 0) {
+                      clearOps.push({ level: 'by_sequence', key: subLabel.substring(5) });
+                    } else if (subLabel.indexOf('Case: ') === 0) {
+                      // Need the case ID, not the title — find it from cached cases
+                      var subCases = getCachedCases() || [];
+                      var subTitle = subLabel.substring(6);
+                      for (var rci = 0; rci < subCases.length; rci++) {
+                        if (subCases[rci].title === subTitle) {
+                          clearOps.push({ level: 'by_case', key: String(subCases[rci].case_id) });
+                          break;
+                        }
+                      }
+                    }
+                  }
+
+                  var chain = Promise.resolve();
+                  for (var ci = 0; ci < clearOps.length; ci++) {
+                    (function(op) {
+                      chain = chain.then(function() {
+                        return invoke('set_global_plugin_params', { filename: pluginFilename, level: op.level, key: op.key, params: {} });
+                      });
+                    })(clearOps[ci]);
+                  }
+                  chain.then(refreshScopeEditor)
+                    .catch(function(e) { statusMsg.textContent = 'Error: ' + e; });
+                });
+              })(item.type, item.key);
+              summaryRow.appendChild(summaryEl);
+              summaryRow.appendChild(resetBtn);
+              contentEl.appendChild(summaryRow);
+            }
+
+            // Sub-scope overrides (cases/sequences inside this scope with their own params)
+            var subOverrides = getSubScopeOverrides(item.type, item.key);
+            if (subOverrides.length > 0) {
+              var subList = document.createElement('div');
+              subList.style.cssText = 'padding:0.1rem 0 0.3rem 1.2rem;';
+              for (var soi = 0; soi < subOverrides.length; soi++) {
+                var subRow = document.createElement('div');
+                subRow.style.cssText = 'font-size:0.68rem; color:#8a8; padding:0.05rem 0;';
+                subRow.textContent = '\u251C ' + subOverrides[soi].label + ': ' + formatParamSummary(subOverrides[soi].params, descriptors);
+                subList.appendChild(subRow);
+              }
+              contentEl.appendChild(subList);
+            }
           })(overrideItems[oi]);
         }
       }
+
+      // Inline default params display
+      var defaultParams = allParams['default'] || {};
+      var defaultSection = document.createElement('div');
+      defaultSection.style.cssText = 'margin-top:0.5rem; padding-top:0.4rem; border-top:1px solid #2a2a4a;';
+
+      var defaultRow = document.createElement('div');
+      defaultRow.className = 'global-plugin-row';
+      var defaultLabel = document.createElement('span');
+      defaultLabel.style.cssText = 'color:#999; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em;';
+      defaultLabel.textContent = 'Default';
+      var defaultEditBtn = document.createElement('button');
+      defaultEditBtn.className = 'small-btn';
+      defaultEditBtn.textContent = 'Edit';
+      defaultEditBtn.style.cssText = 'font-size:0.72rem; padding:1px 5px; margin-left:auto;';
+      defaultEditBtn.addEventListener('click', function () {
+        ctx.showPluginParamsModal(pluginFilename, 'Default', 'default', '');
+      });
+      var defaultResetBtn = document.createElement('button');
+      defaultResetBtn.className = 'small-btn';
+      defaultResetBtn.textContent = 'Reset';
+      defaultResetBtn.style.cssText = 'font-size:0.62rem; padding:0 4px; color:#a88;';
+      defaultResetBtn.title = 'Clear all default param overrides';
+      defaultResetBtn.addEventListener('click', function() {
+        invoke('set_global_plugin_params', { filename: pluginFilename, level: 'default', key: '', params: {} })
+          .then(refreshScopeEditor)
+          .catch(function(e) { statusMsg.textContent = 'Error: ' + e; });
+      });
+      defaultRow.appendChild(defaultLabel);
+      defaultRow.appendChild(defaultEditBtn);
+      defaultRow.appendChild(defaultResetBtn);
+      defaultSection.appendChild(defaultRow);
+
+      var defaultKeys = Object.keys(defaultParams);
+      if (defaultKeys.length > 0) {
+        var defSummaryEl = document.createElement('div');
+        defSummaryEl.style.cssText = 'font-size:0.72rem; color:#9ab; padding:0.15rem 0 0 1.2rem;';
+        defSummaryEl.textContent = formatParamSummary(defaultParams, descriptors);
+        defaultSection.appendChild(defSummaryEl);
+      } else {
+        var defEmpty = document.createElement('div');
+        defEmpty.style.cssText = 'font-size:0.72rem; color:#666; padding:0.15rem 0 0 1.2rem;';
+        defEmpty.textContent = '(using plugin defaults)';
+        defaultSection.appendChild(defEmpty);
+      }
+      contentEl.appendChild(defaultSection);
 
       // Add override button + inline picker
       var addBtnLabel = globallyDisabled ? "+ Enable for Scope" : "+ Add Exception";
