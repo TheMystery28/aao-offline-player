@@ -33,6 +33,9 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   // Header
   var header = document.createElement("div");
   header.className = "collection-header";
+  header.setAttribute("tabindex", "0");
+  header.setAttribute("role", "button");
+  header.setAttribute("aria-expanded", "true");
   header.innerHTML =
     '<span class="collection-header-toggle">&#9660;</span> ' +
     '<strong>' + escapeHtml(collection.title) + '</strong>' +
@@ -73,10 +76,15 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
     if (isOpen) {
       itemsContainer.classList.add("hidden");
       header.querySelector(".collection-header-toggle").innerHTML = "&#9654;";
+      header.setAttribute("aria-expanded", "false");
     } else {
       itemsContainer.classList.remove("hidden");
       header.querySelector(".collection-header-toggle").innerHTML = "&#9660;";
+      header.setAttribute("aria-expanded", "true");
     }
+  });
+  header.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); header.click(); }
   });
 
   // Render each item in order
@@ -229,6 +237,9 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
 
   var header = document.createElement("div");
   header.className = "sequence-header";
+  header.setAttribute("tabindex", "0");
+  header.setAttribute("role", "button");
+  header.setAttribute("aria-expanded", "true");
   header.innerHTML =
     '<span class="sequence-header-toggle">&#9660;</span> ' +
     '<strong>' + escapeHtml(sequenceTitle) + '</strong>' +
@@ -268,10 +279,15 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
     if (isOpen) {
       partsContainer.classList.add("hidden");
       header.querySelector(".sequence-header-toggle").innerHTML = "&#9654;";
+      header.setAttribute("aria-expanded", "false");
     } else {
       partsContainer.classList.remove("hidden");
       header.querySelector(".sequence-header-toggle").innerHTML = "&#9660;";
+      header.setAttribute("aria-expanded", "true");
     }
+  });
+  header.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); header.click(); }
   });
 
   var renderedParts = 0;
