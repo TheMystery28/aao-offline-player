@@ -106,6 +106,8 @@ pub fn toggle_plugin_for_scope(
 
     // Check auto-scope promotion after scope change
     check_auto_promote(filename, engine_dir);
+    // Remove redundant case/sequence entries covered by broader scopes
+    super::plugins_case::consolidate_scopes(filename, engine_dir);
 
     Ok(())
 }

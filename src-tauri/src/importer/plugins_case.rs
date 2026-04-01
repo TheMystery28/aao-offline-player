@@ -497,6 +497,9 @@ pub(super) fn upsert_plugin_manifest(
     fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap())
         .map_err(|e| format!("Failed to write plugin manifest: {}", e))?;
 
+    // Consolidate redundant scope entries after merge
+    consolidate_scopes(filename, engine_dir);
+
     Ok(())
 }
 
@@ -750,4 +753,134 @@ pub(super) fn check_auto_promote(filename: &str, engine_dir: &Path) {
     }
 
     // Collection promotion would follow the same pattern but is less common — skip for now
+}
+
+/// Remove redundant scope entries covered by broader scopes.
+/// Cases in enabled collections/sequences are removed from enabled_for.
+/// Sequences in enabled collections are removed from enabled_for_sequences.
+pub(super) fn consolidate_scopes(filename: &str, engine_dir: &Path) {
+    let manifest_path = engine_dir.join("plugins").join("manifest.json");
+    if !manifest_path.exists() { return; }
+
+    let text = match fs::read_to_string(&manifest_path) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    let mut manifest: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let plugin = match manifest.get_mut("plugins").and_then(|p| p.get_mut(filename)) {
+        Some(p) => p,
+        None => return,
+    };
+
+    let scope = match plugin.get("scope") {
+        Some(s) => s.clone(),
+        None => return,
+    };
+
+    let enabled_for: Vec<u64> = scope.get("enabled_for")
+        .and_then(|e| e.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+        .unwrap_or_default();
+    let enabled_for_seqs: Vec<String> = scope.get("enabled_for_sequences")
+        .and_then(|e| e.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    let enabled_for_cols: Vec<String> = scope.get("enabled_for_collections")
+        .and_then(|e| e.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    if enabled_for_cols.is_empty() && enabled_for_seqs.is_empty() {
+        return; // Nothing to consolidate against
+    }
+
+    let mut cases_to_remove: Vec<u64> = Vec::new();
+    let mut seqs_to_remove: Vec<String> = Vec::new();
+
+    // 1. Collection consolidation: remove cases and sequences covered by collections
+    if !enabled_for_cols.is_empty() {
+        let collections = crate::collections::load_collections(engine_dir);
+        for col in &collections.collections {
+            if !enabled_for_cols.iter().any(|c| c == &col.id) { continue; }
+            for item in &col.items {
+                match item {
+                    crate::collections::CollectionItem::Case { case_id } => {
+                        cases_to_remove.push(*case_id as u64);
+                    }
+                    crate::collections::CollectionItem::Sequence { title } => {
+                        seqs_to_remove.push(title.clone());
+                        // Also find all case IDs in this sequence
+                        for &cid in &enabled_for {
+                            let case_dir = engine_dir.join("case").join(cid.to_string());
+                            if let Ok(m) = read_manifest(&case_dir) {
+                                if let Some(seq) = &m.sequence {
+                                    if seq.get("title").and_then(|t| t.as_str()) == Some(title) {
+                                        if let Some(list) = seq.get("list").and_then(|l| l.as_array()) {
+                                            for v in list {
+                                                if let Some(id) = v.get("id").and_then(|i| i.as_u64()) {
+                                                    cases_to_remove.push(id);
+                                                }
+                                            }
+                                        }
+                                        break; // Found the sequence info from one case, done
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Sequence consolidation: remove cases covered by sequences
+    if !enabled_for_seqs.is_empty() {
+        for &cid in &enabled_for {
+            let case_dir = engine_dir.join("case").join(cid.to_string());
+            if let Ok(m) = read_manifest(&case_dir) {
+                if let Some(seq) = &m.sequence {
+                    if let Some(title) = seq.get("title").and_then(|t| t.as_str()) {
+                        if enabled_for_seqs.iter().any(|s| s == title) {
+                            // This case's sequence is enabled — remove the case
+                            if let Some(list) = seq.get("list").and_then(|l| l.as_array()) {
+                                for v in list {
+                                    if let Some(id) = v.get("id").and_then(|i| i.as_u64()) {
+                                        cases_to_remove.push(id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Apply removals
+    let mut changed = false;
+    let scope_mut = plugin.get_mut("scope").unwrap();
+
+    if !cases_to_remove.is_empty() {
+        if let Some(arr) = scope_mut.get_mut("enabled_for").and_then(|e| e.as_array_mut()) {
+            let before = arr.len();
+            arr.retain(|v| v.as_u64().map(|id| !cases_to_remove.contains(&id)).unwrap_or(true));
+            if arr.len() != before { changed = true; }
+        }
+    }
+
+    if !seqs_to_remove.is_empty() {
+        if let Some(arr) = scope_mut.get_mut("enabled_for_sequences").and_then(|e| e.as_array_mut()) {
+            let before = arr.len();
+            arr.retain(|v| v.as_str().map(|s| !seqs_to_remove.iter().any(|r| r == s)).unwrap_or(true));
+            if arr.len() != before { changed = true; }
+        }
+    }
+
+    if changed {
+        let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap());
+    }
 }

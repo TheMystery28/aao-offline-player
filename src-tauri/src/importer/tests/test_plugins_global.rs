@@ -691,3 +691,116 @@ fn test_disabled_for_overrides_collection_scope() {
     let resolved2 = resolve_plugins_for_case(55556, engine_dir).unwrap();
     assert_eq!(resolved2["active"].as_array().unwrap().len(), 1, "case 55556 should be active via collection");
 }
+
+#[test]
+fn test_consolidate_removes_case_covered_by_collection() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"enabled_for":[55555],"enabled_for_collections":["col-1"]},"params":{},"origin":"global"}}}"#).unwrap();
+    std::fs::write(engine_dir.join("collections.json"),
+        r#"{"collections":[{"id":"col-1","title":"Test","created_date":"2026-01-01","items":[{"type":"case","case_id":55555},{"type":"case","case_id":55556}]}]}"#).unwrap();
+
+    // Trigger consolidation via toggle (any no-op toggle works)
+    toggle_plugin_for_scope("a.js", "collection", "col-1", true, engine_dir).unwrap();
+
+    let text = fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let enabled = val["plugins"]["a.js"]["scope"]["enabled_for"].as_array().unwrap();
+    assert!(enabled.is_empty(), "case 55555 should be consolidated out by collection scope");
+}
+
+#[test]
+fn test_consolidate_removes_sequence_covered_by_collection() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"enabled_for_sequences":["Tutorial"],"enabled_for_collections":["col-1"]},"params":{},"origin":"global"}}}"#).unwrap();
+    std::fs::write(engine_dir.join("collections.json"),
+        r#"{"collections":[{"id":"col-1","title":"Test","created_date":"2026-01-01","items":[{"type":"sequence","title":"Tutorial"}]}]}"#).unwrap();
+
+    toggle_plugin_for_scope("a.js", "collection", "col-1", true, engine_dir).unwrap();
+
+    let text = fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let seqs = val["plugins"]["a.js"]["scope"]["enabled_for_sequences"].as_array().unwrap();
+    assert!(seqs.is_empty(), "sequence 'Tutorial' should be consolidated out by collection scope");
+}
+
+#[test]
+fn test_consolidate_removes_case_covered_by_sequence() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"enabled_for":[100,101],"enabled_for_sequences":["Tutorial"]},"params":{},"origin":"global"}}}"#).unwrap();
+    // Create case manifests with sequence info
+    let case100 = engine_dir.join("case/100");
+    std::fs::create_dir_all(&case100).unwrap();
+    std::fs::write(case100.join("manifest.json"),
+        r#"{"case_id":100,"title":"Tut 1","author":"a","language":"en","download_date":"2026-01-01","format":"v5","assets":{"case_specific":0,"shared_defaults":0,"total_downloaded":0,"total_size_bytes":0},"asset_map":{},"failed_assets":[],"has_plugins":false,"has_case_config":false,"sequence":{"title":"Tutorial","list":[{"id":100,"title":"Tut 1"},{"id":101,"title":"Tut 2"}]}}"#).unwrap();
+    let case101 = engine_dir.join("case/101");
+    std::fs::create_dir_all(&case101).unwrap();
+    std::fs::write(case101.join("manifest.json"),
+        r#"{"case_id":101,"title":"Tut 2","author":"a","language":"en","download_date":"2026-01-01","format":"v5","assets":{"case_specific":0,"shared_defaults":0,"total_downloaded":0,"total_size_bytes":0},"asset_map":{},"failed_assets":[],"has_plugins":false,"has_case_config":false,"sequence":{"title":"Tutorial","list":[{"id":100,"title":"Tut 1"},{"id":101,"title":"Tut 2"}]}}"#).unwrap();
+
+    toggle_plugin_for_scope("a.js", "sequence", "Tutorial", true, engine_dir).unwrap();
+
+    let text = fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let enabled = val["plugins"]["a.js"]["scope"]["enabled_for"].as_array().unwrap();
+    assert!(enabled.is_empty(), "cases 100,101 should be consolidated out by sequence scope");
+}
+
+#[test]
+fn test_consolidate_preserves_params() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"enabled_for":[55555],"enabled_for_collections":["col-1"]},"params":{"by_case":{"55555":{"volume":0.8}}},"origin":"global"}}}"#).unwrap();
+    std::fs::write(engine_dir.join("collections.json"),
+        r#"{"collections":[{"id":"col-1","title":"Test","created_date":"2026-01-01","items":[{"type":"case","case_id":55555}]}]}"#).unwrap();
+
+    toggle_plugin_for_scope("a.js", "collection", "col-1", true, engine_dir).unwrap();
+
+    let text = fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    // enabled_for should be empty (consolidated)
+    let enabled = val["plugins"]["a.js"]["scope"]["enabled_for"].as_array().unwrap();
+    assert!(enabled.is_empty(), "case should be consolidated");
+    // but params.by_case.55555 must still exist
+    let params = &val["plugins"]["a.js"]["params"]["by_case"]["55555"];
+    assert_eq!(params["volume"].as_f64().unwrap(), 0.8, "params must be preserved after consolidation");
+}
+
+#[test]
+fn test_consolidate_does_not_touch_disabled_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    let plugins_dir = engine_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+    std::fs::write(plugins_dir.join("a.js"), "// plugin").unwrap();
+    std::fs::write(plugins_dir.join("manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":false,"disabled_for":[55555],"enabled_for_collections":["col-1"]},"params":{},"origin":"global"}}}"#).unwrap();
+    std::fs::write(engine_dir.join("collections.json"),
+        r#"{"collections":[{"id":"col-1","title":"Test","created_date":"2026-01-01","items":[{"type":"case","case_id":55555}]}]}"#).unwrap();
+
+    toggle_plugin_for_scope("a.js", "collection", "col-1", true, engine_dir).unwrap();
+
+    let text = fs::read_to_string(plugins_dir.join("manifest.json")).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let disabled = val["plugins"]["a.js"]["scope"]["disabled_for"].as_array().unwrap();
+    assert_eq!(disabled.len(), 1, "disabled_for must NOT be touched by consolidation");
+    assert_eq!(disabled[0].as_u64().unwrap(), 55555);
+}
