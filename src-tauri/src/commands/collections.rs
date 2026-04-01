@@ -1,13 +1,13 @@
 use std::sync::Mutex;
 use tauri::State;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, AppStateLock};
 use crate::collections as coll;
 
 /// List all collections.
 #[tauri::command]
 pub fn list_collections(state: State<'_, Mutex<AppState>>) -> Result<Vec<coll::Collection>, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let data = coll::load_collections(&data_dir);
     Ok(data.collections)
 }
@@ -19,7 +19,7 @@ pub fn create_collection(
     title: String,
     items: Vec<coll::CollectionItem>,
 ) -> Result<coll::Collection, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let mut data = coll::load_collections(&data_dir);
     let collection = coll::Collection {
         id: coll::generate_id(),
@@ -40,7 +40,7 @@ pub fn update_collection(
     title: Option<String>,
     items: Option<Vec<coll::CollectionItem>>,
 ) -> Result<coll::Collection, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let mut data = coll::load_collections(&data_dir);
     let coll = data
         .collections
@@ -64,7 +64,7 @@ pub fn delete_collection(
     state: State<'_, Mutex<AppState>>,
     id: String,
 ) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let mut data = coll::load_collections(&data_dir);
     let len_before = data.collections.len();
     data.collections.retain(|c| c.id != id);
@@ -81,7 +81,7 @@ pub fn get_collection(
     state: State<'_, Mutex<AppState>>,
     id: String,
 ) -> Result<coll::Collection, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let data = coll::load_collections(&data_dir);
     data.collections
         .into_iter()
@@ -96,7 +96,7 @@ pub fn add_to_collection(
     id: String,
     items: Vec<coll::CollectionItem>,
 ) -> Result<coll::Collection, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let mut data = coll::load_collections(&data_dir);
     let coll = data
         .collections

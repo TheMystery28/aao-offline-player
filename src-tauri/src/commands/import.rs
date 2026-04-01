@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, AppStateLock};
 use crate::downloader::asset_downloader::DownloadEvent;
 use crate::importer;
 
@@ -22,10 +22,7 @@ pub async fn import_case(
     source_path: String,
     on_event: Channel<DownloadEvent>,
 ) -> Result<importer::ImportResult, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
 
     // On Android, the file picker returns content:// URIs which aren't regular filesystem paths.
     // Copy the file to a temp location using Tauri's fs plugin (handles content URIs).
@@ -154,10 +151,7 @@ pub async fn import_save(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
 ) -> Result<importer::ImportSaveResult, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
     let path = std::path::PathBuf::from(&source_path);
     tokio::task::spawn_blocking(move || {
         importer::import_aaosave(&path, &data_dir)

@@ -2,7 +2,7 @@ use std::fs;
 use std::sync::Mutex;
 use tauri::State;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, AppStateLock};
 use crate::downloader;
 
 /// List all downloaded cases by scanning the case directory for manifests.
@@ -10,10 +10,7 @@ use crate::downloader;
 pub fn list_cases(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<Vec<downloader::manifest::CaseManifest>, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
 
     let cases_dir = data_dir.join("case");
     if !cases_dir.exists() {
@@ -52,10 +49,7 @@ pub fn list_cases(
 /// Delete a downloaded case and all its files.
 #[tauri::command]
 pub fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<(), String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {

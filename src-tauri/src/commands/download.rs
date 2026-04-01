@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, AppStateLock};
 use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
 
@@ -55,10 +55,7 @@ pub async fn download_sequence(
     case_ids: Vec<u32>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<Vec<downloader::manifest::CaseManifest>, String> {
-    let (engine_dir, data_dir, concurrency, cancel_flag, client) = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
-    };
+    let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let total_parts = case_ids.len();
@@ -136,10 +133,7 @@ pub async fn download_case(
     case_id: u32,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, String> {
-    let (engine_dir, data_dir, concurrency, cancel_flag, client) = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
-    };
+    let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
@@ -276,10 +270,7 @@ pub async fn update_case(
     redownload_assets: bool,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, String> {
-    let (engine_dir, data_dir, concurrency, cancel_flag, client) = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        (s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
-    };
+    let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let case_dir = data_dir.join("case").join(case_id.to_string());

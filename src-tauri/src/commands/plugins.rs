@@ -2,7 +2,7 @@ use std::fs;
 use std::sync::Mutex;
 use tauri::State;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, AppStateLock};
 use crate::importer;
 
 /// Import a .aaoplug plugin file with scoped activation.
@@ -73,7 +73,7 @@ pub fn list_plugins(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
 ) -> Result<serde_json::Value, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     importer::list_plugins(case_id, &data_dir)
 }
 
@@ -84,7 +84,7 @@ pub fn remove_plugin(
     case_id: u32,
     filename: String,
 ) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     importer::remove_plugin(case_id, &filename, &data_dir)
 }
 
@@ -96,7 +96,7 @@ pub fn toggle_plugin(
     filename: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     importer::toggle_plugin(case_id, &filename, enabled, &data_dir)
 }
 
@@ -105,7 +105,7 @@ pub fn toggle_plugin(
 pub fn list_global_plugins(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     importer::list_global_plugins(&data_dir)
 }
 
@@ -115,7 +115,7 @@ pub fn remove_global_plugin(
     state: State<'_, Mutex<AppState>>,
     filename: String,
 ) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     // Remove with case_id 0 — the function handles no-scope-remaining by deleting
     // Actually, we need to force-delete: remove ALL scopes then delete
     let manifest_path = data_dir.join("plugins").join("manifest.json");
@@ -152,7 +152,7 @@ pub fn toggle_global_plugin(
     filename: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     importer::toggle_plugin_for_scope(&filename, "global", "", enabled, &data_dir)
 }
 
@@ -165,7 +165,7 @@ pub fn toggle_plugin_for_scope(
     scope_key: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     importer::toggle_plugin_for_scope(&filename, &scope_type, &scope_key, enabled, &data_dir)
 }
 
@@ -175,7 +175,7 @@ pub fn check_plugin_duplicate(
     state: State<'_, Mutex<AppState>>,
     code: String,
 ) -> Result<Vec<importer::DuplicateMatch>, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     Ok(importer::check_plugin_duplicate(&code, &data_dir))
 }
 
@@ -188,7 +188,7 @@ pub fn set_global_plugin_params(
     key: String,
     params: serde_json::Value,
 ) -> Result<(), String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     importer::set_global_plugin_params(&filename, &level, &key, &params, &data_dir)
 }
 
@@ -198,7 +198,7 @@ pub fn get_plugin_params(
     state: State<'_, Mutex<AppState>>,
     filename: String,
 ) -> Result<serde_json::Value, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let manifest_path = data_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
         return Ok(serde_json::json!({}));
@@ -220,7 +220,7 @@ pub fn get_plugin_descriptors(
     state: State<'_, Mutex<AppState>>,
     filename: String,
 ) -> Result<serde_json::Value, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let manifest_path = data_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
         return Ok(serde_json::Value::Null);
@@ -243,7 +243,7 @@ pub async fn export_case_plugins(
     case_id: u32,
     dest_path: String,
 ) -> Result<u64, String> {
-    let data_dir = state.lock().map_err(|e| e.to_string())?.data_dir.clone();
+    let data_dir = state.data_dir()?;
     let path = std::path::PathBuf::from(&dest_path);
     tokio::task::spawn_blocking(move || {
         importer::export_case_plugins(case_id, &path, &data_dir)

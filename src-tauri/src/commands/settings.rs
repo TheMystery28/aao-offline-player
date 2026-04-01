@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, AppStateLock};
 use crate::config;
 use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
@@ -31,10 +31,7 @@ pub fn save_settings(
 /// Return storage usage statistics.
 #[tauri::command]
 pub fn get_storage_info(state: State<'_, Mutex<AppState>>) -> Result<config::StorageInfo, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
     Ok(config::compute_storage_info(&data_dir))
 }
 
@@ -42,10 +39,7 @@ pub fn get_storage_info(state: State<'_, Mutex<AppState>>) -> Result<config::Sto
 /// Scans all manifests to build a set of used defaults/ paths, then deletes the rest.
 #[tauri::command]
 pub async fn clear_unused_defaults(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
     let (deleted, bytes_freed) = downloader::dedup::clear_unused_defaults(&data_dir)?;
     debug_log!(
         "Cleared {} unused default assets ({} bytes freed)",
@@ -64,10 +58,7 @@ pub async fn optimize_storage(
     state: State<'_, Mutex<AppState>>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<serde_json::Value, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
     let (deduped, bytes_saved) = downloader::dedup::optimize_all_cases(
         &data_dir,
         Some(&|completed, total, current_path| {
@@ -90,10 +81,7 @@ pub async fn optimize_storage(
 /// Open the data directory in the system file explorer.
 #[tauri::command]
 pub fn open_data_dir(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
     let path_str = data_dir.to_string_lossy().to_string();
     #[cfg(target_os = "windows")]
     {

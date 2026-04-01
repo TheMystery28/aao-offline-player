@@ -33,6 +33,28 @@ pub(crate) struct AppState {
     pub(crate) http_client: reqwest::Client,
 }
 
+/// Convenience trait to reduce state lock boilerplate in Tauri commands.
+#[allow(dead_code)]
+pub(crate) trait AppStateLock {
+    fn data_dir(&self) -> Result<PathBuf, String>;
+    fn engine_and_data_dir(&self) -> Result<(PathBuf, PathBuf), String>;
+    fn download_config(&self) -> Result<(PathBuf, PathBuf, usize, Arc<AtomicBool>, reqwest::Client), String>;
+}
+
+impl AppStateLock for std::sync::Mutex<AppState> {
+    fn data_dir(&self) -> Result<PathBuf, String> {
+        Ok(self.lock().map_err(|e| e.to_string())?.data_dir.clone())
+    }
+    fn engine_and_data_dir(&self) -> Result<(PathBuf, PathBuf), String> {
+        let s = self.lock().map_err(|e| e.to_string())?;
+        Ok((s.engine_dir.clone(), s.data_dir.clone()))
+    }
+    fn download_config(&self) -> Result<(PathBuf, PathBuf, usize, Arc<AtomicBool>, reqwest::Client), String> {
+        let s = self.lock().map_err(|e| e.to_string())?;
+        Ok((s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone()))
+    }
+}
+
 /// Extract engine files from the embedded binary data to the writable filesystem.
 ///
 /// Engine files are embedded at compile time via `include_bytes!` in build.rs.

@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, AppStateLock};
 use crate::collections as coll;
 use crate::downloader::asset_downloader::DownloadEvent;
 use crate::importer;
@@ -50,10 +50,7 @@ pub async fn export_case(
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
 
     let (export_path, content_uri) = resolve_export_path(&dest_path, &data_dir);
 
@@ -112,10 +109,7 @@ pub async fn export_sequence(
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
 
     let (export_path, content_uri) = resolve_export_path(&dest_path, &data_dir);
 
@@ -171,10 +165,7 @@ pub async fn export_collection(
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
 
     let coll_data = coll::load_collections(&data_dir);
     let collection = coll_data.collections.iter()
@@ -216,10 +207,7 @@ pub async fn export_save(
     include_plugins: bool,
     dest_path: String,
 ) -> Result<u64, String> {
-    let data_dir = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.data_dir.clone()
-    };
+    let data_dir = state.data_dir()?;
     let path = PathBuf::from(&dest_path);
     tokio::task::spawn_blocking(move || {
         importer::export_aaosave(&case_ids, &saves, include_plugins, &path, &data_dir)
