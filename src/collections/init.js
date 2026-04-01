@@ -31,8 +31,8 @@ export function initCollections(ctx) {
   ctx.appendCaseCardInto = function (container, c) {
     appendCaseCardInto(ctx, container, c);
   };
-  ctx.exportCollection = function (col, ids, hasPlugins) {
-    exportCollection(ctx, col, ids, hasPlugins);
+  ctx.exportCollection = function (col, ids) {
+    exportCollection(ctx, col, ids);
   };
   ctx.showEditCollectionModal = function (col) {
     showEditCollectionModal(ctx, col);

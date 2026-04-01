@@ -139,7 +139,7 @@ export function initSaves(ctx) {
     textarea.focus();
   }
 
-  function showSavesPluginsModal(caseIds, title, hasPlugins) {
+  function showSavesPluginsModal(caseIds, title) {
     var overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     var modal = document.createElement("div");
@@ -195,11 +195,7 @@ export function initSaves(ctx) {
     buttons.appendChild(cancelBtn);
 
     // Plugins section (live check — show only if case has active plugins)
-    var pluginChecks = caseIds.map(function (id) { return invoke("list_plugins", { caseId: id }); });
-    Promise.all(pluginChecks).then(function (pluginStates) {
-      var anyPlugins = pluginStates.some(function (ps) {
-        return ps.scripts.length > 0 || ps.disabled.length > 0;
-      });
+    checkPluginsForCases(caseIds).then(function (anyPlugins) {
       if (!anyPlugins) return;
 
       var pluginsLabel = document.createElement("div");
@@ -301,30 +297,23 @@ export function initSaves(ctx) {
       caseIds = [caseIds];
     }
     statusMsg.textContent = "Reading saves...";
-    var pluginChecks = caseIds.map(function (id) { return invoke("list_plugins", { caseId: id }); });
-    Promise.all([
-      invoke("read_saves_for_export", { caseIds: caseIds }),
-      Promise.all(pluginChecks)
-    ]).then(function (results) {
-      var saves = results[0];
-      var pluginStates = results[1];
+    invoke("read_saves_for_export", { caseIds: caseIds }).then(function (saves) {
       if (!saves) {
         statusMsg.textContent = "No saves found for " + (caseIds.length > 1 ? "these cases" : "this case") + ".";
         return;
       }
-      var anyHasPlugins = pluginStates.some(function (ps) {
-        return ps.scripts.length > 0 || ps.disabled.length > 0;
+      checkPluginsForCases(caseIds).then(function (hasPlugins) {
+        if (!hasPlugins) {
+          doExportSave(caseIds, title, saves, false);
+        } else {
+          showConfirmModal(
+            "Include plugins in save export?",
+            "Include Plugins",
+            function () { doExportSave(caseIds, title, saves, true); },
+            function () { doExportSave(caseIds, title, saves, false); }
+          );
+        }
       });
-      if (!anyHasPlugins) {
-        doExportSave(caseIds, title, saves, false);
-      } else {
-        showConfirmModal(
-          "Include plugins in save export?",
-          "Include Plugins",
-          function () { doExportSave(caseIds, title, saves, true); },
-          function () { doExportSave(caseIds, title, saves, false); }
-        );
-      }
     });
   }
 
@@ -621,6 +610,48 @@ export function initSaves(ctx) {
     }
   }
 
+  function checkPluginsForCases(caseIds) {
+    return Promise.all(
+      caseIds.map(function (id) { return invoke("list_plugins", { caseId: id }); })
+    ).then(function (states) {
+      return states.some(function (ps) {
+        return ps.scripts.length > 0 || ps.disabled.length > 0;
+      });
+    });
+  }
+
+  function promptExportOptions(caseIds, callback) {
+    var pluginChecks = caseIds.map(function (id) {
+      return invoke("list_plugins", { caseId: id });
+    });
+    Promise.all([
+      invoke("read_saves_for_export", { caseIds: caseIds }),
+      Promise.all(pluginChecks)
+    ]).then(function (results) {
+      var saves = results[0];
+      var pluginStates = results[1];
+      var hasSaves = saves !== null;
+      var hasPlugins = pluginStates.some(function (ps) {
+        return ps.scripts.length > 0 || ps.disabled.length > 0;
+      });
+      if (!hasSaves && !hasPlugins) {
+        callback(null, false);
+      } else if (hasSaves && !hasPlugins) {
+        showConfirmModal("Include game saves?", "Include Saves",
+          function () { callback(saves, false); },
+          function () { callback(null, false); });
+      } else if (!hasSaves && hasPlugins) {
+        showConfirmModal("Include plugins?", "Include Plugins",
+          function () { callback(null, true); },
+          function () { callback(null, false); });
+      } else {
+        showExportOptionsModal(function (incSaves, incPlugins) {
+          callback(incSaves ? saves : null, incPlugins);
+        });
+      }
+    });
+  }
+
   return {
     readGameSaves: readGameSaves,
     writeGameSaves: writeGameSaves,
@@ -629,6 +660,7 @@ export function initSaves(ctx) {
     exportSave: exportSave,
     showSavesPluginsModal: showSavesPluginsModal,
     showExportOptionsModal: showExportOptionsModal,
+    promptExportOptions: promptExportOptions,
     showPasteSaveModal: showPasteSaveModal,
     doImportSave: doImportSave,
     doExportSave: doExportSave,

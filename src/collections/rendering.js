@@ -170,15 +170,9 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   var exportColBtn = document.createElement("button");
   exportColBtn.className = "export-btn";
   exportColBtn.textContent = "Export Collection";
-  var collHasPlugins = false;
-  for (var chp = 0; chp < allCollectionCaseIds.length; chp++) {
-    if (allCases[allCollectionCaseIds[chp]] && allCases[allCollectionCaseIds[chp]].has_plugins) {
-      collHasPlugins = true; break;
-    }
-  }
-  exportColBtn.addEventListener("click", (function (col, caseIds, hasPlug) {
-    return function () { exportCollection(ctx, col, caseIds, hasPlug); };
-  })(collection, allCollectionCaseIds, collHasPlugins));
+  exportColBtn.addEventListener("click", (function (col, caseIds) {
+    return function () { exportCollection(ctx, col, caseIds); };
+  })(collection, allCollectionCaseIds));
   footer.appendChild(exportColBtn);
 
   // Delete button
@@ -477,10 +471,10 @@ export function appendCaseCardInto(ctx, container, c) {
     ctx.copyTrialLink(c.case_id);
   });
   card.querySelector(".export-btn").addEventListener("click", function () {
-    ctx.exportCase(c.case_id, c.title, c.has_plugins);
+    ctx.exportCase(c.case_id, c.title);
   });
   card.querySelector(".save-btn").addEventListener("click", function () {
-    ctx.showSavesPluginsModal([c.case_id], c.title, c.has_plugins);
+    ctx.showSavesPluginsModal([c.case_id], c.title);
   });
   card.querySelector(".plugin-btn").addEventListener("click", function () {
     ctx.showPluginManagerModal(c.case_id, c.title);
@@ -527,7 +521,7 @@ export function getCollectionCaseIds(ctx, items, allCases, sequenceGroups) {
   return ids;
 }
 
-export function exportCollection(ctx, collection, caseIds, anyHasPlugins) {
+export function exportCollection(ctx, collection, caseIds) {
   var invoke = ctx.invoke;
   var statusMsg = ctx.statusMsg;
 
@@ -540,32 +534,16 @@ export function exportCollection(ctx, collection, caseIds, anyHasPlugins) {
         statusMsg.textContent = "";
         return;
       }
-      ctx.progressContainer.classList.remove("hidden");
-      ctx.progressPhase.textContent = "Exporting collection...";
-      ctx.progressBarInner.style.width = "0%";
-      ctx.progressText.textContent = "";
-
-      var onEvent = new ctx.Channel();
-      onEvent.onmessage = function (msg) {
-        if (msg.event === "progress") {
-          var pct = Math.round((msg.data.completed / msg.data.total) * 100);
-          ctx.progressBarInner.style.width = pct + "%";
-          ctx.progressText.textContent =
-            msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
-        } else if (msg.event === "finished") {
-          ctx.progressBarInner.style.width = "100%";
-          ctx.progressPhase.textContent = "Export complete!";
-          ctx.progressText.textContent = formatBytes(msg.data.total_bytes);
-        }
-      };
-
-      function doCollExport(saves, includePlugins) {
-        invoke("export_collection", {
-          collectionId: collection.id,
-          destPath: destPath,
-          saves: saves,
-          includePlugins: includePlugins,
-          onEvent: onEvent
+      // Smart prompts (centralized in saves.js)
+      ctx.promptExportOptions(caseIds, function (saves, includePlugins) {
+        ctx.withExportProgress("Exporting collection...", function (onEvent) {
+          return invoke("export_collection", {
+            collectionId: collection.id,
+            destPath: destPath,
+            saves: saves,
+            includePlugins: includePlugins,
+            onEvent: onEvent
+          });
         }).then(function (size) {
           var msg = 'Exported collection "' + collection.title + '" (' + formatBytes(size) + ")";
           if (saves) msg += " with saves";
@@ -575,35 +553,6 @@ export function exportCollection(ctx, collection, caseIds, anyHasPlugins) {
           statusMsg.textContent = "Export error: " + e;
           ctx.progressContainer.classList.add("hidden");
         });
-      }
-
-      // Smart prompts (live check for plugins across all cases)
-      var pluginChecks = caseIds.map(function (id) { return invoke("list_plugins", { caseId: id }); });
-      Promise.all([
-        invoke("read_saves_for_export", { caseIds: caseIds }),
-        Promise.all(pluginChecks)
-      ]).then(function (results) {
-        var saves = results[0];
-        var pluginStates = results[1];
-        var hasSaves = saves !== null;
-        var collHasPlugins = pluginStates.some(function (ps) {
-          return ps.scripts.length > 0 || ps.disabled.length > 0;
-        });
-        if (!hasSaves && !collHasPlugins) {
-          doCollExport(null, false);
-        } else if (hasSaves && !collHasPlugins) {
-          showConfirmModal("Include saves?", "Include Saves",
-            function () { doCollExport(saves, false); },
-            function () { doCollExport(null, false); });
-        } else if (!hasSaves && collHasPlugins) {
-          showConfirmModal("Include plugins?", "Include Plugins",
-            function () { doCollExport(null, true); },
-            function () { doCollExport(null, false); });
-        } else {
-          ctx.showExportOptionsModal(function (incSaves, incPlugins) {
-            doCollExport(incSaves ? saves : null, incPlugins);
-          });
-        }
       });
     })
     .catch(function (e) {

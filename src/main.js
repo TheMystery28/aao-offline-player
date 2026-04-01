@@ -149,6 +149,7 @@ window.addEventListener("DOMContentLoaded", function () {
   ctx.showPasteSaveModal = savesFns.showPasteSaveModal;
   ctx.doImportSave = savesFns.doImportSave;
   ctx.doExportSave = savesFns.doExportSave;
+  ctx.promptExportOptions = savesFns.promptExportOptions;
   ctx.copyTrialLink = savesFns.copyTrialLink;
 
   // --- Player ---
@@ -210,6 +211,7 @@ window.addEventListener("DOMContentLoaded", function () {
   ctx.playCase = libraryFns.playCase;
   ctx.deleteCase = libraryFns.deleteCase;
   ctx.exportCase = libraryFns.exportCase;
+  ctx.withExportProgress = libraryFns.withExportProgress;
 
   // --- Collections ---
   var collectionsFns = initCollections(ctx);

@@ -419,34 +419,18 @@ export function initLibrary(ctx) {
                 statusMsg.textContent = "";
                 return;
               }
-              ctx.progressContainer.classList.remove("hidden");
-              ctx.progressPhase.textContent = "Exporting sequence...";
-              ctx.progressBarInner.style.width = "0%";
-              ctx.progressText.textContent = "";
-
-              var onEvent = new Channel();
-              onEvent.onmessage = function (msg) {
-                if (msg.event === "progress") {
-                  var pct = Math.round((msg.data.completed / msg.data.total) * 100);
-                  ctx.progressBarInner.style.width = pct + "%";
-                  ctx.progressText.textContent =
-                    msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
-                } else if (msg.event === "finished") {
-                  ctx.progressBarInner.style.width = "100%";
-                  ctx.progressPhase.textContent = "Export complete!";
-                  ctx.progressText.textContent = formatBytes(msg.data.total_bytes);
-                }
-              };
-
-              function doSeqExport(saves, includePlugins) {
-                invoke("export_sequence", {
-                  caseIds: ids,
-                  sequenceTitle: title,
-                  sequenceList: list,
-                  destPath: destPath,
-                  saves: saves,
-                  includePlugins: includePlugins,
-                  onEvent: onEvent
+              // Smart prompts (centralized in saves.js)
+              ctx.promptExportOptions(ids, function (saves, includePlugins) {
+                withExportProgress("Exporting sequence...", function (onEvent) {
+                  return invoke("export_sequence", {
+                    caseIds: ids,
+                    sequenceTitle: title,
+                    sequenceList: list,
+                    destPath: destPath,
+                    saves: saves,
+                    includePlugins: includePlugins,
+                    onEvent: onEvent
+                  });
                 }).then(function (size) {
                   var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
                   if (saves) msg += " with saves";
@@ -456,35 +440,6 @@ export function initLibrary(ctx) {
                   statusMsg.textContent = "Export error: " + e;
                   ctx.progressContainer.classList.add("hidden");
                 });
-              }
-
-              // Smart prompts (live check for plugins across all cases)
-              var pluginChecks = ids.map(function (id) { return invoke("list_plugins", { caseId: id }); });
-              Promise.all([
-                invoke("read_saves_for_export", { caseIds: ids }),
-                Promise.all(pluginChecks)
-              ]).then(function (results) {
-                var saves = results[0];
-                var pluginStates = results[1];
-                var hasSaves = saves !== null;
-                var seqHasPlugins = pluginStates.some(function (ps) {
-                  return ps.scripts.length > 0 || ps.disabled.length > 0;
-                });
-                if (!hasSaves && !seqHasPlugins) {
-                  doSeqExport(null, false);
-                } else if (hasSaves && !seqHasPlugins) {
-                  showConfirmModal("Include saves?", "Include Saves",
-                    function () { doSeqExport(saves, false); },
-                    function () { doSeqExport(null, false); });
-                } else if (!hasSaves && seqHasPlugins) {
-                  showConfirmModal("Include plugins?", "Include Plugins",
-                    function () { doSeqExport(null, true); },
-                    function () { doSeqExport(null, false); });
-                } else {
-                  ctx.showExportOptionsModal(function (incSaves, incPlugins) {
-                    doSeqExport(incSaves ? saves : null, incPlugins);
-                  });
-                }
               });
             });
         };
@@ -494,17 +449,13 @@ export function initLibrary(ctx) {
 
     // Saves & Plugins button for entire sequence
     if (downloadedCases.length > 0) {
-      var anyHasPlugins = false;
-      for (var hp = 0; hp < downloadedCases.length; hp++) {
-        if (downloadedCases[hp].has_plugins) { anyHasPlugins = true; break; }
-      }
       var seqSavesBtn = document.createElement("button");
       seqSavesBtn.className = "save-btn";
       seqSavesBtn.textContent = "Saves";
       seqSavesBtn.title = "Saves & plugins for all parts";
-      seqSavesBtn.addEventListener("click", (function (ids, title, hasPlug) {
-        return function () { ctx.showSavesPluginsModal(ids, title, hasPlug); };
-      })(downloadedIds, sequenceTitle, anyHasPlugins));
+      seqSavesBtn.addEventListener("click", (function (ids, title) {
+        return function () { ctx.showSavesPluginsModal(ids, title); };
+      })(downloadedIds, sequenceTitle));
       footer.appendChild(seqSavesBtn);
     }
 
@@ -597,7 +548,7 @@ export function initLibrary(ctx) {
       exportBtn.className = "export-btn";
       exportBtn.textContent = "Export";
       exportBtn.addEventListener("click", (function (c) {
-        return function () { exportCase(c.case_id, c.title, c.has_plugins); };
+        return function () { exportCase(c.case_id, c.title); };
       })(manifest));
       actions.appendChild(exportBtn);
 
@@ -606,7 +557,7 @@ export function initLibrary(ctx) {
       saveBtn.textContent = "Saves";
       saveBtn.title = "Saves & plugins";
       saveBtn.addEventListener("click", (function (c) {
-        return function () { ctx.showSavesPluginsModal([c.case_id], c.title, c.has_plugins); };
+        return function () { ctx.showSavesPluginsModal([c.case_id], c.title); };
       })(manifest));
       actions.appendChild(saveBtn);
 
@@ -721,11 +672,11 @@ export function initLibrary(ctx) {
     });
 
     card.querySelector(".export-btn").addEventListener("click", function () {
-      exportCase(c.case_id, c.title, c.has_plugins);
+      exportCase(c.case_id, c.title);
     });
 
     card.querySelector(".save-btn").addEventListener("click", function () {
-      ctx.showSavesPluginsModal([c.case_id], c.title, c.has_plugins);
+      ctx.showSavesPluginsModal([c.case_id], c.title);
     });
 
     card.querySelector(".plugin-btn").addEventListener("click", function () {
@@ -767,7 +718,29 @@ export function initLibrary(ctx) {
     );
   }
 
-  function exportCase(caseId, title, hasPlugins) {
+  function withExportProgress(phaseLabel, exportFn) {
+    ctx.progressContainer.classList.remove("hidden");
+    ctx.progressPhase.textContent = phaseLabel;
+    ctx.progressBarInner.style.width = "0%";
+    ctx.progressText.textContent = "";
+
+    var onEvent = new Channel();
+    onEvent.onmessage = function (msg) {
+      if (msg.event === "progress") {
+        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+        ctx.progressBarInner.style.width = pct + "%";
+        ctx.progressText.textContent = msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
+      } else if (msg.event === "finished") {
+        ctx.progressBarInner.style.width = "100%";
+        ctx.progressPhase.textContent = "Export complete!";
+        ctx.progressText.textContent = formatBytes(msg.data.total_bytes);
+      }
+    };
+
+    return exportFn(onEvent);
+  }
+
+  function exportCase(caseId, title) {
     console.log("[EXPORT] exportCase called, caseId=" + caseId + " title=" + title);
     var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
     var defaultName = safeName + ".aaocase";
@@ -776,31 +749,16 @@ export function initLibrary(ctx) {
       .then(function (destPath) {
         if (!destPath) { statusMsg.textContent = ""; return; }
 
-        ctx.progressContainer.classList.remove("hidden");
-        ctx.progressPhase.textContent = "Exporting...";
-        ctx.progressBarInner.style.width = "0%";
-        ctx.progressText.textContent = "";
-
-        var onEvent = new Channel();
-        onEvent.onmessage = function (msg) {
-          if (msg.event === "progress") {
-            var pct = Math.round((msg.data.completed / msg.data.total) * 100);
-            ctx.progressBarInner.style.width = pct + "%";
-            ctx.progressText.textContent = msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
-          } else if (msg.event === "finished") {
-            ctx.progressBarInner.style.width = "100%";
-            ctx.progressPhase.textContent = "Export complete!";
-            ctx.progressText.textContent = formatBytes(msg.data.total_bytes);
-          }
-        };
-
-        function doExport(saves, includePlugins) {
-          invoke("export_case", {
-            caseId: caseId,
-            destPath: destPath,
-            saves: saves,
-            includePlugins: includePlugins,
-            onEvent: onEvent
+        // Smart prompts (centralized in saves.js)
+        ctx.promptExportOptions([caseId], function (saves, includePlugins) {
+          withExportProgress("Exporting...", function (onEvent) {
+            return invoke("export_case", {
+              caseId: caseId,
+              destPath: destPath,
+              saves: saves,
+              includePlugins: includePlugins,
+              onEvent: onEvent
+            });
           }).then(function (size) {
             var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
             if (saves) msg += " with saves";
@@ -810,32 +768,6 @@ export function initLibrary(ctx) {
             statusMsg.textContent = "Export error: " + e;
             ctx.progressContainer.classList.add("hidden");
           });
-        }
-
-        // Smart prompts: only ask about what exists (live check for plugins)
-        Promise.all([
-          invoke("read_saves_for_export", { caseIds: [caseId] }),
-          invoke("list_plugins", { caseId: caseId })
-        ]).then(function (results) {
-          var saves = results[0];
-          var pluginState = results[1];
-          var hasSaves = saves !== null;
-          var caseHasPlugins = pluginState.scripts.length > 0 || pluginState.disabled.length > 0;
-          if (!hasSaves && !caseHasPlugins) {
-            doExport(null, false);
-          } else if (hasSaves && !caseHasPlugins) {
-            showConfirmModal("Include game saves?", "Include Saves",
-              function () { doExport(saves, false); },
-              function () { doExport(null, false); });
-          } else if (!hasSaves && caseHasPlugins) {
-            showConfirmModal("Include plugins?", "Include Plugins",
-              function () { doExport(null, true); },
-              function () { doExport(null, false); });
-          } else {
-            ctx.showExportOptionsModal(function (incSaves, incPlugins) {
-              doExport(incSaves ? saves : null, incPlugins);
-            });
-          }
         });
       })
       .catch(function (e) {
@@ -852,6 +784,7 @@ export function initLibrary(ctx) {
     appendSequencePart: appendSequencePart,
     playCase: playCase,
     deleteCase: deleteCase,
-    exportCase: exportCase
+    exportCase: exportCase,
+    withExportProgress: withExportProgress
   };
 }
