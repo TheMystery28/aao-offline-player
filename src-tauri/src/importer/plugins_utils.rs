@@ -139,16 +139,22 @@ pub fn set_global_plugin_params(
         let entry = plugins.entry(filename.to_string())
             .or_insert(serde_json::json!({ "scope": { "all": false }, "params": {} }));
         if entry.get("params").and_then(|p| p.as_object()).is_none() {
-            entry.as_object_mut().unwrap().insert("params".to_string(), serde_json::json!({}));
+            entry.as_object_mut()
+                .ok_or_else(|| "Plugin entry is not an object".to_string())?
+                .insert("params".to_string(), serde_json::json!({}));
         }
-        let entry_params = entry.get_mut("params").unwrap().as_object_mut().unwrap();
+        let entry_params = entry.get_mut("params")
+            .and_then(|p| p.as_object_mut())
+            .ok_or_else(|| "Plugin params is not an object".to_string())?;
 
         if level == "default" {
             entry_params.insert("default".to_string(), params.clone());
         } else {
             let level_obj = entry_params.entry(level.to_string())
                 .or_insert(serde_json::json!({}));
-            level_obj.as_object_mut().unwrap().insert(key.to_string(), params.clone());
+            level_obj.as_object_mut()
+                .ok_or_else(|| "Params level is not an object".to_string())?
+                .insert(key.to_string(), params.clone());
         }
         Ok(())
     })
@@ -177,7 +183,9 @@ pub fn export_case_plugins(_case_id: u32, dest_path: &Path, data_dir: &Path) -> 
     let manifest = serde_json::json!({ "scripts": active });
     zip.start_file("manifest.json", options)
         .map_err(|e| format!("Failed to add manifest: {}", e))?;
-    std::io::Write::write_all(&mut zip, serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+    std::io::Write::write_all(&mut zip, manifest_json.as_bytes())
         .map_err(|e| format!("Failed to write manifest: {}", e))?;
 
     // Write each active script

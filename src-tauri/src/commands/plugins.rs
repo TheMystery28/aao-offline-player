@@ -128,7 +128,14 @@ pub fn remove_global_plugin(
             if let Some(plugins) = val.get_mut("plugins").and_then(|p| p.as_object_mut()) {
                 plugins.remove(&filename);
             }
-            let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap());
+            match serde_json::to_string_pretty(&val) {
+                Ok(json) => {
+                    if let Err(e) = fs::write(&manifest_path, json) {
+                        eprintln!("[PLUGINS] Failed to write {}: {}", manifest_path.display(), e);
+                    }
+                }
+                Err(e) => eprintln!("[PLUGINS] Failed to serialize manifest: {}", e),
+            }
         }
     }
     // Delete the plugin's declared assets, then the JS file itself

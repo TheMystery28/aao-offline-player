@@ -138,7 +138,9 @@ pub async fn import_aaoplug(
                     Ok(resp) => {
                         if resp.status().is_success() {
                             if let Ok(bytes) = resp.bytes().await {
-                                let _ = fs::write(&dest, &bytes);
+                                if let Err(e) = fs::write(&dest, &bytes) {
+                                    eprintln!("[PLUGINS] Failed to write {}: {}", dest.display(), e);
+                                }
                                 eprintln!("[IMPORT_PLUGIN] Downloaded external asset: {} → {}", url, dest.display());
                             }
                         } else {
@@ -169,10 +171,14 @@ pub async fn import_aaoplug(
             let case_dir = engine_dir.join("case").join(case_id.to_string());
             if case_dir.exists() {
                 if let Some(ref text) = config_text {
-                    let _ = fs::write(case_dir.join("case_config.json"), text);
+                    if let Err(e) = fs::write(case_dir.join("case_config.json"), text) {
+                        eprintln!("[PLUGINS] Failed to write case_config.json: {}", e);
+                    }
                     if let Ok(mut manifest) = read_manifest(&case_dir) {
                         manifest.has_case_config = true;
-                        let _ = write_manifest(&manifest, &case_dir);
+                        if let Err(e) = write_manifest(&manifest, &case_dir) {
+                            eprintln!("[PLUGINS] Failed to write manifest: {}", e);
+                        }
                     }
                 }
             }
@@ -299,7 +305,9 @@ pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<
         let _ = fs::remove_file(plugins_dir.join(filename));
     }
 
-    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+    let json = serde_json::to_string_pretty(&val)
+        .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+    fs::write(&manifest_path, json)
         .map_err(|e| format!("Failed to write manifest: {}", e))?;
 
     // Clean plugin params from case_config.json
@@ -312,7 +320,14 @@ pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<
                 if let Some(plugins) = config.get_mut("plugins").and_then(|p| p.as_object_mut()) {
                     plugins.remove(plugin_name);
                 }
-                let _ = fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap());
+                match serde_json::to_string_pretty(&config) {
+                    Ok(json) => {
+                        if let Err(e) = fs::write(&config_path, json) {
+                            eprintln!("[PLUGINS] Failed to write {}: {}", config_path.display(), e);
+                        }
+                    }
+                    Err(e) => eprintln!("[PLUGINS] Failed to serialize case_config.json: {}", e),
+                }
             }
         }
     }
@@ -496,7 +511,9 @@ pub(super) fn upsert_plugin_manifest(
         entry.as_object_mut().unwrap().insert("params".to_string(), serde_json::json!({}));
     }
 
-    fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap())
+    let json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+    fs::write(&manifest_path, json)
         .map_err(|e| format!("Failed to write plugin manifest: {}", e))?;
 
     // Consolidate redundant scope entries after merge
@@ -751,7 +768,14 @@ pub(super) fn check_auto_promote(filename: &str, engine_dir: &Path) {
             });
         }
 
-        let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap());
+        match serde_json::to_string_pretty(&manifest) {
+            Ok(json) => {
+                if let Err(e) = fs::write(&manifest_path, json) {
+                    eprintln!("[PLUGINS] Failed to write manifest: {}", e);
+                }
+            }
+            Err(e) => eprintln!("[PLUGINS] Failed to serialize manifest: {}", e),
+        }
     }
 
     // Collection promotion would follow the same pattern but is less common — skip for now
@@ -883,6 +907,13 @@ pub(super) fn consolidate_scopes(filename: &str, engine_dir: &Path) {
     }
 
     if changed {
-        let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap());
+        match serde_json::to_string_pretty(&manifest) {
+            Ok(json) => {
+                if let Err(e) = fs::write(&manifest_path, json) {
+                    eprintln!("[PLUGINS] Failed to write manifest: {}", e);
+                }
+            }
+            Err(e) => eprintln!("[PLUGINS] Failed to serialize manifest: {}", e),
+        }
     }
 }

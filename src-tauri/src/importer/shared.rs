@@ -80,7 +80,9 @@ where F: FnOnce(&mut serde_json::Value) -> Result<(), String>
     let mut val: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("Failed to parse manifest: {}", e))?;
     f(&mut val)?;
-    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+    let json = serde_json::to_string_pretty(&val)
+        .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+    fs::write(&manifest_path, json)
         .map_err(|e| format!("Failed to write manifest: {}", e))?;
     Ok(())
 }

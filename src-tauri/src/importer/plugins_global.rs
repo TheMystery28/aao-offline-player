@@ -157,7 +157,9 @@ pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), String> {
             changed = true;
         }
         if changed {
-            fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+            let json = serde_json::to_string_pretty(&val)
+                .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+            fs::write(&manifest_path, json)
                 .map_err(|e| format!("Failed to write migrated manifest: {}", e))?;
         }
         return Ok(());
@@ -188,7 +190,9 @@ pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), String> {
     val.as_object_mut().unwrap().insert("plugins".to_string(), serde_json::Value::Object(plugins));
     val.as_object_mut().unwrap().remove("disabled");
 
-    fs::write(&manifest_path, serde_json::to_string_pretty(&val).unwrap())
+    let json = serde_json::to_string_pretty(&val)
+        .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+    fs::write(&manifest_path, json)
         .map_err(|e| format!("Failed to write migrated manifest: {}", e))?;
 
     Ok(())
@@ -349,8 +353,14 @@ pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_j
         let resolved = serde_json::json!({ "active": [], "available": [] });
         let case_dir = data_dir.join("case").join(case_id.to_string());
         if case_dir.exists() {
-            let _ = fs::write(case_dir.join("resolved_plugins.json"),
-                serde_json::to_string_pretty(&resolved).unwrap());
+            match serde_json::to_string_pretty(&resolved) {
+                Ok(json) => {
+                    if let Err(e) = fs::write(case_dir.join("resolved_plugins.json"), json) {
+                        eprintln!("[PLUGINS] Failed to write resolved_plugins.json: {}", e);
+                    }
+                }
+                Err(e) => eprintln!("[PLUGINS] Failed to serialize resolved_plugins.json: {}", e),
+            }
         }
         return Ok(resolved);
     }
@@ -421,8 +431,9 @@ pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_j
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if case_dir.exists() {
-        fs::write(case_dir.join("resolved_plugins.json"),
-            serde_json::to_string_pretty(&resolved).unwrap())
+        let json = serde_json::to_string_pretty(&resolved)
+            .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+        fs::write(case_dir.join("resolved_plugins.json"), json)
             .map_err(|e| format!("Failed to write resolved_plugins.json: {}", e))?;
     }
 
@@ -529,5 +540,12 @@ pub(super) fn merge_plugin_param_overrides(overrides: &serde_json::Value, engine
         }
     }
 
-    let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap());
+    match serde_json::to_string_pretty(&manifest) {
+        Ok(json) => {
+            if let Err(e) = fs::write(&manifest_path, json) {
+                eprintln!("[PLUGINS] Failed to write manifest: {}", e);
+            }
+        }
+        Err(e) => eprintln!("[PLUGINS] Failed to serialize manifest: {}", e),
+    }
 }

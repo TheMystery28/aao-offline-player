@@ -116,7 +116,9 @@ pub fn export_aaosave(
                 let manifest_zip_name = format!("{}/manifest.json", prefix);
                 zip.start_file(&manifest_zip_name, options)
                     .map_err(|e| format!("Failed to add plugin manifest: {}", e))?;
-                io::Write::write_all(&mut zip, serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+                let manifest_json = serde_json::to_string_pretty(&manifest)
+                    .map_err(|e| format!("Failed to serialize plugin manifest: {}", e))?;
+                io::Write::write_all(&mut zip, manifest_json.as_bytes())
                     .map_err(|e| format!("Failed to write plugin manifest: {}", e))?;
                 // Copy each active plugin JS
                 for script in &active_plugins {
@@ -217,7 +219,9 @@ pub fn import_aaosave(
         if let Some(parent) = dest.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let _ = fs::write(&dest, data);
+        if let Err(e) = fs::write(&dest, data) {
+            eprintln!("[SAVES] Failed to write {}: {}", dest.display(), e);
+        }
 
         if !plugins_installed.contains(&case_id) {
             plugins_installed.push(case_id);
@@ -229,7 +233,9 @@ pub fn import_aaosave(
         let case_dir = engine_dir.join("case").join(case_id.to_string());
         if let Ok(mut manifest) = read_manifest(&case_dir) {
             manifest.has_plugins = true;
-            let _ = write_manifest(&manifest, &case_dir);
+            if let Err(e) = write_manifest(&manifest, &case_dir) {
+                eprintln!("[SAVES] Failed to write manifest: {}", e);
+            }
         }
     }
 
@@ -240,7 +246,9 @@ pub fn import_aaosave(
         let case_id_str = filename.trim_end_matches(".json");
         let case_dir = engine_dir.join("case").join(case_id_str);
         if case_dir.exists() {
-            let _ = fs::write(case_dir.join("case_config.json"), data);
+            if let Err(e) = fs::write(case_dir.join("case_config.json"), data) {
+                eprintln!("[SAVES] Failed to write case_config.json: {}", e);
+            }
         }
     }
 

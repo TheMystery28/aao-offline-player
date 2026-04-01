@@ -161,7 +161,9 @@ pub fn export_aaocase(
             let manifest = serde_json::json!({ "scripts": active_scripts });
             zip.start_file("plugins/manifest.json", options)
                 .map_err(|e| format!("Failed to add plugins/manifest.json: {}", e))?;
-            io::Write::write_all(&mut zip, serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+            let manifest_json = serde_json::to_string_pretty(&manifest)
+                .map_err(|e| format!("Failed to serialize plugins manifest: {}", e))?;
+            io::Write::write_all(&mut zip, manifest_json.as_bytes())
                 .map_err(|e| format!("Failed to write plugins/manifest.json: {}", e))?;
 
             // Add each active script
@@ -292,7 +294,8 @@ pub fn export_aaocase(
                         }
                     }
                     if !plugin_params.is_empty() {
-                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params)).unwrap();
+                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params))
+                            .map_err(|e| format!("Failed to serialize plugin params: {}", e))?;
                         let _ = zip.start_file("plugin_params.json", options);
                         let _ = io::Write::write_all(&mut zip, pp_bytes.as_bytes());
                     }
@@ -560,7 +563,8 @@ pub fn export_collection(
                         }
                     }
                     if !plugin_params.is_empty() {
-                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params)).unwrap();
+                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params))
+                            .map_err(|e| format!("Failed to serialize plugin params: {}", e))?;
                         let _ = zip.start_file("plugin_params.json", options);
                         let _ = io::Write::write_all(&mut zip, pp_bytes.as_bytes());
                     }
@@ -634,7 +638,9 @@ pub fn export_sequence(
     });
     zip.start_file("sequence.json", options)
         .map_err(|e| format!("Failed to add sequence.json: {}", e))?;
-    io::Write::write_all(&mut zip, serde_json::to_string_pretty(&seq_json).unwrap().as_bytes())
+    let seq_str = serde_json::to_string_pretty(&seq_json)
+        .map_err(|e| format!("Failed to serialize sequence.json: {}", e))?;
+    io::Write::write_all(&mut zip, seq_str.as_bytes())
         .map_err(|e| format!("Failed to write sequence.json: {}", e))?;
     completed += 1;
     if let Some(cb) = &on_progress {
@@ -770,7 +776,8 @@ pub fn export_sequence(
                         }
                     }
                     if !plugin_params.is_empty() {
-                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params)).unwrap();
+                        let pp_bytes = serde_json::to_string_pretty(&serde_json::Value::Object(plugin_params))
+                            .map_err(|e| format!("Failed to serialize plugin params: {}", e))?;
                         let _ = zip.start_file("plugin_params.json", options);
                         let _ = io::Write::write_all(&mut zip, pp_bytes.as_bytes());
                     }

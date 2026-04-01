@@ -307,7 +307,9 @@ fn import_multi_case_zip(
                 }
             }
             manifest.assets.total_downloaded = manifest.asset_map.len();
-            let _ = write_manifest(&manifest, &case_dir);
+            if let Err(e) = write_manifest(&manifest, &case_dir) {
+                eprintln!("[IMPORT] Failed to write manifest: {}", e);
+            }
 
             let td_path = case_dir.join("trial_data.json");
             if td_path.exists() {
@@ -320,7 +322,9 @@ fn import_multi_case_zip(
                             crate::downloader::dedup::rewrite_value_recursive(&mut td, &old_server, new_path);
                         }
                         if let Ok(json) = serde_json::to_string_pretty(&td) {
-                            let _ = fs::write(&td_path, json);
+                            if let Err(e) = fs::write(&td_path, json) {
+                                eprintln!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
+                            }
                         }
                     }
                 }
@@ -529,7 +533,9 @@ fn import_collection_zip(
                 }
             }
             manifest.assets.total_downloaded = manifest.asset_map.len();
-            let _ = write_manifest(&manifest, &case_dir);
+            if let Err(e) = write_manifest(&manifest, &case_dir) {
+                eprintln!("[IMPORT] Failed to write manifest: {}", e);
+            }
 
             let td_path = case_dir.join("trial_data.json");
             if td_path.exists() {
@@ -542,7 +548,9 @@ fn import_collection_zip(
                             crate::downloader::dedup::rewrite_value_recursive(&mut td, &old_server, new_path);
                         }
                         if let Ok(json) = serde_json::to_string_pretty(&td) {
-                            let _ = fs::write(&td_path, json);
+                            if let Err(e) = fs::write(&td_path, json) {
+                                eprintln!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
+                            }
                         }
                     }
                 }
@@ -741,7 +749,9 @@ fn import_single_case_zip(
                         crate::downloader::dedup::rewrite_value_recursive(&mut td, &old_server, new_path);
                     }
                     if let Ok(json) = serde_json::to_string_pretty(&td) {
-                        let _ = fs::write(&td_path, json);
+                        if let Err(e) = fs::write(&td_path, json) {
+                            eprintln!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
+                        }
                     }
                 }
             }
