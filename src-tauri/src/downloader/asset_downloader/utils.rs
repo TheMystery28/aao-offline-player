@@ -1,5 +1,4 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use xxhash_rust::xxh3::xxh3_64;
 
 /// Check if a file already exists locally and should be skipped.
 /// Returns `Some(size)` if the file exists and has content (skip download),
@@ -26,9 +25,7 @@ pub fn check_skip_existing(save_dir: &std::path::Path, relative_path: &str) -> O
 }
 
 pub(super) fn generate_filename(url: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    url.hash(&mut hasher);
-    let hash = hasher.finish();
+    let hash = xxh3_64(url.as_bytes());
     let hash_str = format!("{:016x}", hash);
 
     let url_path = url.split('?').next().unwrap_or(url);
