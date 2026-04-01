@@ -341,7 +341,7 @@ export function initPluginPanel(ctx) {
         ]).then(function (results) {
           scopeChecklistPopulated = false;
           populateScopeChecklist(results[0], results[1]);
-        });
+        }).catch(function(e) { console.error("[PLUGINS] Failed to load scope picker:", e); });
       }
     });
 

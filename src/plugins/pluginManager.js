@@ -246,7 +246,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
           })(scripts[i]);
         }
       }
-    });
+    }).catch(function(e) { console.error("[PLUGINS] Failed to refresh plugin manager:", e); });
   }
 
   var caseLabel = document.createElement("div");

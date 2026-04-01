@@ -149,7 +149,7 @@ export function initSaves(ctx) {
         } else {
           statusMsg.textContent = "Please select a .aaosave file.";
         }
-      });
+      }).catch(function(e) { console.error("[SAVES] pick_import_file error:", e); });
     });
 
     var pasteSaveBtn = document.createElement("button");
@@ -195,7 +195,7 @@ export function initSaves(ctx) {
 
       buttons.insertBefore(pluginsLabel, cancelBtn);
       buttons.insertBefore(exportPluginsBtn, cancelBtn);
-    });
+    }).catch(function() {});
 
     m.content.appendChild(savesLabel);
     m.content.appendChild(buttons);
@@ -268,7 +268,7 @@ export function initSaves(ctx) {
             function () { doExportSave(caseIds, title, saves, false); }
           );
         }
-      });
+      }).catch(function(e) { console.error("[SAVES] plugin check error:", e); });
     });
   }
 
@@ -604,7 +604,7 @@ export function initSaves(ctx) {
           callback(incSaves ? saves : null, incPlugins);
         });
       }
-    });
+    }).catch(function(e) { console.error("[SAVES] export options error:", e); callback(null, false); });
   }
 
   return {

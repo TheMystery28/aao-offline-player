@@ -63,7 +63,7 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
           return;
         }
         ctx.showScopedPluginModal("collection", col.id, 'Collection "' + col.title + '"');
-      });
+      }).catch(function(e) { console.error("[COLLECTIONS] list_global_plugins error:", e); });
     };
   })(collection));
   header.appendChild(colPluginsBtn);
@@ -159,7 +159,7 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
               ctx.showPlayer(matchTitle, fullUrl);
             })
             .catch(function (e) { statusMsg.textContent = "Error: " + e; });
-        });
+        }).catch(function(e) { statusMsg.textContent = "Error: " + e; });
       };
     })(allCollectionCaseIds, allCases));
     footer.appendChild(continueBtn);
@@ -266,7 +266,7 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
           return;
         }
         ctx.showScopedPluginModal("sequence", title, 'Sequence "' + title + '"');
-      });
+      }).catch(function(e) { console.error("[PLUGINS] list_global_plugins error:", e); });
     };
   })(sequenceTitle));
   header.appendChild(seqInPluginsBtn);
@@ -378,7 +378,7 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
             .catch(function (e) {
               statusMsg.textContent = "Error: " + e;
             });
-        });
+        }).catch(function(e) { statusMsg.textContent = "Error: " + e; });
       };
     })(sequenceList, downloadedCases));
     seqFooter.appendChild(continueBtn);
@@ -481,7 +481,7 @@ export function appendCaseCardInto(ctx, container, c) {
             ctx.showPlayer(caseTitle, fullUrl);
           })
           .catch(function (e) { statusMsg.textContent = "Error: " + e; });
-      });
+      }).catch(function(e) { statusMsg.textContent = "Error: " + e; });
     });
   })(c.case_id, c.title);
   card.querySelector(".update-btn").addEventListener("click", function () {

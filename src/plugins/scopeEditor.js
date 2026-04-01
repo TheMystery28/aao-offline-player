@@ -506,13 +506,13 @@ export function showScopeEditorModal(ctx, pluginFilename) {
             invoke("list_collections").catch(function () { return []; })
           ]).then(function (results) {
             renderPicker(results[0], results[1]);
-          });
+          }).catch(function(e) { console.error("[PLUGINS] Failed to load scope picker:", e); });
         }
       }
 
       contentEl.appendChild(addBtn);
       contentEl.appendChild(pickerContainer);
-    });
+    }).catch(function(e) { console.error("[PLUGINS] Failed to load scope editor:", e); });
   }
 
   var closeBtn = document.createElement("button");

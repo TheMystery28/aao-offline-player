@@ -31,6 +31,7 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
 
       for (var i = 0; i < scripts.length; i++) {
         (function (filename) {
+
           var pe = plugins[filename] || {};
           var globallyDisabled = !((pe.scope || {}).all === true);
           var pluginEntry = plugins[filename] || {};
@@ -117,7 +118,7 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
           listContainer.appendChild(row);
         })(scripts[i]);
       }
-    });
+    }).catch(function(e) { console.error("[PLUGINS] Failed to load scoped list:", e); });
   }
 
   var closeBtn = document.createElement("button");
