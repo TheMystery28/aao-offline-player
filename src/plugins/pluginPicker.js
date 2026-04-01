@@ -1,15 +1,10 @@
+import { createModal } from '../helpers.js';
+
 /**
  * Plugin Picker Modal — lets user select one plugin from a list of script names.
  */
 export function showPluginPickerModal(ctx, scripts, onSelect) {
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog";
-
-  var titleEl = document.createElement("div");
-  titleEl.className = "modal-message";
-  titleEl.innerHTML = "<strong>Select Plugin</strong>";
+  var m = createModal("<strong>Select Plugin</strong>");
 
   var listEl = document.createElement("div");
   listEl.style.cssText = "display:flex; flex-direction:column; gap:6px; margin:10px 0;";
@@ -21,7 +16,7 @@ export function showPluginPickerModal(ctx, scripts, onSelect) {
       btn.textContent = scriptName;
       btn.style.textAlign = "left";
       btn.addEventListener("click", function () {
-        document.body.removeChild(overlay);
+        m.close();
         onSelect(scriptName);
       });
       listEl.appendChild(btn);
@@ -32,13 +27,8 @@ export function showPluginPickerModal(ctx, scripts, onSelect) {
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
   cancelBtn.style.width = "100%";
-  cancelBtn.addEventListener("click", function () {
-    document.body.removeChild(overlay);
-  });
+  cancelBtn.addEventListener("click", m.close);
 
-  modal.appendChild(titleEl);
-  modal.appendChild(listEl);
-  modal.appendChild(cancelBtn);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.content.appendChild(listEl);
+  m.modal.appendChild(cancelBtn);
 }

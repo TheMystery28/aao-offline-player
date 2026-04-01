@@ -78,18 +78,43 @@ export function base64DecodeUtf8(str) {
  * @returns {{ overlay: HTMLElement, modal: HTMLElement, close: function }}
  */
 export function createModal(titleHtml, options) {
+  var opts = options || {};
   var overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   var modal = document.createElement("div");
-  modal.className = "modal-dialog" + ((options && options.wide) ? " modal-dialog-wide" : "");
+  modal.className = "modal-dialog" + (opts.wide ? " modal-dialog-wide" : "");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
   var titleEl = document.createElement("div");
   titleEl.className = "modal-message";
   titleEl.innerHTML = titleHtml;
   var content = document.createElement("div");
+
   function close() { if (overlay.parentNode) document.body.removeChild(overlay); }
-  overlay.addEventListener("click", function(e) { if (e.target === overlay) close(); });
+  overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", function onEsc(e) {
+    if (e.key === "Escape") { document.removeEventListener("keydown", onEsc); close(); }
+  });
+
   modal.appendChild(titleEl);
   modal.appendChild(content);
+
+  // Optional buttons: [{ text, className, onClick }]
+  if (opts.buttons && opts.buttons.length > 0) {
+    var btnRow = document.createElement("div");
+    btnRow.className = "modal-buttons";
+    for (var i = 0; i < opts.buttons.length; i++) {
+      (function (cfg) {
+        var btn = document.createElement("button");
+        btn.className = cfg.className || "modal-btn";
+        btn.textContent = cfg.text;
+        btn.addEventListener("click", function () { close(); if (cfg.onClick) cfg.onClick(); });
+        btnRow.appendChild(btn);
+      })(opts.buttons[i]);
+    }
+    modal.appendChild(btnRow);
+  }
+
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   return { overlay: overlay, modal: modal, content: content, close: close, titleEl: titleEl };
@@ -99,13 +124,7 @@ export function createModal(titleHtml, options) {
 
 /** @param {Array<{url: string, error: string}>} failedAssets */
 export function showFailedAssetsModal(failedAssets) {
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog modal-dialog-wide";
-  var titleEl = document.createElement("div");
-  titleEl.className = "modal-message";
-  titleEl.innerHTML = "<strong>" + failedAssets.length + " failed asset(s)</strong>";
+  var m = createModal("<strong>" + failedAssets.length + " failed asset(s)</strong>", { wide: true });
   var list = document.createElement("div");
   list.className = "plugin-list";
   for (var i = 0; i < failedAssets.length; i++) {
@@ -125,64 +144,31 @@ export function showFailedAssetsModal(failedAssets) {
     item.appendChild(errSpan);
     list.appendChild(item);
   }
+  m.content.appendChild(list);
   var closeBtn = document.createElement("button");
   closeBtn.className = "modal-btn modal-btn-cancel";
   closeBtn.textContent = "Close";
   closeBtn.style.width = "100%";
   closeBtn.style.marginTop = "0.75rem";
-  function close() { document.body.removeChild(overlay); }
-  closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
-  modal.appendChild(titleEl);
-  modal.appendChild(list);
-  modal.appendChild(closeBtn);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  closeBtn.addEventListener("click", m.close);
+  m.modal.appendChild(closeBtn);
 }
 
 /** @param {string} message @param {string} btn1Label @param {string} btn2Label @param {function(string): void} callback */
 export function showUpdateModal(message, btn1Label, btn2Label, callback) {
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog";
-  var msg = document.createElement("p");
-  msg.className = "modal-message";
-  msg.textContent = message;
-  var buttons = document.createElement("div");
-  buttons.className = "modal-buttons";
-  var btn1 = document.createElement("button");
-  btn1.className = "modal-btn modal-btn-primary";
-  btn1.textContent = btn1Label;
-  var btn2 = document.createElement("button");
-  btn2.className = "modal-btn modal-btn-secondary";
-  btn2.textContent = btn2Label;
-  var cancelBtn = document.createElement("button");
-  cancelBtn.className = "modal-btn modal-btn-cancel";
-  cancelBtn.textContent = "Cancel";
-  function close() { document.body.removeChild(overlay); }
-  btn1.addEventListener("click", function () { close(); callback(1); });
-  btn2.addEventListener("click", function () { close(); callback(2); });
-  cancelBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
-  buttons.appendChild(btn1);
-  buttons.appendChild(btn2);
-  buttons.appendChild(cancelBtn);
-  modal.appendChild(msg);
-  modal.appendChild(buttons);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  var m = createModal(message, {
+    buttons: [
+      { text: btn1Label, className: "modal-btn modal-btn-primary", onClick: function () { callback(1); } },
+      { text: btn2Label, className: "modal-btn modal-btn-secondary", onClick: function () { callback(2); } },
+      { text: "Cancel", className: "modal-btn modal-btn-cancel" }
+    ]
+  });
 }
 
 /** @param {string} message @param {string} confirmLabel @param {function(): void} onConfirm @param {function(): void} [onCancel] */
 export function showConfirmModal(message, confirmLabel, onConfirm, onCancel) {
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog";
-  var msg = document.createElement("p");
-  msg.className = "modal-message";
-  msg.textContent = message;
+  var done = false;
+  var m = createModal(message);
   var buttons = document.createElement("div");
   buttons.className = "modal-buttons";
   var yesBtn = document.createElement("button");
@@ -191,29 +177,19 @@ export function showConfirmModal(message, confirmLabel, onConfirm, onCancel) {
   var cancelBtn = document.createElement("button");
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
-  function close() { document.body.removeChild(overlay); }
-  yesBtn.addEventListener("click", function () { close(); if (onConfirm) onConfirm(); });
-  cancelBtn.addEventListener("click", function () { close(); if (onCancel) onCancel(); });
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) { close(); if (onCancel) onCancel(); }
-  });
+  yesBtn.addEventListener("click", function () { done = true; m.close(); if (onConfirm) onConfirm(); });
+  cancelBtn.addEventListener("click", function () { done = true; m.close(); if (onCancel) onCancel(); });
+  // Dismiss (click-outside / Escape) also triggers onCancel
+  var origClose = m.close;
+  m.close = function () { origClose(); if (!done && onCancel) onCancel(); };
   buttons.appendChild(yesBtn);
   buttons.appendChild(cancelBtn);
-  modal.appendChild(msg);
-  modal.appendChild(buttons);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.modal.appendChild(buttons);
 }
 
 /** @param {string} message @param {string} inputLabel @param {string} defaultValue @param {string} confirmLabel @param {function(string): void} onConfirm */
 export function showPromptModal(message, inputLabel, defaultValue, confirmLabel, onConfirm) {
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog";
-  var msg = document.createElement("p");
-  msg.className = "modal-message";
-  msg.textContent = message;
+  var m = createModal(message);
   var field = document.createElement("div");
   field.className = "modal-field";
   var label = document.createElement("label");
@@ -224,6 +200,7 @@ export function showPromptModal(message, inputLabel, defaultValue, confirmLabel,
   input.placeholder = inputLabel;
   field.appendChild(label);
   field.appendChild(input);
+  m.content.appendChild(field);
   var buttons = document.createElement("div");
   buttons.className = "modal-buttons";
   var okBtn = document.createElement("button");
@@ -232,27 +209,19 @@ export function showPromptModal(message, inputLabel, defaultValue, confirmLabel,
   var cancelBtn = document.createElement("button");
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
-  function close() { document.body.removeChild(overlay); }
   okBtn.addEventListener("click", function () {
     var val = input.value.trim();
     if (!val) { input.style.borderColor = "#a33"; input.focus(); return; }
-    close();
+    m.close();
     onConfirm(val);
   });
   input.addEventListener("keydown", function (e) {
     if (e.key === "Enter") okBtn.click();
   });
-  cancelBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) close();
-  });
+  cancelBtn.addEventListener("click", m.close);
   buttons.appendChild(okBtn);
   buttons.appendChild(cancelBtn);
-  modal.appendChild(msg);
-  modal.appendChild(field);
-  modal.appendChild(buttons);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.modal.appendChild(buttons);
   input.focus();
   input.select();
 }

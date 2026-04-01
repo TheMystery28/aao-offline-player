@@ -1,4 +1,4 @@
-import { escapeHtml, base64DecodeUtf8, showConfirmModal, formatBytes } from './helpers.js';
+import { escapeHtml, base64DecodeUtf8, showConfirmModal, formatBytes, createModal } from './helpers.js';
 
 // --- Saves ---
 
@@ -59,15 +59,7 @@ export function initSaves(ctx) {
   }
 
   function showPasteSaveModal() {
-    var overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-
-    var modal = document.createElement("div");
-    modal.className = "modal-dialog modal-dialog-wide";
-
-    var titleEl = document.createElement("div");
-    titleEl.className = "modal-message";
-    titleEl.innerHTML = "<strong>Import Save from Link or Code</strong>";
+    var m = createModal("<strong>Import Save from Link or Code</strong>", { wide: true });
 
     var field = document.createElement("div");
     field.className = "modal-field";
@@ -91,10 +83,6 @@ export function initSaves(ctx) {
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
 
-    function close() {
-      document.body.removeChild(overlay);
-    }
-
     importBtn.addEventListener("click", function () {
       var result = parsePastedSave(textarea.value);
       if (!result) {
@@ -103,7 +91,7 @@ export function initSaves(ctx) {
         return;
       }
 
-      close();
+      m.close();
       statusMsg.textContent = "Importing save for case " + result.trialId + "...";
 
       var savesObj = {};
@@ -122,37 +110,22 @@ export function initSaves(ctx) {
       });
     });
 
-    cancelBtn.addEventListener("click", close);
-    overlay.addEventListener("click", function (e) {
-      if (e.target === overlay) close();
-    });
+    cancelBtn.addEventListener("click", m.close);
 
     buttons.appendChild(importBtn);
     buttons.appendChild(cancelBtn);
 
-    modal.appendChild(titleEl);
-    modal.appendChild(field);
-    modal.appendChild(buttons);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    m.content.appendChild(field);
+    m.modal.appendChild(buttons);
 
     textarea.focus();
   }
 
   function showSavesPluginsModal(caseIds, title) {
-    var overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-    var modal = document.createElement("div");
-    modal.className = "modal-dialog";
-
-    var titleEl = document.createElement("p");
-    titleEl.className = "modal-message";
-    titleEl.innerHTML = "<strong>Saves &amp; Plugins &mdash; " + escapeHtml(title) + "</strong>";
+    var m = createModal("<strong>Saves &amp; Plugins &mdash; " + escapeHtml(title) + "</strong>");
 
     var buttons = document.createElement("div");
     buttons.className = "modal-buttons";
-
-    function close() { document.body.removeChild(overlay); }
 
     // Saves section label
     var savesLabel = document.createElement("div");
@@ -162,13 +135,13 @@ export function initSaves(ctx) {
     var exportSavesBtn = document.createElement("button");
     exportSavesBtn.className = "modal-btn modal-btn-primary";
     exportSavesBtn.textContent = "Export Saves";
-    exportSavesBtn.addEventListener("click", function () { close(); exportSave(caseIds, title); });
+    exportSavesBtn.addEventListener("click", function () { m.close(); exportSave(caseIds, title); });
 
     var importSavesBtn = document.createElement("button");
     importSavesBtn.className = "modal-btn modal-btn-secondary";
     importSavesBtn.textContent = "Import Saves";
     importSavesBtn.addEventListener("click", function () {
-      close();
+      m.close();
       invoke("pick_import_file").then(function (selected) {
         if (!selected) return;
         if (selected.toLowerCase().endsWith(".aaosave")) {
@@ -182,7 +155,7 @@ export function initSaves(ctx) {
     var pasteSaveBtn = document.createElement("button");
     pasteSaveBtn.className = "modal-btn";
     pasteSaveBtn.textContent = "Paste Save Link/Code";
-    pasteSaveBtn.addEventListener("click", function () { close(); showPasteSaveModal(); });
+    pasteSaveBtn.addEventListener("click", function () { m.close(); showPasteSaveModal(); });
 
     buttons.appendChild(exportSavesBtn);
     buttons.appendChild(importSavesBtn);
@@ -191,7 +164,7 @@ export function initSaves(ctx) {
     var cancelBtn = document.createElement("button");
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", close);
+    cancelBtn.addEventListener("click", m.close);
     buttons.appendChild(cancelBtn);
 
     // Plugins section (live check — show only if case has active plugins)
@@ -206,7 +179,7 @@ export function initSaves(ctx) {
       exportPluginsBtn.className = "modal-btn";
       exportPluginsBtn.textContent = "Export Plugins";
       exportPluginsBtn.addEventListener("click", function () {
-        close();
+        m.close();
         var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
         invoke("pick_export_plugin_file", { defaultName: safeName + ".aaoplug" }).then(function (destPath) {
           if (!destPath) return;
@@ -224,24 +197,12 @@ export function initSaves(ctx) {
       buttons.insertBefore(exportPluginsBtn, cancelBtn);
     });
 
-    overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
-
-    modal.appendChild(titleEl);
-    modal.appendChild(savesLabel);
-    modal.appendChild(buttons);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    m.content.appendChild(savesLabel);
+    m.content.appendChild(buttons);
   }
 
   function showExportOptionsModal(onConfirm) {
-    var overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-    var modal = document.createElement("div");
-    modal.className = "modal-dialog";
-
-    var msg = document.createElement("p");
-    msg.className = "modal-message";
-    msg.textContent = "What to include in the export?";
+    var m = createModal("What to include in the export?");
 
     var savesLabel = document.createElement("label");
     savesLabel.className = "regular_label";
@@ -272,24 +233,18 @@ export function initSaves(ctx) {
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
 
-    function close() { document.body.removeChild(overlay); }
-
     exportBtn.addEventListener("click", function () {
-      close();
+      m.close();
       onConfirm(savesCb.checked, pluginsCb.checked);
     });
-    cancelBtn.addEventListener("click", close);
-    overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+    cancelBtn.addEventListener("click", m.close);
 
     buttons.appendChild(exportBtn);
     buttons.appendChild(cancelBtn);
 
-    modal.appendChild(msg);
-    modal.appendChild(savesLabel);
-    modal.appendChild(pluginsLabel);
-    modal.appendChild(buttons);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    m.content.appendChild(savesLabel);
+    m.content.appendChild(pluginsLabel);
+    m.modal.appendChild(buttons);
   }
 
   function exportSave(caseIds, title) {

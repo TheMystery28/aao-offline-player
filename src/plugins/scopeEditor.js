@@ -1,4 +1,4 @@
-import { escapeHtml } from '../helpers.js';
+import { escapeHtml, createModal } from '../helpers.js';
 
 /**
  * Scope Editor Modal — shows all per-scope overrides for a single plugin.
@@ -11,20 +11,13 @@ export function showScopeEditorModal(ctx, pluginFilename) {
   var getCachedCases = ctx.getCachedCases;
   var getCachedCollections = ctx.getCachedCollections;
 
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog modal-dialog-wide";
-
-  var titleEl = document.createElement("div");
-  titleEl.className = "modal-message";
-  titleEl.innerHTML = "<strong>Scope &mdash; " + escapeHtml(pluginFilename) + "</strong>";
+  var m = createModal("<strong>Scope &mdash; " + escapeHtml(pluginFilename) + "</strong>", { wide: true });
 
   var contentEl = document.createElement("div");
   contentEl.style.cssText = "margin: 10px 0; max-height: 400px; overflow-y: auto;";
 
   function close() {
-    document.body.removeChild(overlay);
+    m.close();
     ctx.loadGlobalPluginsPanel();
   }
 
@@ -527,15 +520,9 @@ export function showScopeEditorModal(ctx, pluginFilename) {
   closeBtn.textContent = "Close";
   closeBtn.style.width = "100%";
   closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) close();
-  });
 
-  modal.appendChild(titleEl);
-  modal.appendChild(contentEl);
-  modal.appendChild(closeBtn);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.content.appendChild(contentEl);
+  m.modal.appendChild(closeBtn);
 
   refreshScopeEditor();
 }

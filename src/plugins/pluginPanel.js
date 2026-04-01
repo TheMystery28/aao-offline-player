@@ -1,4 +1,4 @@
-import { showConfirmModal } from '../helpers.js';
+import { showConfirmModal, createModal } from '../helpers.js';
 
 /**
  * Plugin Panel — the global plugins sidebar panel with toggle, attach/import buttons,
@@ -132,15 +132,7 @@ export function initPluginPanel(ctx) {
   }
 
   function showGlobalAttachCodeModal(onDone) {
-    var overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-
-    var modal = document.createElement("div");
-    modal.className = "modal-dialog modal-dialog-wide";
-
-    var titleEl = document.createElement("div");
-    titleEl.className = "modal-message";
-    titleEl.innerHTML = "<strong>Attach Global Plugin Code</strong>";
+    var m = createModal("<strong>Attach Global Plugin Code</strong>", { wide: true });
 
     var filenameField = document.createElement("div");
     filenameField.className = "modal-field";
@@ -194,10 +186,6 @@ export function initPluginPanel(ctx) {
     var cancelBtn = document.createElement("button");
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
-
-    function close() {
-      document.body.removeChild(overlay);
-    }
 
     // --- Scope picker ---
     var scopeSection = document.createElement("div");
@@ -378,7 +366,7 @@ export function initPluginPanel(ctx) {
         return;
       }
 
-      close();
+      m.close();
       statusMsg.textContent = "Attaching global plugin...";
       invoke("attach_plugin_code", {
         code: code,
@@ -424,10 +412,7 @@ export function initPluginPanel(ctx) {
       });
     });
 
-    cancelBtn.addEventListener("click", close);
-    overlay.addEventListener("click", function (e) {
-      if (e.target === overlay) close();
-    });
+    cancelBtn.addEventListener("click", m.close);
 
     scopeSection.appendChild(scopeLabelEl);
     scopeSection.appendChild(scopeAllLabel);
@@ -437,13 +422,10 @@ export function initPluginPanel(ctx) {
     buttons.appendChild(attachBtn);
     buttons.appendChild(cancelBtn);
 
-    modal.appendChild(titleEl);
-    modal.appendChild(filenameField);
-    modal.appendChild(codeField);
-    modal.appendChild(scopeSection);
-    modal.appendChild(buttons);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    m.content.appendChild(filenameField);
+    m.content.appendChild(codeField);
+    m.content.appendChild(scopeSection);
+    m.modal.appendChild(buttons);
 
     filenameInput.focus();
   }

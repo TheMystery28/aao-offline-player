@@ -1,3 +1,5 @@
+import { createModal } from '../helpers.js';
+
 /**
  * Plugin Target Modal — lets user select which cases to install a plugin into.
  * doImportPlugin — imports a .aaoplug file using the target modal.
@@ -6,15 +8,7 @@ export function showPluginTargetModal(ctx, onConfirm) {
   var invoke = ctx.invoke;
 
   invoke("list_cases").then(function (cases) {
-    var overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-
-    var modal = document.createElement("div");
-    modal.className = "modal-dialog modal-dialog-wide";
-
-    var title = document.createElement("div");
-    title.className = "modal-message";
-    title.innerHTML = "<strong>Select cases to install plugin</strong>";
+    var m = createModal("<strong>Select cases to install plugin</strong>", { wide: true });
 
     var selectAllLabel = document.createElement("label");
     selectAllLabel.className = "collection-picker-item";
@@ -120,10 +114,6 @@ export function showPluginTargetModal(ctx, onConfirm) {
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
 
-    function close() {
-      document.body.removeChild(overlay);
-    }
-
     installBtn.addEventListener("click", function () {
       var selected = [];
       for (var j = 0; j < checkboxes.length; j++) {
@@ -135,24 +125,18 @@ export function showPluginTargetModal(ctx, onConfirm) {
         picker.style.borderColor = "#a33";
         return;
       }
-      close();
+      m.close();
       onConfirm(selected);
     });
 
-    cancelBtn.addEventListener("click", close);
-    overlay.addEventListener("click", function (e) {
-      if (e.target === overlay) close();
-    });
+    cancelBtn.addEventListener("click", m.close);
 
     buttons.appendChild(installBtn);
     buttons.appendChild(cancelBtn);
 
-    modal.appendChild(title);
-    modal.appendChild(selectAllLabel);
-    modal.appendChild(picker);
-    modal.appendChild(buttons);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    m.content.appendChild(selectAllLabel);
+    m.content.appendChild(picker);
+    m.modal.appendChild(buttons);
   });
 }
 

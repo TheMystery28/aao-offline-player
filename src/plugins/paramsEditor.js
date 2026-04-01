@@ -1,4 +1,4 @@
-import { escapeHtml } from '../helpers.js';
+import { escapeHtml, createModal } from '../helpers.js';
 
 /**
  * Plugin Params Modal — editable key-value params for a plugin at any cascade level.
@@ -9,16 +9,8 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
   var invoke = ctx.invoke;
   var statusMsg = ctx.statusMsg;
 
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog";
-
-  var titleEl = document.createElement("div");
-  titleEl.className = "modal-message";
-  titleEl.innerHTML = "<strong>Plugin Params &mdash; " + escapeHtml(pluginFilename) + "</strong><br>" +
-    "<small>Level: " + escapeHtml(levelLabel) + "</small>";
+  var m = createModal("<strong>Plugin Params &mdash; " + escapeHtml(pluginFilename) + "</strong><br>" +
+    "<small>Level: " + escapeHtml(levelLabel) + "</small>");
 
   var content = document.createElement("div");
   content.style.cssText = "margin: 10px 0; max-height: 300px; overflow-y: auto;";
@@ -196,7 +188,7 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
       key: key,
       params: paramsData
     }).then(function() {
-      document.body.removeChild(overlay);
+      m.close();
       statusMsg.textContent = "Plugin params saved for " + levelLabel + ".";
     }).catch(function(e) {
       statusMsg.textContent = "Error saving params: " + e;
@@ -206,19 +198,14 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
   var cancelBtn = document.createElement("button");
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
-  cancelBtn.addEventListener("click", function() {
-    document.body.removeChild(overlay);
-  });
+  cancelBtn.addEventListener("click", m.close);
 
   btns.appendChild(saveBtn);
   btns.appendChild(cancelBtn);
 
-  modal.appendChild(titleEl);
-  modal.appendChild(content);
-  modal.appendChild(addRow);
-  modal.appendChild(btns);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.content.appendChild(content);
+  m.content.appendChild(addRow);
+  m.modal.appendChild(btns);
 
   // Load descriptors + current params at this level
   Promise.all([

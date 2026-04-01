@@ -1,4 +1,4 @@
-import { escapeHtml, showConfirmModal } from '../helpers.js';
+import { escapeHtml, showConfirmModal, createModal } from '../helpers.js';
 
 /**
  * Plugin Manager Modal — shows case plugins + global plugins for a single case.
@@ -8,15 +8,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
   var statusMsg = ctx.statusMsg;
   var loadLibrary = ctx.loadLibrary;
 
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog modal-dialog-wide";
-
-  var titleEl = document.createElement("div");
-  titleEl.className = "modal-message";
-  titleEl.innerHTML = "<strong>Plugins &mdash; " + escapeHtml(caseTitle) + "</strong>";
+  var m = createModal("<strong>Plugins &mdash; " + escapeHtml(caseTitle) + "</strong>", { wide: true });
 
   var listContainer = document.createElement("div");
   listContainer.className = "plugin-list";
@@ -41,7 +33,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
   closeBtn.style.width = "100%";
 
   function close() {
-    document.body.removeChild(overlay);
+    m.close();
     loadLibrary();
   }
 
@@ -157,9 +149,6 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
   });
 
   closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) close();
-  });
 
   // Global plugins section
   var globalLabel = document.createElement("div");
@@ -269,15 +258,12 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
   caseLabel.style.marginBottom = "0.35rem";
   caseLabel.textContent = "Case Plugins";
 
-  modal.appendChild(titleEl);
-  modal.appendChild(globalLabel);
-  modal.appendChild(globalListContainer);
-  modal.appendChild(caseLabel);
-  modal.appendChild(listContainer);
-  modal.appendChild(actionsRow);
-  modal.appendChild(closeBtn);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.content.appendChild(globalLabel);
+  m.content.appendChild(globalListContainer);
+  m.content.appendChild(caseLabel);
+  m.content.appendChild(listContainer);
+  m.content.appendChild(actionsRow);
+  m.modal.appendChild(closeBtn);
 
   refreshGlobalList();
   refreshList();

@@ -1,4 +1,4 @@
-import { escapeHtml, showConfirmModal } from '../helpers.js';
+import { escapeHtml, showConfirmModal, createModal } from '../helpers.js';
 
 /**
  * Show the "New Collection" modal — gathers cases/sequences and opens the picker.
@@ -56,11 +56,7 @@ export function showNewCollectionModal(ctx) {
 }
 
 function showCollectionPickerModal(ctx, modalTitle, existingTitle, sequenceGroups, standalone, claimedCaseIds, claimedSequenceTitles, onSave) {
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog modal-dialog-wide";
+  var m = createModal("<strong>" + escapeHtml(modalTitle) + "</strong>", { wide: true });
 
   // Title
   var titleField = document.createElement("div");
@@ -156,10 +152,6 @@ function showCollectionPickerModal(ctx, modalTitle, existingTitle, sequenceGroup
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
 
-  function close() {
-    document.body.removeChild(overlay);
-  }
-
   createBtn.addEventListener("click", function () {
     var title = titleInput.value.trim();
     if (!title) {
@@ -181,23 +173,18 @@ function showCollectionPickerModal(ctx, modalTitle, existingTitle, sequenceGroup
       picker.style.borderColor = "#a33";
       return;
     }
-    close();
+    m.close();
     onSave(title, selectedItems);
   });
 
-  cancelBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) close();
-  });
+  cancelBtn.addEventListener("click", m.close);
 
   buttons.appendChild(createBtn);
   buttons.appendChild(cancelBtn);
 
-  modal.appendChild(titleField);
-  modal.appendChild(pickerField);
-  modal.appendChild(buttons);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.content.appendChild(titleField);
+  m.content.appendChild(pickerField);
+  m.modal.appendChild(buttons);
 
   titleInput.focus();
 }
@@ -222,11 +209,7 @@ function _showEditCollectionModalInner(ctx, collection, caseTitles) {
   var invoke = ctx.invoke;
   var statusMsg = ctx.statusMsg;
 
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog modal-dialog-wide";
+  var m = createModal("<strong>Edit Collection</strong>", { wide: true });
 
   // Title field
   var titleField = document.createElement("div");
@@ -359,10 +342,6 @@ function _showEditCollectionModalInner(ctx, collection, caseTitles) {
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
 
-  function close() {
-    document.body.removeChild(overlay);
-  }
-
   saveBtn.addEventListener("click", function () {
     var title = titleInput.value.trim();
     if (!title) {
@@ -370,27 +349,22 @@ function _showEditCollectionModalInner(ctx, collection, caseTitles) {
       titleInput.focus();
       return;
     }
-    close();
+    m.close();
     invoke("update_collection", { id: collection.id, title: title, items: editItems })
       .then(function () { ctx.loadLibrary(); })
       .catch(function (e) { statusMsg.textContent = "Error updating collection: " + e; });
   });
 
-  cancelBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) close();
-  });
+  cancelBtn.addEventListener("click", m.close);
 
   buttons.appendChild(saveBtn);
   buttons.appendChild(cancelBtn);
 
-  modal.appendChild(titleField);
-  modal.appendChild(itemsLabel);
-  modal.appendChild(editListEl);
-  modal.appendChild(addItemsBtn);
-  modal.appendChild(buttons);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.content.appendChild(titleField);
+  m.content.appendChild(itemsLabel);
+  m.content.appendChild(editListEl);
+  m.content.appendChild(addItemsBtn);
+  m.modal.appendChild(buttons);
 
   titleInput.focus();
 }
@@ -437,15 +411,7 @@ export function showAddItemsSubModal(ctx, currentEditItems, currentCollectionId,
         else if (currentEditItems[ei].type === "sequence") claimedSequenceTitles[currentEditItems[ei].title] = true;
       }
 
-      var overlay = document.createElement("div");
-      overlay.className = "modal-overlay";
-
-      var modal = document.createElement("div");
-      modal.className = "modal-dialog modal-dialog-wide";
-
-      var heading = document.createElement("p");
-      heading.className = "modal-message";
-      heading.textContent = "Select items to add:";
+      var m = createModal("Select items to add:", { wide: true });
 
       var picker = document.createElement("div");
       picker.className = "collection-picker";
@@ -519,10 +485,6 @@ export function showAddItemsSubModal(ctx, currentEditItems, currentCollectionId,
       cancelBtn.className = "modal-btn modal-btn-cancel";
       cancelBtn.textContent = "Cancel";
 
-      function close() {
-        document.body.removeChild(overlay);
-      }
-
       addBtn.addEventListener("click", function () {
         var newItems = [];
         for (var i = 0; i < checkboxes.length; i++) {
@@ -534,23 +496,17 @@ export function showAddItemsSubModal(ctx, currentEditItems, currentCollectionId,
             }
           }
         }
-        close();
+        m.close();
         if (newItems.length > 0) onAdd(newItems);
       });
 
-      cancelBtn.addEventListener("click", close);
-      overlay.addEventListener("click", function (e) {
-        if (e.target === overlay) close();
-      });
+      cancelBtn.addEventListener("click", m.close);
 
       buttons.appendChild(addBtn);
       buttons.appendChild(cancelBtn);
 
-      modal.appendChild(heading);
-      modal.appendChild(picker);
-      modal.appendChild(buttons);
-      overlay.appendChild(modal);
-      document.body.appendChild(overlay);
+      m.content.appendChild(picker);
+      m.modal.appendChild(buttons);
     });
   });
 }

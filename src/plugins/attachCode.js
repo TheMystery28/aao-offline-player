@@ -1,4 +1,4 @@
-import { escapeHtml } from '../helpers.js';
+import { escapeHtml, createModal } from '../helpers.js';
 
 /**
  * Attach Code Modal — lets user paste JS code and attach it as a case-level plugin.
@@ -7,15 +7,7 @@ export function showAttachCodeModal(ctx, caseId, caseTitle, onDone) {
   var invoke = ctx.invoke;
   var statusMsg = ctx.statusMsg;
 
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog modal-dialog-wide";
-
-  var titleEl = document.createElement("div");
-  titleEl.className = "modal-message";
-  titleEl.innerHTML = "<strong>Attach Plugin Code &mdash; " + escapeHtml(caseTitle) + "</strong>";
+  var m = createModal("<strong>Attach Plugin Code &mdash; " + escapeHtml(caseTitle) + "</strong>", { wide: true });
 
   var filenameField = document.createElement("div");
   filenameField.className = "modal-field";
@@ -71,10 +63,6 @@ export function showAttachCodeModal(ctx, caseId, caseTitle, onDone) {
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
 
-  function close() {
-    document.body.removeChild(overlay);
-  }
-
   attachBtn.addEventListener("click", function () {
     var filename = filenameInput.value.trim();
     if (!filename && filenameInput.placeholder && filenameInput.placeholder !== "my_plugin.js") {
@@ -96,7 +84,7 @@ export function showAttachCodeModal(ctx, caseId, caseTitle, onDone) {
       return;
     }
 
-    close();
+    m.close();
     statusMsg.textContent = "Attaching plugin...";
     invoke("attach_plugin_code", {
       code: code,
@@ -112,20 +100,14 @@ export function showAttachCodeModal(ctx, caseId, caseTitle, onDone) {
     });
   });
 
-  cancelBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) close();
-  });
+  cancelBtn.addEventListener("click", m.close);
 
   buttons.appendChild(attachBtn);
   buttons.appendChild(cancelBtn);
 
-  modal.appendChild(titleEl);
-  modal.appendChild(filenameField);
-  modal.appendChild(codeField);
-  modal.appendChild(buttons);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.content.appendChild(filenameField);
+  m.content.appendChild(codeField);
+  m.modal.appendChild(buttons);
 
   filenameInput.focus();
 }

@@ -1,4 +1,4 @@
-import { parseCaseId, formatBytes, formatDuration, escapeHtml, showConfirmModal, showUpdateModal } from './helpers.js';
+import { parseCaseId, formatBytes, formatDuration, escapeHtml, showConfirmModal, showUpdateModal, createModal } from './helpers.js';
 
 /**
  * Initialise the Download section UI and event listeners.
@@ -151,52 +151,43 @@ export function initDownload(ctx) {
           }
           var allIds = seq.list.map(function (p) { return p.id; });
           var seqTitle = seq.title || "Untitled Sequence";
-          var seqOverlay = document.createElement("div");
-          seqOverlay.className = "modal-overlay";
-          var seqModal = document.createElement("div");
-          seqModal.className = "modal-dialog";
-          var seqMsg = document.createElement("p");
-          seqMsg.className = "modal-message";
-          seqMsg.style.whiteSpace = "pre-wrap";
-          seqMsg.textContent = msg;
-          var seqBtns = document.createElement("div");
-          seqBtns.className = "modal-buttons";
-          var seqAllBtn = document.createElement("button");
-          seqAllBtn.className = "modal-btn modal-btn-primary";
-          seqAllBtn.textContent = "Download All Parts";
-          var seqOneBtn = document.createElement("button");
-          seqOneBtn.className = "modal-btn modal-btn-secondary";
-          seqOneBtn.textContent = "This Case Only";
-          var seqCancelBtn = document.createElement("button");
-          seqCancelBtn.className = "modal-btn modal-btn-cancel";
-          seqCancelBtn.textContent = "Cancel";
-          function closeSeqModal() {
-            document.body.removeChild(seqOverlay);
-          }
+          var m = createModal(msg);
+          m.titleEl.style.whiteSpace = "pre-wrap";
+
           function cancelSeqModal() {
-            closeSeqModal();
+            m.close();
             downloadBtn.disabled = false;
             caseIdInput.disabled = false;
           }
+
+          var seqBtns = document.createElement("div");
+          seqBtns.className = "modal-buttons";
+
+          var seqAllBtn = document.createElement("button");
+          seqAllBtn.className = "modal-btn modal-btn-primary";
+          seqAllBtn.textContent = "Download All Parts";
           seqAllBtn.addEventListener("click", function () {
-            closeSeqModal();
+            m.close();
             startSequenceDownload(allIds, seqTitle);
           });
+
+          var seqOneBtn = document.createElement("button");
+          seqOneBtn.className = "modal-btn modal-btn-secondary";
+          seqOneBtn.textContent = "This Case Only";
           seqOneBtn.addEventListener("click", function () {
-            closeSeqModal();
+            m.close();
             startDownload(caseId);
           });
+
+          var seqCancelBtn = document.createElement("button");
+          seqCancelBtn.className = "modal-btn modal-btn-cancel";
+          seqCancelBtn.textContent = "Cancel";
           seqCancelBtn.addEventListener("click", cancelSeqModal);
-          seqOverlay.addEventListener("click", function (e) {
-            if (e.target === seqOverlay) cancelSeqModal();
-          });
+
           seqBtns.appendChild(seqAllBtn);
           seqBtns.appendChild(seqOneBtn);
           seqBtns.appendChild(seqCancelBtn);
-          seqModal.appendChild(seqMsg);
-          seqModal.appendChild(seqBtns);
-          seqOverlay.appendChild(seqModal);
-          document.body.appendChild(seqOverlay);
+          m.modal.appendChild(seqBtns);
         } else {
           // No sequence, download single case
           progressContainer.classList.add("hidden");

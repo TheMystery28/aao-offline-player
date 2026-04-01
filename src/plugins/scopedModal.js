@@ -1,4 +1,4 @@
-import { escapeHtml } from '../helpers.js';
+import { escapeHtml, createModal } from '../helpers.js';
 
 /**
  * Scoped Plugin Modal — shows all global plugins with per-scope enable/disable toggle + params.
@@ -10,19 +10,10 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
   var invoke = ctx.invoke;
   var statusMsg = ctx.statusMsg;
 
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  var modal = document.createElement("div");
-  modal.className = "modal-dialog modal-dialog-wide";
-
-  var titleEl = document.createElement("div");
-  titleEl.className = "modal-message";
-  titleEl.innerHTML = "<strong>Plugins &mdash; " + escapeHtml(scopeLabel) + "</strong>";
+  var m = createModal("<strong>Plugins &mdash; " + escapeHtml(scopeLabel) + "</strong>", { wide: true });
 
   var listContainer = document.createElement("div");
   listContainer.style.cssText = "margin: 10px 0; max-height: 350px; overflow-y: auto;";
-
-  function close() { document.body.removeChild(overlay); }
 
   function refreshScopedList() {
     invoke("list_global_plugins").then(function (manifest) {
@@ -133,17 +124,14 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
   closeBtn.className = "modal-btn modal-btn-cancel";
   closeBtn.textContent = "Close";
   closeBtn.style.width = "100%";
-  closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) close();
-  });
+  closeBtn.addEventListener("click", m.close);
 
   var scopedAttachBtn = document.createElement("button");
   scopedAttachBtn.className = "small-btn";
   scopedAttachBtn.textContent = "Attach Code";
   scopedAttachBtn.style.cssText = "width:100%; margin:0.5rem 0;";
   scopedAttachBtn.addEventListener("click", function () {
-    close();
+    m.close();
     ctx.showGlobalAttachCodeModal(function (attachedFilename) {
       if (!attachedFilename) return;
       invoke("toggle_plugin_for_scope", {
@@ -159,12 +147,9 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
     });
   });
 
-  modal.appendChild(titleEl);
-  modal.appendChild(listContainer);
-  modal.appendChild(scopedAttachBtn);
-  modal.appendChild(closeBtn);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+  m.content.appendChild(listContainer);
+  m.content.appendChild(scopedAttachBtn);
+  m.modal.appendChild(closeBtn);
 
   refreshScopedList();
 }
