@@ -115,8 +115,31 @@ export function createModal(titleHtml, options) {
     modal.appendChild(btnRow);
   }
 
+  // Focus trap: Tab cycles within the modal
+  modal.addEventListener("keydown", function (e) {
+    if (e.key !== "Tab") return;
+    var focusable = modal.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return;
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+
+  // Auto-focus first focusable element
+  var initialFocus = modal.querySelector(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  );
+  if (initialFocus) initialFocus.focus();
+
   return { overlay: overlay, modal: modal, content: content, close: close, titleEl: titleEl };
 }
 
