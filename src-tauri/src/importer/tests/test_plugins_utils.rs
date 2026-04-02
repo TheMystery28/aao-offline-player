@@ -196,6 +196,107 @@ fn test_set_params_by_case() {
 }
 
 // =====================================================================
+// get_plugin_params regression tests
+// =====================================================================
+
+#[test]
+fn test_get_plugin_params_no_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let result = get_plugin_params("a.js", dir.path()).unwrap();
+    assert_eq!(result, serde_json::json!({}));
+}
+
+#[test]
+fn test_get_plugin_params_plugin_not_in_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+    std::fs::write(
+        engine_dir.join("plugins/manifest.json"),
+        r#"{"scripts":["other.js"],"plugins":{"other.js":{"scope":{"all":true},"params":{}}}}"#,
+    ).unwrap();
+    let result = get_plugin_params("a.js", engine_dir).unwrap();
+    assert_eq!(result, serde_json::json!({}));
+}
+
+#[test]
+fn test_get_plugin_params_returns_params() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+    std::fs::write(
+        engine_dir.join("plugins/manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"params":{"default":{"font":"Arial"}}}}}"#,
+    ).unwrap();
+    let result = get_plugin_params("a.js", engine_dir).unwrap();
+    assert_eq!(result["default"]["font"], "Arial");
+}
+
+#[test]
+fn test_get_plugin_params_no_params_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+    std::fs::write(
+        engine_dir.join("plugins/manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true}}}}"#,
+    ).unwrap();
+    let result = get_plugin_params("a.js", engine_dir).unwrap();
+    assert_eq!(result, serde_json::json!({}), "missing params field should return {{}}");
+}
+
+// =====================================================================
+// get_plugin_descriptors regression tests
+// =====================================================================
+
+#[test]
+fn test_get_plugin_descriptors_no_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let result = get_plugin_descriptors("a.js", dir.path()).unwrap();
+    assert_eq!(result, serde_json::Value::Null);
+}
+
+#[test]
+fn test_get_plugin_descriptors_plugin_not_in_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+    std::fs::write(
+        engine_dir.join("plugins/manifest.json"),
+        r#"{"scripts":["other.js"],"plugins":{"other.js":{"scope":{"all":true}}}}"#,
+    ).unwrap();
+    let result = get_plugin_descriptors("a.js", engine_dir).unwrap();
+    assert_eq!(result, serde_json::Value::Null);
+}
+
+#[test]
+fn test_get_plugin_descriptors_returns_descriptors() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+    std::fs::write(
+        engine_dir.join("plugins/manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true},"descriptors":{"volume":{"type":"number","default":0.8}}}}}"#,
+    ).unwrap();
+    let result = get_plugin_descriptors("a.js", engine_dir).unwrap();
+    assert_eq!(result["volume"]["type"], "number");
+    assert_eq!(result["volume"]["default"], 0.8);
+}
+
+#[test]
+fn test_get_plugin_descriptors_no_descriptors_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine_dir = dir.path();
+    std::fs::create_dir_all(engine_dir.join("plugins")).unwrap();
+    std::fs::write(
+        engine_dir.join("plugins/manifest.json"),
+        r#"{"scripts":["a.js"],"plugins":{"a.js":{"scope":{"all":true}}}}"#,
+    ).unwrap();
+    let result = get_plugin_descriptors("a.js", engine_dir).unwrap();
+    assert_eq!(result, serde_json::Value::Null, "missing descriptors field should return null");
+}
+
+// =====================================================================
 // parse_plugin_assets tests
 // =====================================================================
 

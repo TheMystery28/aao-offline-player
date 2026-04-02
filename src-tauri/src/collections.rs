@@ -7,8 +7,8 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
+use uuid::Uuid;
 
 /// A named collection of cases and/or sequences.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,18 +70,9 @@ pub fn save_collections(data_dir: &Path, data: &CollectionsData) -> Result<(), c
     Ok(())
 }
 
-/// Monotonic counter to ensure unique IDs even within the same millisecond.
-static ID_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Generate a unique ID from the current timestamp and an atomic counter.
-/// Format: `{unix_millis}-{counter}` (e.g. "1710700000000-0").
+/// Generate a unique random ID using UUID v4.
 pub fn generate_id() -> String {
-    let millis = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    let seq = ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{}-{}", millis, seq)
+    Uuid::new_v4().to_string()
 }
 
 /// Generate an ISO 8601 UTC timestamp string from the current time.
@@ -211,10 +202,19 @@ mod tests {
     #[test]
     fn test_generate_id_format() {
         let id = generate_id();
+        // UUID v4: 32 hex digits + 4 hyphens = 36 chars, 5 groups (8-4-4-4-12)
+        assert_eq!(id.len(), 36, "UUID should be 36 chars, got: {id}");
+        assert!(
+            id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'),
+            "UUID should only contain hex digits and hyphens, got: {id}"
+        );
         let parts: Vec<&str> = id.split('-').collect();
-        assert_eq!(parts.len(), 2);
-        assert!(parts[0].parse::<u64>().is_ok());
-        assert!(parts[1].parse::<u64>().is_ok());
+        assert_eq!(parts.len(), 5, "UUID should have 5 groups, got: {id}");
+        assert_eq!(parts[0].len(), 8);
+        assert_eq!(parts[1].len(), 4);
+        assert_eq!(parts[2].len(), 4);
+        assert_eq!(parts[3].len(), 4);
+        assert_eq!(parts[4].len(), 12);
     }
 
     #[test]

@@ -168,20 +168,7 @@ pub fn get_plugin_params(
     paths: State<'_, AppPaths>,
     filename: String,
 ) -> Result<serde_json::Value, AppError> {
-    let data_dir = &paths.data_dir;
-    let manifest_path = data_dir.join("plugins").join("manifest.json");
-    if !manifest_path.exists() {
-        return Ok(serde_json::json!({}));
-    }
-    let text = fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("Failed to read manifest: {}", e))?;
-    let val: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse manifest: {}", e))?;
-    Ok(val.get("plugins")
-        .and_then(|p| p.get(&filename))
-        .and_then(|e| e.get("params"))
-        .cloned()
-        .unwrap_or(serde_json::json!({})))
+    Ok(importer::get_plugin_params(&filename, &paths.data_dir)?)
 }
 
 /// Get param descriptors for a plugin.
@@ -190,20 +177,7 @@ pub fn get_plugin_descriptors(
     paths: State<'_, AppPaths>,
     filename: String,
 ) -> Result<serde_json::Value, AppError> {
-    let data_dir = &paths.data_dir;
-    let manifest_path = data_dir.join("plugins").join("manifest.json");
-    if !manifest_path.exists() {
-        return Ok(serde_json::Value::Null);
-    }
-    let text = fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("Failed to read manifest: {}", e))?;
-    let val: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse manifest: {}", e))?;
-    Ok(val.get("plugins")
-        .and_then(|p| p.get(&filename))
-        .and_then(|e| e.get("descriptors"))
-        .cloned()
-        .unwrap_or(serde_json::Value::Null))
+    Ok(importer::get_plugin_descriptors(&filename, &paths.data_dir)?)
 }
 
 /// Export a case's plugins as a .aaoplug file.

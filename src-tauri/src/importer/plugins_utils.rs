@@ -162,6 +162,30 @@ pub fn set_global_plugin_params(
     })
 }
 
+/// Get param overrides for a plugin at all cascade levels.
+/// Returns `{}` if the plugin or manifest does not exist.
+pub fn get_plugin_params(filename: &str, engine_dir: &Path) -> Result<serde_json::Value, AppError> {
+    let manifest = list_global_plugins(engine_dir)?;
+    Ok(manifest
+        .get("plugins")
+        .and_then(|p| p.get(filename))
+        .and_then(|e| e.get("params"))
+        .cloned()
+        .unwrap_or(serde_json::json!({})))
+}
+
+/// Get param descriptors for a plugin.
+/// Returns `null` if the plugin or manifest does not exist.
+pub fn get_plugin_descriptors(filename: &str, engine_dir: &Path) -> Result<serde_json::Value, AppError> {
+    let manifest = list_global_plugins(engine_dir)?;
+    Ok(manifest
+        .get("plugins")
+        .and_then(|p| p.get(filename))
+        .and_then(|e| e.get("descriptors"))
+        .cloned()
+        .unwrap_or(serde_json::Value::Null))
+}
+
 /// Export a case's active plugins as a .aaoplug ZIP file.
 /// Reads from the global plugins/ folder, filtered to plugins active for this case.
 pub fn export_case_plugins(_case_id: u32, dest_path: &Path, data_dir: &Path) -> Result<u64, AppError> {
