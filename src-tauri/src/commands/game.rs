@@ -1,7 +1,6 @@
-use std::sync::Mutex;
 use tauri::State;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppPaths, MutableConfig};
 use crate::error::AppError;
 use crate::importer;
 
@@ -33,17 +32,16 @@ pub(crate) fn build_server_url() -> String {
 
 /// Returns the protocol URL for playing a specific case, including language preference.
 #[tauri::command]
-pub fn open_game(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<String, AppError> {
-    let state = state.lock().map_err(|e| e.to_string())?;
+pub fn open_game(paths: State<'_, AppPaths>, config: State<'_, MutableConfig>, case_id: u32) -> Result<String, AppError> {
+    let lang = config.0.lock().map_err(|e| e.to_string())?.language.clone();
     // Resolve which global plugins apply to this case (writes resolved_plugins.json)
-    let _ = importer::resolve_plugins_for_case(case_id, &state.data_dir);
-    Ok(build_game_url(case_id, &state.config.language))
+    let _ = importer::resolve_plugins_for_case(case_id, &paths.data_dir);
+    Ok(build_game_url(case_id, &lang))
 }
 
 /// Returns the asset server's base URL (custom protocol).
 #[tauri::command]
-pub fn get_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, AppError> {
-    let _state = state.lock().map_err(|e| e.to_string())?;
+pub fn get_server_url() -> Result<String, AppError> {
     Ok(build_server_url())
 }
 
@@ -51,24 +49,22 @@ pub fn get_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, AppEr
 /// This is the http://localhost:{port} URL that holds the user's old saves.
 /// Will be removed in a future release when tiny_http is fully deleted.
 #[tauri::command]
-pub fn get_migration_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, AppError> {
-    let state = state.lock().map_err(|e| e.to_string())?;
-    Ok(format!("http://localhost:{}", state.server_port))
+pub fn get_migration_server_url(paths: State<'_, AppPaths>) -> Result<String, AppError> {
+    Ok(format!("http://localhost:{}", paths.server_port))
 }
 
 /// Debug command: check if a file exists on disk and return diagnostic info.
 /// Returns full path details in debug builds, "debug only" in release.
 #[tauri::command]
 pub fn debug_check_file(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     relative_path: String,
 ) -> Result<String, AppError> {
     if !cfg!(debug_assertions) {
         return Ok("debug_check_file is only available in debug builds".to_string());
     }
-    let s = state.lock().map_err(|e| e.to_string())?;
-    let data_path = s.data_dir.join(&relative_path);
-    let engine_path = s.engine_dir.join(&relative_path);
+    let data_path = paths.data_dir.join(&relative_path);
+    let engine_path = paths.engine_dir.join(&relative_path);
     let data_exists = data_path.exists();
     let data_is_file = data_path.is_file();
     let engine_exists = engine_path.exists();
@@ -95,7 +91,7 @@ pub fn debug_check_file(
         data_path.display(), data_exists, data_is_file, data_size,
         engine_path.display(), engine_exists, engine_is_file,
         parent_exists, parent_contents,
-        s.data_dir.display(), s.engine_dir.display(),
+        paths.data_dir.display(), paths.engine_dir.display(),
     ))
 }
 

@@ -1,17 +1,16 @@
 use std::fs;
-use std::sync::Mutex;
 use tauri::State;
 
-use crate::app_state::{AppState, AppStateLock};
+use crate::app_state::AppPaths;
 use crate::downloader;
 use crate::error::AppError;
 
 /// List all downloaded cases by scanning the case directory for manifests.
 #[tauri::command]
 pub fn list_cases(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
 ) -> Result<Vec<downloader::manifest::CaseManifest>, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = &paths.data_dir;
 
     let cases_dir = data_dir.join("case");
     if !cases_dir.exists() {
@@ -49,8 +48,8 @@ pub fn list_cases(
 
 /// Delete a downloaded case and all its files.
 #[tauri::command]
-pub fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<(), AppError> {
-    let data_dir = state.data_dir()?;
+pub fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(), AppError> {
+    let data_dir = &paths.data_dir;
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
@@ -58,7 +57,7 @@ pub fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<()
     }
 
     // Remove case entries from the persistent hash index before deleting files
-    if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
+    if let Ok(index) = downloader::dedup::DedupIndex::open(data_dir) {
         let _ = index.unregister_prefix(&downloader::asset_paths::case_prefix(case_id));
     }
 
@@ -68,7 +67,7 @@ pub fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<()
     debug_log!("Deleted case {} at {}", case_id, case_dir.display());
 
     // Auto-clean unused shared defaults
-    let _ = downloader::dedup::clear_unused_defaults(&data_dir);
+    let _ = downloader::dedup::clear_unused_defaults(data_dir);
 
     Ok(())
 }

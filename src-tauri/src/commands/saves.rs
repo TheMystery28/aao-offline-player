@@ -1,18 +1,17 @@
 use std::fs;
-use std::sync::Mutex;
 use tauri::State;
 
-use crate::app_state::{AppState, AppStateLock};
+use crate::app_state::AppPaths;
 use crate::error::AppError;
 
 /// Back up game saves to a file in the data directory.
 /// Called from JS after reading saves from localStorage via the bridge.
 #[tauri::command]
 pub fn backup_saves(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     saves: serde_json::Value,
 ) -> Result<(), AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = &paths.data_dir;
     let path = data_dir.join("saves_backup.json");
     let json = serde_json::to_string(&saves)
         .map_err(|e| format!("Failed to serialize saves: {}", e))?;
@@ -25,9 +24,9 @@ pub fn backup_saves(
 /// Returns the saves JSON or null if no backup exists.
 #[tauri::command]
 pub fn load_saves_backup(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
 ) -> Result<Option<serde_json::Value>, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = &paths.data_dir;
     let path = data_dir.join("saves_backup.json");
     if !path.exists() {
         return Ok(None);
@@ -43,10 +42,10 @@ pub fn load_saves_backup(
 /// Returns the saves for only the requested cases, or None if no backup or no matching saves.
 #[tauri::command]
 pub fn read_saves_for_export(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     case_ids: Vec<u32>,
 ) -> Result<Option<serde_json::Value>, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = &paths.data_dir;
     let path = data_dir.join("saves_backup.json");
     if !path.exists() {
         return Ok(None);
@@ -73,10 +72,10 @@ pub fn read_saves_for_export(
 /// Returns { partId, saveDate, saveString } or null.
 #[tauri::command]
 pub fn find_latest_save(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     case_ids: Vec<u32>,
 ) -> Result<Option<serde_json::Value>, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = &paths.data_dir;
     let path = data_dir.join("saves_backup.json");
     if !path.exists() {
         return Ok(None);

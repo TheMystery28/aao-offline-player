@@ -16,7 +16,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::Manager;
 
-use app_state::AppState;
+use app_state::{AppPaths, MutableConfig};
 use commands::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,24 +30,11 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("aao", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             std::thread::spawn(move || {
-                let state = app.state::<Mutex<AppState>>();
-                let guard = match state.lock() {
-                    Ok(s) => s,
-                    Err(_) => {
-                        // SAFETY: Response::builder() with a valid status and Vec<u8> body cannot fail
-                        let resp = tauri::http::Response::builder()
-                            .status(503)
-                            .body(b"Service Unavailable".to_vec())
-                            .unwrap();
-                        responder.respond(resp);
-                        return;
-                    }
-                };
+                let paths = app.state::<AppPaths>();
                 let config = server::ServerConfig {
-                    engine_dir: guard.engine_dir.clone(),
-                    data_dir: guard.data_dir.clone(),
+                    engine_dir: paths.engine_dir.clone(),
+                    data_dir: paths.data_dir.clone(),
                 };
-                drop(guard); // Release lock before file I/O
 
                 let method = request.method().as_str();
                 let url_path = request.uri().path();
@@ -149,15 +136,16 @@ pub fn run() {
                 .build()
                 .unwrap_or_default();
 
-            // Store state for commands
-            app.manage(Mutex::new(AppState {
+            // Store immutable paths (no lock needed — Tauri wraps in Arc)
+            app.manage(AppPaths {
                 server_port: port,
                 engine_dir,
                 data_dir,
-                config: app_config,
                 cancel_flag: Arc::new(AtomicBool::new(false)),
                 http_client,
-            }));
+            });
+            // Store mutable config (locked only by settings commands)
+            app.manage(MutableConfig(Mutex::new(app_config)));
 
             Ok(())
         })

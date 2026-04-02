@@ -1,10 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::app_state::{AppState, AppStateLock};
+use crate::app_state::AppPaths;
 use crate::collections as coll;
 use crate::downloader::asset_downloader::DownloadEvent;
 use crate::error::AppError;
@@ -44,14 +43,14 @@ fn write_to_content_uri(app: &tauri::AppHandle, export_path: &Path, uri: &str) -
 #[tauri::command]
 pub async fn export_case(
     app: tauri::AppHandle,
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     case_id: u32,
     dest_path: String,
     saves: Option<serde_json::Value>,
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = paths.data_dir.clone();
 
     let (export_path, content_uri) = resolve_export_path(&dest_path, &data_dir);
 
@@ -101,7 +100,7 @@ pub async fn export_case(
 #[tauri::command]
 pub async fn export_sequence(
     app: tauri::AppHandle,
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     case_ids: Vec<u32>,
     sequence_title: String,
     sequence_list: serde_json::Value,
@@ -110,7 +109,7 @@ pub async fn export_sequence(
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = paths.data_dir.clone();
 
     let (export_path, content_uri) = resolve_export_path(&dest_path, &data_dir);
 
@@ -159,14 +158,14 @@ pub async fn export_sequence(
 /// Export a collection as a .aaocase ZIP file.
 #[tauri::command]
 pub async fn export_collection(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     collection_id: String,
     dest_path: String,
     saves: Option<serde_json::Value>,
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<u64, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = paths.data_dir.clone();
 
     let coll_data = coll::load_collections(&data_dir);
     let collection = coll_data.collections.iter()
@@ -202,13 +201,13 @@ pub async fn export_collection(
 /// Export saves as a .aaosave file.
 #[tauri::command]
 pub async fn export_save(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     case_ids: Vec<u32>,
     saves: serde_json::Value,
     include_plugins: bool,
     dest_path: String,
 ) -> Result<u64, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = paths.data_dir.clone();
     let path = PathBuf::from(&dest_path);
     Ok(tokio::task::spawn_blocking(move || {
         importer::export_aaosave(&case_ids, &saves, include_plugins, &path, &data_dir)

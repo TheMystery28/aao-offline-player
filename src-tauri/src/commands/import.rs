@@ -1,10 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::app_state::{AppState, AppStateLock};
+use crate::app_state::AppPaths;
 use crate::downloader::asset_downloader::DownloadEvent;
 use crate::error::AppError;
 use crate::importer;
@@ -19,11 +18,11 @@ use crate::importer;
 #[tauri::command]
 pub async fn import_case(
     app: tauri::AppHandle,
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     source_path: String,
     on_event: Channel<DownloadEvent>,
 ) -> Result<importer::ImportResult, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = paths.data_dir.clone();
 
     // On Android, the file picker returns content:// URIs which aren't regular filesystem paths.
     // Copy the file to a temp location using Tauri's fs plugin (handles content URIs).
@@ -149,10 +148,10 @@ pub async fn import_case(
 /// Import saves from a .aaosave file.
 #[tauri::command]
 pub async fn import_save(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     source_path: String,
 ) -> Result<importer::ImportSaveResult, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = paths.data_dir.clone();
     let path = std::path::PathBuf::from(&source_path);
     Ok(tokio::task::spawn_blocking(move || {
         importer::import_aaosave(&path, &data_dir)

@@ -1,19 +1,17 @@
 use std::fs;
-use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::app_state::{AppState, AppStateLock};
+use crate::app_state::{AppPaths, MutableConfig};
 use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
 use crate::error::AppError;
 
 /// Cancel the current in-progress download.
 #[tauri::command]
-pub fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), AppError> {
-    let s = state.lock().map_err(|e| e.to_string())?;
-    s.cancel_flag.store(true, Ordering::Relaxed);
+pub fn cancel_download(paths: State<'_, AppPaths>) -> Result<(), AppError> {
+    paths.cancel_flag.store(true, Ordering::Relaxed);
     debug_log!("Download cancellation requested");
     Ok(())
 }
@@ -21,13 +19,10 @@ pub fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), AppError
 /// Lightweight command: fetch case metadata (including sequence info) without downloading assets.
 #[tauri::command]
 pub async fn fetch_case_info(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     case_id: u32,
 ) -> Result<downloader::CaseInfo, AppError> {
-    let client = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        s.http_client.clone()
-    };
+    let client = paths.http_client.clone();
 
     let (case_info, _trial_data, _info_json, _data_json) =
         downloader::case_fetcher::fetch_case(&client, case_id).await?;
@@ -39,11 +34,16 @@ pub async fn fetch_case_info(
 /// Emits SequenceProgress events before each part, plus per-part asset download events.
 #[tauri::command]
 pub async fn download_sequence(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
+    config: State<'_, MutableConfig>,
     case_ids: Vec<u32>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<Vec<downloader::manifest::CaseManifest>, AppError> {
-    let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
+    let engine_dir = paths.engine_dir.clone();
+    let data_dir = paths.data_dir.clone();
+    let cancel_flag = paths.cancel_flag.clone();
+    let client = paths.http_client.clone();
+    let concurrency = config.0.lock().map_err(|e| e.to_string())?.concurrent_downloads;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let total_parts = case_ids.len();
@@ -117,11 +117,16 @@ pub async fn download_sequence(
 /// Streams progress events to the frontend via Channel.
 #[tauri::command]
 pub async fn download_case(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
+    config: State<'_, MutableConfig>,
     case_id: u32,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, AppError> {
-    let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
+    let engine_dir = paths.engine_dir.clone();
+    let data_dir = paths.data_dir.clone();
+    let cancel_flag = paths.cancel_flag.clone();
+    let client = paths.http_client.clone();
+    let concurrency = config.0.lock().map_err(|e| e.to_string())?.concurrent_downloads;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
@@ -137,14 +142,15 @@ pub async fn download_case(
 /// Reads the manifest to find failed assets, re-attempts download, updates manifest.
 #[tauri::command]
 pub async fn retry_failed_assets(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
+    config: State<'_, MutableConfig>,
     case_id: u32,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, AppError> {
-    let (data_dir, concurrency, cancel_flag, client) = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        (s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
-    };
+    let data_dir = paths.data_dir.clone();
+    let cancel_flag = paths.cancel_flag.clone();
+    let client = paths.http_client.clone();
+    let concurrency = config.0.lock().map_err(|e| e.to_string())?.concurrent_downloads;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
@@ -253,12 +259,17 @@ pub async fn retry_failed_assets(
 /// If `redownload_assets` is true, re-downloads all assets (full update).
 #[tauri::command]
 pub async fn update_case(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
+    config: State<'_, MutableConfig>,
     case_id: u32,
     redownload_assets: bool,
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, AppError> {
-    let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
+    let engine_dir = paths.engine_dir.clone();
+    let data_dir = paths.data_dir.clone();
+    let cancel_flag = paths.cancel_flag.clone();
+    let client = paths.http_client.clone();
+    let concurrency = config.0.lock().map_err(|e| e.to_string())?.concurrent_downloads;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let case_dir = data_dir.join("case").join(case_id.to_string());

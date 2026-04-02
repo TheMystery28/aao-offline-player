@@ -1,8 +1,7 @@
-use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::app_state::{AppState, AppStateLock};
+use crate::app_state::{AppPaths, MutableConfig};
 use crate::config;
 use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
@@ -10,38 +9,39 @@ use crate::error::AppError;
 
 /// Return current user settings.
 #[tauri::command]
-pub fn get_settings(state: State<'_, Mutex<AppState>>) -> Result<config::AppConfig, AppError> {
-    let s = state.lock().map_err(|e| e.to_string())?;
-    Ok(s.config.clone())
+pub fn get_settings(config: State<'_, MutableConfig>) -> Result<config::AppConfig, AppError> {
+    let cfg = config.0.lock().map_err(|e| e.to_string())?;
+    Ok(cfg.clone())
 }
 
 /// Save user settings (validated and clamped).
 #[tauri::command]
 pub fn save_settings(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
+    config_state: State<'_, MutableConfig>,
     settings: config::AppConfig,
 ) -> Result<(), AppError> {
-    let mut s = state.lock().map_err(|e| e.to_string())?;
     let mut validated = settings;
     config::validate(&mut validated);
-    config::save_config(&s.data_dir, &validated)?;
-    s.config = validated;
+    config::save_config(&paths.data_dir, &validated)?;
+    let mut cfg = config_state.0.lock().map_err(|e| e.to_string())?;
+    *cfg = validated;
     Ok(())
 }
 
 /// Return storage usage statistics.
 #[tauri::command]
-pub fn get_storage_info(state: State<'_, Mutex<AppState>>) -> Result<config::StorageInfo, AppError> {
-    let data_dir = state.data_dir()?;
-    Ok(config::compute_storage_info(&data_dir))
+pub fn get_storage_info(paths: State<'_, AppPaths>) -> Result<config::StorageInfo, AppError> {
+    let data_dir = &paths.data_dir;
+    Ok(config::compute_storage_info(data_dir))
 }
 
 /// Clear default asset cache files that are NOT referenced by any downloaded case.
 /// Scans all manifests to build a set of used defaults/ paths, then deletes the rest.
 #[tauri::command]
-pub async fn clear_unused_defaults(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, AppError> {
-    let data_dir = state.data_dir()?;
-    let (deleted, bytes_freed) = downloader::dedup::clear_unused_defaults(&data_dir)?;
+pub async fn clear_unused_defaults(paths: State<'_, AppPaths>) -> Result<serde_json::Value, AppError> {
+    let data_dir = &paths.data_dir;
+    let (deleted, bytes_freed) = downloader::dedup::clear_unused_defaults(data_dir)?;
     debug_log!(
         "Cleared {} unused default assets ({} bytes freed)",
         deleted, bytes_freed
@@ -56,12 +56,12 @@ pub async fn clear_unused_defaults(state: State<'_, Mutex<AppState>>) -> Result<
 /// Promotes shared assets to defaults/shared/ and removes duplicate case copies.
 #[tauri::command]
 pub async fn optimize_storage(
-    state: State<'_, Mutex<AppState>>,
+    paths: State<'_, AppPaths>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<serde_json::Value, AppError> {
-    let data_dir = state.data_dir()?;
+    let data_dir = &paths.data_dir;
     let (deduped, bytes_saved) = downloader::dedup::optimize_all_cases(
-        &data_dir,
+        data_dir,
         Some(&|completed, total, current_path| {
             let _ = on_event.send(DownloadEvent::Progress {
                 completed,
@@ -81,8 +81,8 @@ pub async fn optimize_storage(
 
 /// Open the data directory in the system file explorer.
 #[tauri::command]
-pub fn open_data_dir(state: State<'_, Mutex<AppState>>) -> Result<(), AppError> {
-    let data_dir = state.data_dir()?;
+pub fn open_data_dir(paths: State<'_, AppPaths>) -> Result<(), AppError> {
+    let data_dir = &paths.data_dir;
     let path_str = data_dir.to_string_lossy().to_string();
     #[cfg(target_os = "windows")]
     {
