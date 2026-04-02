@@ -9,6 +9,7 @@ dependencies = [
  "camino",
  "futures",
  "log",
+ "percent-encoding",
  "portpicker",
  "proptest",
  "redb",

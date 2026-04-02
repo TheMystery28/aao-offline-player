@@ -442,46 +442,9 @@ pub(crate) fn sanitize_path(path: &str) -> String {
 /// Only in query strings (application/x-www-form-urlencoded) does `+` mean space.
 /// Spaces in URL paths are encoded as `%20`.
 pub(crate) fn url_decode(input: &str) -> String {
-    let mut bytes = Vec::with_capacity(input.len());
-    let mut chars = input.bytes();
-
-    while let Some(b) = chars.next() {
-        match b {
-            b'%' => {
-                let hi = chars.next().unwrap_or(b'0');
-                let lo = chars.next().unwrap_or(b'0');
-                if let (Some(h), Some(l)) = (hex_val(hi), hex_val(lo)) {
-                    bytes.push(h << 4 | l);
-                } else {
-                    bytes.push(b'%');
-                    bytes.push(hi);
-                    bytes.push(lo);
-                }
-            }
-            _ => bytes.push(b),
-        }
-    }
-
-    match String::from_utf8(bytes) {
-        Ok(s) => s,
-        Err(e) => {
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "[SERVER WARN] URL decode produced invalid UTF-8 for input '{}': lossy conversion applied",
-                input
-            );
-            String::from_utf8_lossy(e.as_bytes()).into_owned()
-        }
-    }
-}
-
-pub(crate) fn hex_val(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
+    percent_encoding::percent_decode_str(input)
+        .decode_utf8_lossy()
+        .into_owned()
 }
 
 #[cfg(test)]
@@ -1182,11 +1145,10 @@ mod tests {
     /// Truncated percent at end of string: %2 with missing second hex digit.
     #[test]
     fn test_url_decode_truncated_percent() {
-        // %2 at end — only one hex digit available, second defaults to '0'
+        // WHATWG spec: truncated %X (only one hex digit) is passed through unchanged.
+        // Real browsers never send this; the old hand-rolled impl produced a space here.
         let result = url_decode("test%2");
-        // Implementation consumes next byte as hi, then next as lo (defaults to '0')
-        // hi=b'2' → Some(2), lo=b'0' (default) → Some(0), so byte = 0x20 = space
-        assert_eq!(result, "test ");
+        assert_eq!(result, "test%2");
     }
 
     /// Empty string decodes to empty string.
@@ -1198,9 +1160,10 @@ mod tests {
     /// Single percent at very end.
     #[test]
     fn test_url_decode_percent_at_end() {
+        // WHATWG spec: bare % at end (no following hex digits) is passed through unchanged.
+        // Real browsers never send this; the old hand-rolled impl produced a null byte here.
         let result = url_decode("test%");
-        // % consumed, hi defaults to '0', lo defaults to '0' → byte 0x00
-        assert_eq!(result, "test\0");
+        assert_eq!(result, "test%");
     }
 
     // --- sanitize_path: all special characters ---

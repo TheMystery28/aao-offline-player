@@ -38,6 +38,7 @@ zip = "8"
 url = "2"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 uuid = { version = "1", features = ["v4"] }
+percent-encoding = "2"
 redb = "3"
 thiserror = "2"
 relative-path = "2.0.1"
