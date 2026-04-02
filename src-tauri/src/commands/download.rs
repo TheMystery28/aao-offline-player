@@ -8,19 +8,6 @@ use crate::app_state::{AppState, AppStateLock};
 use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
 
-/// Check if an asset file truly exists on disk — follows VFS pointers.
-/// A VFS pointer whose target is missing counts as "not exists".
-fn asset_exists_on_disk(data_dir: &std::path::Path, local_path: &str) -> bool {
-    let disk_path = data_dir.join(local_path);
-    if !disk_path.exists() {
-        return false;
-    }
-    match downloader::vfs::read_vfs_pointer(&disk_path) {
-        Some(target) => data_dir.join(&target).is_file(),
-        None => true,
-    }
-}
-
 /// Cancel the current in-progress download.
 #[tauri::command]
 pub fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
@@ -305,7 +292,7 @@ pub async fn update_case(
         // Full update: download all case-specific + missing defaults
         let missing_defaults: Vec<_> = shared
             .into_iter()
-            .filter(|a| !a.local_path.is_empty() && !asset_exists_on_disk(&data_dir, &a.local_path))
+            .filter(|a| !a.local_path.is_empty() && !downloader::vfs::asset_exists(&data_dir, &a.local_path))
             .collect();
         let mut all = case_specific;
         all.extend(missing_defaults);
@@ -320,7 +307,7 @@ pub async fn update_case(
                 continue;
             }
             // For internal assets with a local_path, also check if file exists on disk
-            if !asset.local_path.is_empty() && asset_exists_on_disk(&data_dir, &asset.local_path) {
+            if !asset.local_path.is_empty() && downloader::vfs::asset_exists(&data_dir, &asset.local_path) {
                 continue;
             }
             new_assets.push(asset);
@@ -329,7 +316,7 @@ pub async fn update_case(
         // Shared/default: only download if missing from disk
         let missing_defaults: Vec<_> = shared
             .into_iter()
-            .filter(|a| !a.local_path.is_empty() && !asset_exists_on_disk(&data_dir, &a.local_path))
+            .filter(|a| !a.local_path.is_empty() && !downloader::vfs::asset_exists(&data_dir, &a.local_path))
             .collect();
         new_assets.extend(missing_defaults);
         new_assets

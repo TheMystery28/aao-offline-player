@@ -247,13 +247,26 @@ pub(crate) fn mime_type(path: &Path) -> &'static str {
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
         "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
         "mp3" => "audio/mpeg",
-        "ogg" | "opus" => "audio/ogg",
+        "ogg" | "oga" => "audio/ogg",
+        "opus" => "audio/opus",
         "wav" => "audio/wav",
+        "m4a" | "aac" => "audio/mp4",
+        "flac" => "audio/flac",
+        "mid" | "midi" => "audio/midi",
+        "webm" => "video/webm",
+        "mp4" | "m4v" => "video/mp4",
         "woff" => "font/woff",
         "woff2" => "font/woff2",
         "ttf" => "font/ttf",
+        "otf" => "font/otf",
         "ico" => "image/x-icon",
+        "xml" => "application/xml",
+        "txt" => "text/plain; charset=utf-8",
+        "zip" => "application/zip",
         _ => "application/octet-stream",
     }
 }
@@ -270,14 +283,15 @@ pub struct ServerConfig {
 
 /// Start the HTTP server in a background thread.
 /// Returns the port number the server is listening on.
-pub fn start_server(config: ServerConfig) -> u16 {
-    let port = portpicker::pick_unused_port().expect("failed to find unused port");
+pub fn start_server(config: ServerConfig) -> Result<u16, String> {
+    let port = portpicker::pick_unused_port()
+        .ok_or_else(|| "No available port found for asset server".to_string())?;
     let config = Arc::new(config);
 
-    std::thread::spawn(move || {
-        let server = Server::http(format!("localhost:{}", port))
-            .expect("Unable to start asset server");
+    let server = Server::http(format!("localhost:{}", port))
+        .map_err(|e| format!("Failed to start asset server on port {}: {}", port, e))?;
 
+    std::thread::spawn(move || {
         for request in server.incoming_requests() {
             let config = Arc::clone(&config);
             std::thread::spawn(move || {
@@ -286,7 +300,7 @@ pub fn start_server(config: ServerConfig) -> u16 {
         }
     });
 
-    port
+    Ok(port)
 }
 
 /// Migration-only HTTP request handler.
@@ -797,7 +811,7 @@ mod tests {
         std::fs::write(js_dir.join("test.js"), "// js").unwrap();
 
         let config = test_config(dir.path());
-        let port = start_server(config);
+        let port = start_server(config).expect("test: failed to start server");
         std::thread::sleep(std::time::Duration::from_millis(50));
         (port, dir)
     }
@@ -1104,6 +1118,8 @@ mod tests {
         assert_eq!(mime_type(Path::new("f.js")), "application/javascript; charset=utf-8");
         assert_eq!(mime_type(Path::new("f.css")), "text/css; charset=utf-8");
         assert_eq!(mime_type(Path::new("f.json")), "application/json; charset=utf-8");
+        assert_eq!(mime_type(Path::new("f.txt")), "text/plain; charset=utf-8");
+        assert_eq!(mime_type(Path::new("f.xml")), "application/xml");
         // Image types
         assert_eq!(mime_type(Path::new("f.png")), "image/png");
         assert_eq!(mime_type(Path::new("f.jpg")), "image/jpeg");
@@ -1111,15 +1127,31 @@ mod tests {
         assert_eq!(mime_type(Path::new("f.gif")), "image/gif");
         assert_eq!(mime_type(Path::new("f.svg")), "image/svg+xml");
         assert_eq!(mime_type(Path::new("f.ico")), "image/x-icon");
+        assert_eq!(mime_type(Path::new("f.webp")), "image/webp");
+        assert_eq!(mime_type(Path::new("f.bmp")), "image/bmp");
+        assert_eq!(mime_type(Path::new("f.avif")), "image/avif");
         // Audio types
         assert_eq!(mime_type(Path::new("f.mp3")), "audio/mpeg");
         assert_eq!(mime_type(Path::new("f.ogg")), "audio/ogg");
-        assert_eq!(mime_type(Path::new("f.opus")), "audio/ogg");
+        assert_eq!(mime_type(Path::new("f.oga")), "audio/ogg");
+        assert_eq!(mime_type(Path::new("f.opus")), "audio/opus");
         assert_eq!(mime_type(Path::new("f.wav")), "audio/wav");
+        assert_eq!(mime_type(Path::new("f.m4a")), "audio/mp4");
+        assert_eq!(mime_type(Path::new("f.aac")), "audio/mp4");
+        assert_eq!(mime_type(Path::new("f.flac")), "audio/flac");
+        assert_eq!(mime_type(Path::new("f.mid")), "audio/midi");
+        assert_eq!(mime_type(Path::new("f.midi")), "audio/midi");
+        // Video types
+        assert_eq!(mime_type(Path::new("f.webm")), "video/webm");
+        assert_eq!(mime_type(Path::new("f.mp4")), "video/mp4");
+        assert_eq!(mime_type(Path::new("f.m4v")), "video/mp4");
         // Font types
         assert_eq!(mime_type(Path::new("f.woff")), "font/woff");
         assert_eq!(mime_type(Path::new("f.woff2")), "font/woff2");
         assert_eq!(mime_type(Path::new("f.ttf")), "font/ttf");
+        assert_eq!(mime_type(Path::new("f.otf")), "font/otf");
+        // Archive types
+        assert_eq!(mime_type(Path::new("f.zip")), "application/zip");
         // Unknown
         assert_eq!(mime_type(Path::new("f.xyz")), "application/octet-stream");
         assert_eq!(mime_type(Path::new("no_ext")), "application/octet-stream");
@@ -1579,7 +1611,7 @@ mod tests {
             ("/defaults/images/chars/Apollo/1.gif", 200, "image/gif"),
             ("/defaults/music/Ace%20Attorney%20Investigations%20_%20Miles/song.mp3", 200, "audio/mpeg"),
             ("/defaults/sounds/sfx.mp3", 200, "audio/mpeg"),
-            ("/defaults/voices/voice_singleblip_1.opus", 200, "audio/ogg"),
+            ("/defaults/voices/voice_singleblip_1.opus", 200, "audio/opus"),
             ("/plugins/myplugin.js", 200, "application/javascript"),
             // Missing file
             ("/nonexistent.txt", 404, ""),

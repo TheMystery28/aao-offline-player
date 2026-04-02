@@ -76,7 +76,7 @@ pub fn extract_and_prepare_assets(
             missing_defaults.push(a);
             continue;
         }
-        if asset_exists_on_disk(data_dir, &a.local_path) {
+        if super::vfs::asset_exists(data_dir, &a.local_path) {
             cached_defaults.push((a.url.clone(), a.local_path.clone()));
         } else {
             missing_defaults.push(a);
@@ -211,14 +211,3 @@ pub(crate) async fn download_single_case(
     Ok(manifest)
 }
 
-/// Check if an asset file truly exists on disk — follows VFS pointers.
-fn asset_exists_on_disk(data_dir: &Path, local_path: &str) -> bool {
-    let disk_path = data_dir.join(local_path);
-    if !disk_path.exists() {
-        return false;
-    }
-    match super::vfs::read_vfs_pointer(&disk_path) {
-        Some(target) => data_dir.join(&target).is_file(),
-        None => true,
-    }
-}

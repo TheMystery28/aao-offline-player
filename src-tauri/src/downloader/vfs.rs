@@ -38,6 +38,19 @@ pub fn write_vfs_pointer(pointer_path: &Path, target_relative: &str) -> std::io:
     fs::write(pointer_path, format!("{}{}", VFS_PREFIX, normalized))
 }
 
+/// Check if an asset file truly exists on disk — follows VFS pointers.
+/// A VFS pointer whose target is missing counts as "not exists".
+pub fn asset_exists(data_dir: &Path, local_path: &str) -> bool {
+    let disk_path = data_dir.join(local_path);
+    if !disk_path.exists() {
+        return false;
+    }
+    match read_vfs_pointer(&disk_path) {
+        Some(target) => data_dir.join(&target).is_file(),
+        None => true,
+    }
+}
+
 /// Resolve a file path, following VFS pointers with a depth limit.
 /// Returns the real physical file path. If the file is not a pointer, returns it as-is.
 /// Stops after `MAX_RESOLVE_DEPTH` hops to prevent infinite loops.
@@ -175,5 +188,37 @@ mod tests {
         let resolved = resolve_path(&pointer, dir.path(), dir.path());
         // Broken pointer: target doesn't exist, returns the pointer path itself
         assert_eq!(resolved, pointer);
+    }
+
+    #[test]
+    fn test_asset_exists_real_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("defaults/images/test.gif");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, vec![0u8; 1000]).unwrap();
+        assert!(asset_exists(dir.path(), "defaults/images/test.gif"));
+        assert!(!asset_exists(dir.path(), "defaults/images/nonexistent.gif"));
+    }
+
+    #[test]
+    fn test_asset_exists_vfs_pointer() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create real target
+        let target = dir.path().join("defaults/images/chars/Apollo/3.gif");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, b"GIF89a real data").unwrap();
+        // Create VFS pointer
+        let pointer = dir.path().join("defaults/images/charsStill/Apollo/3.gif");
+        write_vfs_pointer(&pointer, "defaults/images/chars/Apollo/3.gif").unwrap();
+        assert!(asset_exists(dir.path(), "defaults/images/charsStill/Apollo/3.gif"));
+    }
+
+    #[test]
+    fn test_asset_exists_broken_vfs_pointer() {
+        let dir = tempfile::tempdir().unwrap();
+        let pointer = dir.path().join("defaults/images/charsStill/Apollo/3.gif");
+        write_vfs_pointer(&pointer, "defaults/images/chars/Apollo/3.gif").unwrap();
+        // Target does NOT exist
+        assert!(!asset_exists(dir.path(), "defaults/images/charsStill/Apollo/3.gif"));
     }
 }

@@ -20,12 +20,14 @@ use commands::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    builder
         .register_asynchronous_uri_scheme_protocol("aao", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             std::thread::spawn(move || {
@@ -33,6 +35,7 @@ pub fn run() {
                 let guard = match state.lock() {
                     Ok(s) => s,
                     Err(_) => {
+                        // SAFETY: Response::builder() with a valid status and Vec<u8> body cannot fail
                         let resp = tauri::http::Response::builder()
                             .status(503)
                             .body(b"Service Unavailable".to_vec())
@@ -72,17 +75,17 @@ pub fn run() {
             //   engine_dir = data_dir (both point to the same writable directory)
             let (engine_dir, data_dir) = if cfg!(target_os = "android") || cfg!(target_os = "ios") {
                 let dir = app.path().app_data_dir()
-                    .expect("failed to resolve app data dir")
+                    .map_err(|e| format!("Failed to resolve app data dir: {}", e))?
                     .join("engine");
                 fs::create_dir_all(&dir)
-                    .expect("failed to create data directory");
+                    .map_err(|e| format!("Failed to create data directory: {}", e))?;
 
                 // Extract bundled engine files from APK on first launch.
                 // On Android, bundle.resources are inside the APK (not on filesystem).
                 // We use Tauri's fs plugin to read them and write to the writable dir.
                 if !dir.join("player.html").exists() {
                     app_state::extract_engine_files(&dir)
-                        .expect("failed to extract engine files");
+                        .map_err(|e| format!("Failed to extract engine files: {}", e))?;
                 }
 
                 // On mobile, both dirs point to the same writable location
@@ -93,6 +96,7 @@ pub fn run() {
                 // In release, use resource_dir/engine (bundled by installer).
                 let engine_dir = if cfg!(debug_assertions) {
                     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                    // SAFETY: CARGO_MANIFEST_DIR is a compile-time path that always has a parent
                     manifest_dir.parent().unwrap().join("engine")
                 } else {
                     app.path()
@@ -102,6 +106,7 @@ pub fn run() {
                         .filter(|d| d.exists())
                         .unwrap_or_else(|| {
                             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                            // SAFETY: CARGO_MANIFEST_DIR is a compile-time path that always has a parent
                             manifest_dir.parent().unwrap().join("engine")
                         })
                 };
@@ -128,7 +133,7 @@ pub fn run() {
             let port = server::start_server(server::ServerConfig {
                 engine_dir: engine_dir.clone(),
                 data_dir: data_dir.clone(),
-            });
+            }).map_err(|e| format!("Asset server failed: {}", e))?;
 
             debug_log!("Asset server started on http://localhost:{}", port);
             debug_log!("Engine directory: {}", engine_dir.display());
