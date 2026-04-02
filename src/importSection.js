@@ -6,24 +6,24 @@ import { formatBytes, escapeHtml, showPromptModal } from './helpers.js';
  * @param {AppContext} ctx - Context bag from the main closure
  */
 export function initImport(ctx) {
-  var invoke = ctx.invoke;
-  var Channel = ctx.Channel;
-  var statusMsg = ctx.statusMsg;
-  var loadLibrary = ctx.loadLibrary;
-  var showPasteSaveModal = ctx.showPasteSaveModal;
-  var writeGameSaves = ctx.writeGameSaves;
-  var doImportSave = ctx.doImportSave;
-  var doImportPlugin = ctx.doImportPlugin;
-  var progressContainer = ctx.progressContainer;
-  var progressPhase = ctx.progressPhase;
-  var progressBarInner = ctx.progressBarInner;
-  var progressText = ctx.progressText;
-  var isDownloadInProgress = ctx.isDownloadInProgress;
+  const invoke = ctx.invoke;
+  const Channel = ctx.Channel;
+  const statusMsg = ctx.statusMsg;
+  const loadLibrary = ctx.loadLibrary;
+  const showPasteSaveModal = ctx.showPasteSaveModal;
+  const writeGameSaves = ctx.writeGameSaves;
+  const doImportSave = ctx.doImportSave;
+  const doImportPlugin = ctx.doImportPlugin;
+  const progressContainer = ctx.progressContainer;
+  const progressPhase = ctx.progressPhase;
+  const progressBarInner = ctx.progressBarInner;
+  const progressText = ctx.progressText;
+  const isDownloadInProgress = ctx.isDownloadInProgress;
 
-  var importFolderBtn = document.getElementById("import-folder-btn");
-  var importFileBtn = document.getElementById("import-file-btn");
-  var importPasteSaveBtn = document.getElementById("import-paste-save-btn");
-  var importResult = document.getElementById("import-result");
+  const importFolderBtn = document.getElementById("import-folder-btn");
+  const importFileBtn = document.getElementById("import-file-btn");
+  const importPasteSaveBtn = document.getElementById("import-paste-save-btn");
+  const importResult = document.getElementById("import-result");
 
   function doImport(sourcePath) {
     console.log("[IMPORT] doImport called with path:", sourcePath);
@@ -37,14 +37,14 @@ export function initImport(ctx) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
 
-    var dedupSavedBytes = 0;
-    var onEvent = new Channel();
+    let dedupSavedBytes = 0;
+    const onEvent = new Channel();
     onEvent.onmessage = function (msg) {
       if (msg.event === "sequence_progress") {
         progressPhase.textContent =
           "Case " + msg.data.current_part + " / " + msg.data.total_parts + ": " + msg.data.part_title;
       } else if (msg.event === "progress") {
-        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+        const pct = Math.round((msg.data.completed / msg.data.total) * 100);
         progressBarInner.style.width = pct + "%";
         progressText.textContent =
           msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
@@ -52,8 +52,8 @@ export function initImport(ctx) {
         progressBarInner.style.width = "100%";
         progressPhase.textContent = "Import complete!";
         dedupSavedBytes = msg.data.dedup_saved_bytes || 0;
-        var actualBytes = msg.data.total_bytes - dedupSavedBytes;
-        var finishedText = msg.data.downloaded + " assets (" + formatBytes(actualBytes) + ")";
+        const actualBytes = msg.data.total_bytes - dedupSavedBytes;
+        let finishedText = msg.data.downloaded + " assets (" + formatBytes(actualBytes) + ")";
         if (dedupSavedBytes > 0) {
           finishedText += " — saved " + formatBytes(dedupSavedBytes) + " by dedup";
         }
@@ -63,8 +63,8 @@ export function initImport(ctx) {
 
     invoke("import_case", { sourcePath: sourcePath, onEvent: onEvent })
       .then(function (result) {
-        var manifest = result.manifest;
-        var savesInfo = "";
+        const manifest = result.manifest;
+        let savesInfo = "";
 
         // If the imported file contained saves, merge them into localStorage.
         // IMPORTANT: wait for writeGameSaves to complete BEFORE loadLibrary(),
@@ -72,11 +72,11 @@ export function initImport(ctx) {
         console.log("[IMPORT] result.saves:", result.saves ? "present (" + JSON.stringify(result.saves).length + " bytes)" : "null");
         console.log("[IMPORT] result.missing_defaults:", result.missing_defaults);
 
-        var savesPromise = Promise.resolve();
+        let savesPromise = Promise.resolve();
         if (result.saves) {
-          var saveCount = 0;
-          for (var caseId in result.saves) {
-            for (var ts in result.saves[caseId]) {
+          let saveCount = 0;
+          for (const caseId in result.saves) {
+            for (const ts in result.saves[caseId]) {
               saveCount++;
             }
           }
@@ -94,7 +94,7 @@ export function initImport(ctx) {
 
         // Wait for saves to be written, THEN refresh the library (which also uses bridge iframes)
         savesPromise.then(function () {
-          var missingInfo = "";
+          let missingInfo = "";
           if (result.missing_defaults > 0) {
             missingInfo = '<br><span style="color:#e8a030;">' + result.missing_defaults +
               ' shared assets missing. Use "Update" on the case to try downloading them ' +
@@ -103,15 +103,15 @@ export function initImport(ctx) {
 
           // Batch import (parent folder with multiple case subfolders)
           if (result.batch_manifests && result.batch_manifests.length > 1) {
-            var totalAssets = 0;
-            var totalBytes = 0;
-            for (var i = 0; i < result.batch_manifests.length; i++) {
+            let totalAssets = 0;
+            let totalBytes = 0;
+            for (let i = 0; i < result.batch_manifests.length; i++) {
               totalAssets += result.batch_manifests[i].assets.total_downloaded;
               totalBytes += result.batch_manifests[i].assets.total_size_bytes;
             }
-            var actualBatchBytes = totalBytes - dedupSavedBytes;
-            var dedupInfo = dedupSavedBytes > 0 ? ' — saved ' + formatBytes(dedupSavedBytes) + ' by dedup' : '';
-            var html = '<strong>' + result.batch_manifests.length + ' cases imported</strong> (' +
+            const actualBatchBytes = totalBytes - dedupSavedBytes;
+            const dedupInfo = dedupSavedBytes > 0 ? ' — saved ' + formatBytes(dedupSavedBytes) + ' by dedup' : '';
+            let html = '<strong>' + result.batch_manifests.length + ' cases imported</strong> (' +
               totalAssets + ' assets, ' + formatBytes(actualBatchBytes) + savesInfo + dedupInfo + ')';
             if (result.batch_errors && result.batch_errors.length > 0) {
               html += '<br><span style="color:#e8a030;">' + result.batch_errors.length +
@@ -127,23 +127,23 @@ export function initImport(ctx) {
               "Imported Cases",
               "Create",
               function (collectionName) {
-                var batchSeqGroups = {};
-                var batchStandalone = [];
-                for (var bi = 0; bi < result.batch_manifests.length; bi++) {
-                  var bm = result.batch_manifests[bi];
-                  var bseq = bm.sequence;
+                const batchSeqGroups = {};
+                const batchStandalone = [];
+                for (let bi = 0; bi < result.batch_manifests.length; bi++) {
+                  const bm = result.batch_manifests[bi];
+                  const bseq = bm.sequence;
                   if (bseq && bseq.title && bseq.list && bseq.list.length > 1) {
                     if (!batchSeqGroups[bseq.title]) batchSeqGroups[bseq.title] = true;
                   } else {
                     batchStandalone.push(bm.case_id);
                   }
                 }
-                var collItems = [];
-                var batchSeqKeys = Object.keys(batchSeqGroups);
-                for (var bsi = 0; bsi < batchSeqKeys.length; bsi++) {
+                const collItems = [];
+                const batchSeqKeys = Object.keys(batchSeqGroups);
+                for (let bsi = 0; bsi < batchSeqKeys.length; bsi++) {
                   collItems.push({ type: "sequence", title: batchSeqKeys[bsi] });
                 }
-                for (var bci = 0; bci < batchStandalone.length; bci++) {
+                for (let bci = 0; bci < batchStandalone.length; bci++) {
                   collItems.push({ type: "case", case_id: batchStandalone[bci] });
                 }
                 invoke("create_collection", { title: collectionName, items: collItems })
@@ -153,7 +153,7 @@ export function initImport(ctx) {
             );
           } else {
             // Single case import
-            var singleDedupInfo = dedupSavedBytes > 0 ? ' — saved ' + formatBytes(dedupSavedBytes) + ' by dedup' : '';
+            const singleDedupInfo = dedupSavedBytes > 0 ? ' — saved ' + formatBytes(dedupSavedBytes) + ' by dedup' : '';
             importResult.innerHTML =
               '<strong>' + escapeHtml(manifest.title) + '</strong> by ' +
               escapeHtml(manifest.author) + ' &mdash; imported (' +

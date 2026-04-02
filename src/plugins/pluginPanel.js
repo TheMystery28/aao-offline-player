@@ -7,40 +7,40 @@ import { showConfirmModal, createModal } from '../helpers.js';
  * Returns { loadGlobalPluginsPanel, pluginsPanel, pluginsToggle }.
  */
 export function initPluginPanel(ctx) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
-  var getCachedCases = ctx.getCachedCases;
-  var getCachedCollections = ctx.getCachedCollections;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
+  const getCachedCases = ctx.getCachedCases;
+  const getCachedCollections = ctx.getCachedCollections;
 
   // DOM refs for Plugins Panel
-  var pluginsToggle = document.getElementById("plugins-toggle");
-  var pluginsPanel = document.getElementById("plugins-panel");
-  var globalPluginsList = document.getElementById("global-plugins-list");
-  var globalAttachBtn = document.getElementById("global-attach-btn");
-  var globalImportBtn = document.getElementById("global-import-btn");
+  const pluginsToggle = document.getElementById("plugins-toggle");
+  const pluginsPanel = document.getElementById("plugins-panel");
+  const globalPluginsList = document.getElementById("global-plugins-list");
+  const globalAttachBtn = document.getElementById("global-attach-btn");
+  const globalImportBtn = document.getElementById("global-import-btn");
 
   function loadGlobalPluginsPanel() {
     invoke("list_global_plugins")
       .then(function (manifest) {
-        var scripts = (manifest && manifest.scripts) || [];
-        var plugins = (manifest && manifest.plugins) || {};
+        const scripts = (manifest && manifest.scripts) || [];
+        const plugins = (manifest && manifest.plugins) || {};
         // No more top-level disabled array — each plugin has scope.all
         globalPluginsList.innerHTML = "";
         if (scripts.length === 0) {
-          var empty = document.createElement("div");
+          const empty = document.createElement("div");
           empty.className = "global-plugins-empty";
           empty.textContent = "No global plugins installed.";
           globalPluginsList.appendChild(empty);
         } else {
-          for (var i = 0; i < scripts.length; i++) {
+          for (let i = 0; i < scripts.length; i++) {
             (function (filename) {
-              var pluginEntry = plugins[filename] || {};
-              var scope = pluginEntry.scope || {};
-              var isDisabled = !(scope.all === true);
-              var row = document.createElement("div");
+              const pluginEntry = plugins[filename] || {};
+              const scope = pluginEntry.scope || {};
+              const isDisabled = !(scope.all === true);
+              const row = document.createElement("div");
               row.className = "global-plugin-row" + (isDisabled ? " disabled" : "");
 
-              var toggle = document.createElement("input");
+              const toggle = document.createElement("input");
               toggle.type = "checkbox";
               toggle.checked = !isDisabled;
               toggle.style.accentColor = "#4a90d9";
@@ -53,21 +53,21 @@ export function initPluginPanel(ctx) {
                   .catch(function (e) { statusMsg.textContent = "Error: " + e; });
               });
 
-              var name = document.createElement("span");
+              const name = document.createElement("span");
               name.className = "plugin-name";
               name.textContent = filename;
 
               // Scope badge
-              var scopeBadge = document.createElement("span");
+              const scopeBadge = document.createElement("span");
               scopeBadge.className = "scope-badge";
               // Build scope summary
               if (scope.all) {
                 scopeBadge.textContent = "All cases";
               } else {
-                var scopeParts = [];
-                var ef = scope.enabled_for || [];
-                var efs = scope.enabled_for_sequences || [];
-                var efc = scope.enabled_for_collections || [];
+                const scopeParts = [];
+                const ef = scope.enabled_for || [];
+                const efs = scope.enabled_for_sequences || [];
+                const efc = scope.enabled_for_collections || [];
                 if (ef.length > 0) scopeParts.push(ef.length + " case" + (ef.length !== 1 ? "s" : ""));
                 if (efs.length > 0) scopeParts.push(efs.length + " seq");
                 if (efc.length > 0) scopeParts.push(efc.length + " col");
@@ -75,7 +75,7 @@ export function initPluginPanel(ctx) {
                 if (scopeParts.length === 0) scopeBadge.style.color = "#888";
               }
 
-              var overrideBadge = document.createElement("span");
+              const overrideBadge = document.createElement("span");
               overrideBadge.className = "scope-badge";
               if (pluginEntry.origin) {
                 overrideBadge.textContent = pluginEntry.origin;
@@ -83,14 +83,14 @@ export function initPluginPanel(ctx) {
                 overrideBadge.style.fontSize = "0.7rem";
               }
 
-              var paramsBtn = document.createElement("button");
+              const paramsBtn = document.createElement("button");
               paramsBtn.className = "small-btn btn-small";
               paramsBtn.textContent = "Params";
               paramsBtn.addEventListener("click", function () {
                 ctx.showPluginParamsModal(filename, "Global Default", "default", "");
               });
 
-              var removeBtn = document.createElement("button");
+              const removeBtn = document.createElement("button");
               removeBtn.className = "plugin-remove-btn";
               removeBtn.textContent = "Remove";
               removeBtn.addEventListener("click", function () {
@@ -101,7 +101,7 @@ export function initPluginPanel(ctx) {
                 });
               });
 
-              var scopeBtn = document.createElement("button");
+              const scopeBtn = document.createElement("button");
               scopeBtn.className = "small-btn btn-small";
               scopeBtn.textContent = "Scope";
               scopeBtn.addEventListener("click", (function (fn) {
@@ -122,7 +122,7 @@ export function initPluginPanel(ctx) {
       })
       .catch(function (e) {
         globalPluginsList.innerHTML = "";
-        var errEl = document.createElement("div");
+        const errEl = document.createElement("div");
         errEl.className = "global-plugins-empty";
         errEl.textContent = "Error loading plugins: " + e;
         globalPluginsList.appendChild(errEl);
@@ -130,38 +130,38 @@ export function initPluginPanel(ctx) {
   }
 
   function showGlobalAttachCodeModal(onDone) {
-    var m = createModal("<strong>Attach Global Plugin Code</strong>", { wide: true });
+    const m = createModal("<strong>Attach Global Plugin Code</strong>", { wide: true });
 
-    var filenameField = document.createElement("div");
+    const filenameField = document.createElement("div");
     filenameField.className = "modal-field";
-    var filenameLabel = document.createElement("label");
+    const filenameLabel = document.createElement("label");
     filenameLabel.textContent = "Filename";
-    var filenameInput = document.createElement("input");
+    const filenameInput = document.createElement("input");
     filenameInput.type = "text";
     filenameInput.placeholder = "my_plugin.js";
     filenameField.appendChild(filenameLabel);
     filenameField.appendChild(filenameInput);
 
-    var codeField = document.createElement("div");
+    const codeField = document.createElement("div");
     codeField.className = "modal-field";
-    var codeLabel = document.createElement("label");
+    const codeLabel = document.createElement("label");
     codeLabel.textContent = "Plugin Code";
-    var codeInput = document.createElement("textarea");
+    const codeInput = document.createElement("textarea");
     codeInput.className = "attach-code-textarea";
     codeInput.placeholder = "// Paste your plugin JS code here...";
     codeField.appendChild(codeLabel);
     codeField.appendChild(codeInput);
 
-    var userEditedFilename = false;
+    let userEditedFilename = false;
     filenameInput.addEventListener("input", function () {
       userEditedFilename = true;
     });
 
     function detectPluginName() {
-      var code = codeInput.value;
-      var nameMatch = code.match(/EnginePlugins\.register\s*\(\s*\{[^}]*name\s*:\s*['"]([^'"]+)['"]/);
+      const code = codeInput.value;
+      const nameMatch = code.match(/EnginePlugins\.register\s*\(\s*\{[^}]*name\s*:\s*['"]([^'"]+)['"]/);
       if (nameMatch) {
-        var detected = nameMatch[1] + ".js";
+        const detected = nameMatch[1] + ".js";
         filenameInput.placeholder = detected;
         if (!userEditedFilename) {
           filenameInput.value = detected;
@@ -174,61 +174,61 @@ export function initPluginPanel(ctx) {
       setTimeout(detectPluginName, 0);
     });
 
-    var buttons = document.createElement("div");
+    const buttons = document.createElement("div");
     buttons.className = "modal-row-buttons";
 
-    var attachBtn = document.createElement("button");
+    const attachBtn = document.createElement("button");
     attachBtn.className = "modal-btn modal-btn-secondary";
     attachBtn.textContent = "Attach";
 
-    var cancelBtn = document.createElement("button");
+    const cancelBtn = document.createElement("button");
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
 
     // --- Scope picker ---
-    var scopeSection = document.createElement("div");
+    const scopeSection = document.createElement("div");
     scopeSection.style.cssText = "margin: 0.75rem 0;";
 
-    var scopeLabelEl = document.createElement("div");
+    const scopeLabelEl = document.createElement("div");
     scopeLabelEl.className = "section-label";
     scopeLabelEl.textContent = "Enable for";
 
-    var scopeAllRadio = document.createElement("input");
+    const scopeAllRadio = document.createElement("input");
     scopeAllRadio.type = "radio";
     scopeAllRadio.name = "scope-mode";
     scopeAllRadio.checked = true;
     scopeAllRadio.style.accentColor = "#4a90d9";
-    var scopeAllLabel = document.createElement("label");
+    const scopeAllLabel = document.createElement("label");
     scopeAllLabel.className = "checkbox-label";
     scopeAllLabel.style.cssText = "gap:0.4rem; font-size:0.85rem; padding:0; margin-bottom:0.3rem;";
     scopeAllLabel.appendChild(scopeAllRadio);
     scopeAllLabel.appendChild(document.createTextNode("All cases (disabled by default)"));
 
-    var scopeSpecificRadio = document.createElement("input");
+    const scopeSpecificRadio = document.createElement("input");
     scopeSpecificRadio.type = "radio";
     scopeSpecificRadio.name = "scope-mode";
     scopeSpecificRadio.style.accentColor = "#4a90d9";
-    var scopeSpecificLabel = document.createElement("label");
+    const scopeSpecificLabel = document.createElement("label");
     scopeSpecificLabel.className = "checkbox-label";
     scopeSpecificLabel.style.cssText = "gap:0.4rem; font-size:0.85rem; padding:0; margin-bottom:0.3rem;";
     scopeSpecificLabel.appendChild(scopeSpecificRadio);
     scopeSpecificLabel.appendChild(document.createTextNode("Enable for specific scopes"));
 
-    var scopeChecklist = document.createElement("div");
+    const scopeChecklist = document.createElement("div");
     scopeChecklist.className = "scroll-panel";
     scopeChecklist.style.cssText = "max-height:180px; padding:0.3rem 0; display:none;";
 
     function makeScopeGroupLabel(text) {
-      var lbl = document.createElement("div");
+      const lbl = document.createElement("div");
       lbl.style.cssText = "color:#888; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.04em; margin:0.4rem 0 0.2rem 0;";
       lbl.textContent = text;
       return lbl;
     }
 
     function makeScopeCheckbox(label, scopeType, scopeKey) {
-      var row = document.createElement("label");
+      const row = document.createElement("label");
       row.style.cssText = "display:flex; align-items:center; gap:0.4rem; color:#ddd; font-size:0.82rem; padding:0.15rem 0; cursor:pointer;";
-      var cb = document.createElement("input");
+      const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.style.accentColor = "#4a90d9";
       cb.dataset.scopeType = scopeType;
@@ -238,28 +238,28 @@ export function initPluginPanel(ctx) {
       return row;
     }
 
-    var scopeChecklistPopulated = false;
+    let scopeChecklistPopulated = false;
     function populateScopeChecklist(cases, cols) {
       if (scopeChecklistPopulated) return;
       scopeChecklistPopulated = true;
       scopeChecklist.innerHTML = "";
 
-      var collections = cols || [];
-      var collectionCaseIds = {};
-      var collectionSeqTitles = {};
-      for (var ci = 0; ci < collections.length; ci++) {
-        var colItems = collections[ci].items || [];
-        for (var ii = 0; ii < colItems.length; ii++) {
+      const collections = cols || [];
+      const collectionCaseIds = {};
+      const collectionSeqTitles = {};
+      for (let ci = 0; ci < collections.length; ci++) {
+        const colItems = collections[ci].items || [];
+        for (let ii = 0; ii < colItems.length; ii++) {
           if (colItems[ii].type === "case") collectionCaseIds[colItems[ii].case_id] = true;
           if (colItems[ii].type === "sequence") collectionSeqTitles[colItems[ii].title] = true;
         }
       }
 
-      var seqTitles = [];
-      var seenSeqs = {};
-      var sequenceCaseIds = {};
-      for (var si = 0; si < cases.length; si++) {
-        var seq = cases[si].sequence;
+      const seqTitles = [];
+      const seenSeqs = {};
+      const sequenceCaseIds = {};
+      for (let si = 0; si < cases.length; si++) {
+        const seq = cases[si].sequence;
         if (seq && seq.title) {
           sequenceCaseIds[cases[si].case_id] = true;
           if (!seenSeqs[seq.title] && !collectionSeqTitles[seq.title]) {
@@ -269,9 +269,9 @@ export function initPluginPanel(ctx) {
         }
       }
 
-      var standaloneCases = [];
-      for (var sci = 0; sci < cases.length; sci++) {
-        var c = cases[sci];
+      const standaloneCases = [];
+      for (let sci = 0; sci < cases.length; sci++) {
+        const c = cases[sci];
         if (!sequenceCaseIds[c.case_id] && !collectionCaseIds[c.case_id]) {
           standaloneCases.push(c);
         }
@@ -279,7 +279,7 @@ export function initPluginPanel(ctx) {
 
       if (collections.length > 0) {
         scopeChecklist.appendChild(makeScopeGroupLabel("Collections"));
-        for (var colIdx = 0; colIdx < collections.length; colIdx++) {
+        for (let colIdx = 0; colIdx < collections.length; colIdx++) {
           scopeChecklist.appendChild(makeScopeCheckbox(
             collections[colIdx].title,
             "collection",
@@ -290,7 +290,7 @@ export function initPluginPanel(ctx) {
 
       if (seqTitles.length > 0) {
         scopeChecklist.appendChild(makeScopeGroupLabel("Sequences"));
-        for (var seqIdx = 0; seqIdx < seqTitles.length; seqIdx++) {
+        for (let seqIdx = 0; seqIdx < seqTitles.length; seqIdx++) {
           scopeChecklist.appendChild(makeScopeCheckbox(
             seqTitles[seqIdx],
             "sequence",
@@ -301,7 +301,7 @@ export function initPluginPanel(ctx) {
 
       if (standaloneCases.length > 0) {
         scopeChecklist.appendChild(makeScopeGroupLabel("Individual Cases"));
-        for (var caseIdx = 0; caseIdx < standaloneCases.length; caseIdx++) {
+        for (let caseIdx = 0; caseIdx < standaloneCases.length; caseIdx++) {
           scopeChecklist.appendChild(makeScopeCheckbox(
             standaloneCases[caseIdx].title,
             "case",
@@ -311,7 +311,7 @@ export function initPluginPanel(ctx) {
       }
 
       if (scopeChecklist.children.length === 0) {
-        var emptyMsg = document.createElement("div");
+        const emptyMsg = document.createElement("div");
         emptyMsg.className = "muted";
         emptyMsg.style.fontSize = "0.82rem";
         emptyMsg.textContent = "No cases downloaded yet.";
@@ -325,13 +325,13 @@ export function initPluginPanel(ctx) {
     scopeSpecificRadio.addEventListener("change", function () {
       scopeChecklist.style.display = "block";
       // Lazy populate: use cached data or fetch if empty
-      var cachedCases = getCachedCases();
-      var cachedCollections = getCachedCollections();
+      const cachedCases = getCachedCases();
+      const cachedCollections = getCachedCollections();
       if (cachedCases.length > 0 || cachedCollections.length > 0) {
         populateScopeChecklist(cachedCases, cachedCollections);
       } else {
         scopeChecklist.innerHTML = "";
-        var loadMsg = document.createElement("div");
+        const loadMsg = document.createElement("div");
         loadMsg.className = "muted";
         loadMsg.style.fontSize = "0.82rem";
         loadMsg.textContent = "Loading...";
@@ -347,11 +347,11 @@ export function initPluginPanel(ctx) {
     });
 
     attachBtn.addEventListener("click", function () {
-      var filename = filenameInput.value.trim();
+      let filename = filenameInput.value.trim();
       if (!filename && filenameInput.placeholder && filenameInput.placeholder !== "my_plugin.js") {
         filename = filenameInput.placeholder;
       }
-      var code = codeInput.value;
+      const code = codeInput.value;
 
       if (!filename) {
         filenameInput.style.borderColor = "#a33";
@@ -377,10 +377,10 @@ export function initPluginPanel(ctx) {
       })
       .then(function () {
         // If specific scopes selected, enable for each
-        var selectedScopes = [];
+        const selectedScopes = [];
         if (scopeSpecificRadio.checked) {
-          var checks = scopeChecklist.querySelectorAll("input[type=checkbox]:checked");
-          for (var sc = 0; sc < checks.length; sc++) {
+          const checks = scopeChecklist.querySelectorAll("input[type=checkbox]:checked");
+          for (let sc = 0; sc < checks.length; sc++) {
             selectedScopes.push({
               scopeType: checks[sc].dataset.scopeType,
               scopeKey: checks[sc].dataset.scopeKey
@@ -388,7 +388,7 @@ export function initPluginPanel(ctx) {
           }
         }
         if (selectedScopes.length > 0) {
-          var togglePromises = selectedScopes.map(function (s) {
+          const togglePromises = selectedScopes.map(function (s) {
             return invoke("toggle_plugin_for_scope", {
               filename: filename,
               scopeType: s.scopeType,
@@ -433,7 +433,7 @@ export function initPluginPanel(ctx) {
 
   // Panel toggle listener
   pluginsToggle.addEventListener("click", function () {
-    var isOpen = !pluginsPanel.classList.contains("hidden");
+    const isOpen = !pluginsPanel.classList.contains("hidden");
     if (isOpen) {
       pluginsPanel.classList.add("hidden");
       pluginsToggle.classList.remove("open");

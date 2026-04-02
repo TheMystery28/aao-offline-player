@@ -7,46 +7,46 @@ import { escapeHtml, createModal } from '../helpers.js';
  * scopeLabel: display name like 'Sequence "My Seq"'
  */
 export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
 
-  var m = createModal("<strong>Plugins &mdash; " + escapeHtml(scopeLabel) + "</strong>", { wide: true });
+  const m = createModal("<strong>Plugins &mdash; " + escapeHtml(scopeLabel) + "</strong>", { wide: true });
 
-  var listContainer = document.createElement("div");
+  const listContainer = document.createElement("div");
   listContainer.className = "scroll-panel";
 
   function refreshScopedList() {
     invoke("list_global_plugins").then(function (manifest) {
-      var scripts = (manifest && manifest.scripts) || [];
-      var plugins = (manifest && manifest.plugins) || {};
+      const scripts = (manifest && manifest.scripts) || [];
+      const plugins = (manifest && manifest.plugins) || {};
       listContainer.innerHTML = "";
 
       if (scripts.length === 0) {
-        var empty = document.createElement("div");
+        const empty = document.createElement("div");
         empty.className = "muted";
         empty.textContent = "No plugins installed.";
         listContainer.appendChild(empty);
         return;
       }
 
-      for (var i = 0; i < scripts.length; i++) {
+      for (let i = 0; i < scripts.length; i++) {
         (function (filename) {
 
-          var pe = plugins[filename] || {};
-          var globallyDisabled = !((pe.scope || {}).all === true);
-          var pluginEntry = plugins[filename] || {};
+          const pe = plugins[filename] || {};
+          const globallyDisabled = !((pe.scope || {}).all === true);
+          const pluginEntry = plugins[filename] || {};
 
           // Determine effective state for this scope
-          var isEnabledForScope = false;
-          var stateLabel = "";
+          let isEnabledForScope = false;
+          let stateLabel = "";
           if (globallyDisabled) {
             // Check enabled_for
-            var ef = pluginEntry.enabled_for || {};
-            var fieldName = scopeType === "case" ? "cases" : (scopeType === "sequence" ? "sequences" : "collections");
-            var arr = ef[fieldName] || [];
-            var matchVal = scopeType === "case" ? Number(scopeKey) : scopeKey;
+            const ef = pluginEntry.enabled_for || {};
+            const fieldName = scopeType === "case" ? "cases" : (scopeType === "sequence" ? "sequences" : "collections");
+            const arr = ef[fieldName] || [];
+            const matchVal = scopeType === "case" ? Number(scopeKey) : scopeKey;
             isEnabledForScope = false;
-            for (var ei = 0; ei < arr.length; ei++) {
+            for (let ei = 0; ei < arr.length; ei++) {
               if (scopeType === "case" ? arr[ei] === matchVal : arr[ei] === matchVal) {
                 isEnabledForScope = true;
                 break;
@@ -55,12 +55,12 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
             stateLabel = isEnabledForScope ? "enabled (override)" : "disabled (global)";
           } else {
             // Check disabled_for
-            var df = pluginEntry.disabled_for || {};
-            var fieldName2 = scopeType === "case" ? "cases" : (scopeType === "sequence" ? "sequences" : "collections");
-            var arr2 = df[fieldName2] || [];
-            var matchVal2 = scopeType === "case" ? Number(scopeKey) : scopeKey;
-            var isDisabledForScope = false;
-            for (var di = 0; di < arr2.length; di++) {
+            const df = pluginEntry.disabled_for || {};
+            const fieldName2 = scopeType === "case" ? "cases" : (scopeType === "sequence" ? "sequences" : "collections");
+            const arr2 = df[fieldName2] || [];
+            const matchVal2 = scopeType === "case" ? Number(scopeKey) : scopeKey;
+            let isDisabledForScope = false;
+            for (let di = 0; di < arr2.length; di++) {
               if (scopeType === "case" ? arr2[di] === matchVal2 : arr2[di] === matchVal2) {
                 isDisabledForScope = true;
                 break;
@@ -70,10 +70,10 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
             stateLabel = isDisabledForScope ? "disabled (override)" : "enabled (global)";
           }
 
-          var row = document.createElement("div");
+          const row = document.createElement("div");
           row.className = "global-plugin-row";
 
-          var toggle = document.createElement("input");
+          const toggle = document.createElement("input");
           toggle.type = "checkbox";
           toggle.checked = isEnabledForScope;
           toggle.style.accentColor = "#4a90d9";
@@ -93,15 +93,15 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
             });
           });
 
-          var name = document.createElement("span");
+          const name = document.createElement("span");
           name.className = "plugin-name";
           name.textContent = filename;
 
-          var badge = document.createElement("span");
+          const badge = document.createElement("span");
           badge.className = "scope-badge";
           badge.textContent = stateLabel;
 
-          var paramsBtn = document.createElement("button");
+          const paramsBtn = document.createElement("button");
           paramsBtn.className = "small-btn";
           paramsBtn.textContent = "Params";
           paramsBtn.className += " btn-small";
@@ -121,13 +121,13 @@ export function showScopedPluginModal(ctx, scopeType, scopeKey, scopeLabel) {
     }).catch(function(e) { console.error("[PLUGINS] Failed to load scoped list:", e); });
   }
 
-  var closeBtn = document.createElement("button");
+  const closeBtn = document.createElement("button");
   closeBtn.className = "modal-btn modal-btn-cancel";
   closeBtn.textContent = "Close";
   closeBtn.style.width = "100%";
   closeBtn.addEventListener("click", m.close);
 
-  var scopedAttachBtn = document.createElement("button");
+  const scopedAttachBtn = document.createElement("button");
   scopedAttachBtn.className = "small-btn";
   scopedAttachBtn.textContent = "Attach Code";
   scopedAttachBtn.style.cssText = "width:100%; margin:0.5rem 0;";

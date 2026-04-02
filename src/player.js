@@ -4,27 +4,27 @@
  * @param {AppContext} ctx
  */
 export function initPlayer(ctx) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
-  var loadLibrary = ctx.loadLibrary;
-  var loadGlobalPluginsPanel = ctx.loadGlobalPluginsPanel;
-  var writeGameSaves = ctx.writeGameSaves;
-  var nextBridgeId = ctx.nextBridgeId;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
+  const loadLibrary = ctx.loadLibrary;
+  const loadGlobalPluginsPanel = ctx.loadGlobalPluginsPanel;
+  const writeGameSaves = ctx.writeGameSaves;
+  const nextBridgeId = ctx.nextBridgeId;
 
   // DOM refs (owned exclusively by the player module)
-  var launcher = document.getElementById("launcher");
-  var playerContainer = document.getElementById("player-container");
-  var gameFrame = document.getElementById("game-frame");
-  var backBtn = document.getElementById("back-btn");
-  var playerTitle = document.getElementById("player-title");
-  var settingsAutoSave = document.getElementById("settings-autosave");
+  const launcher = document.getElementById("launcher");
+  const playerContainer = document.getElementById("player-container");
+  const gameFrame = document.getElementById("game-frame");
+  const backBtn = document.getElementById("back-btn");
+  const playerTitle = document.getElementById("player-title");
+  const settingsAutoSave = document.getElementById("settings-autosave");
 
   // Update toolbar title when iframe navigates (added once, not per showPlayer call)
   gameFrame.addEventListener("load", function () {
     if (playerContainer.classList.contains("hidden")) return;
     try {
-      var iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
-      var iframeTitle = iframeDoc.title;
+      const iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
+      let iframeTitle = iframeDoc.title;
       if (iframeTitle && iframeTitle.indexOf(' - Ace Attorney Online') !== -1) {
         iframeTitle = iframeTitle.replace(' - Ace Attorney Online', '');
       }
@@ -54,24 +54,24 @@ export function initPlayer(ctx) {
     gameFrame.addEventListener("load", function onFrameLoad() {
       gameFrame.removeEventListener("load", onFrameLoad);
       try {
-        var iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
+        const iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
         console.log("[PLAYER] Iframe loaded. baseURI=" + iframeDoc.baseURI);
         console.log("[PLAYER] Iframe location=" + gameFrame.contentWindow.location.href);
 
         // List all <script> tags loaded in the iframe
-        var scripts = iframeDoc.querySelectorAll("script");
+        const scripts = iframeDoc.querySelectorAll("script");
         console.log("[PLAYER] Iframe scripts loaded: " + scripts.length);
-        for (var s = 0; s < scripts.length; s++) {
+        for (let s = 0; s < scripts.length; s++) {
           console.log("[PLAYER]   script[" + s + "] src=" + (scripts[s].src || "(inline)"));
         }
 
         // Listen for resource load failures (images, audio, scripts)
         iframeDoc.addEventListener("error", function (e) {
-          var el = e.target;
-          var src = el.src || el.currentSrc || el.href || "(unknown)";
-          var tag = el.tagName || "?";
-          var id = el.id || "";
-          var cls = el.className || "";
+          const el = e.target;
+          const src = el.src || el.currentSrc || el.href || "(unknown)";
+          const tag = el.tagName || "?";
+          const id = el.id || "";
+          const cls = el.className || "";
           console.error(
             "[IFRAME RESOURCE ERROR] <" + tag + "> src=" + src +
             (id ? " id=" + id : "") +
@@ -82,9 +82,9 @@ export function initPlayer(ctx) {
 
         // Also intercept successful loads for images (so we see what works)
         iframeDoc.addEventListener("load", function (e) {
-          var el = e.target;
+          const el = e.target;
           if (el.tagName === "IMG" || el.tagName === "AUDIO" || el.tagName === "SOURCE") {
-            var src = el.src || el.currentSrc || "(unknown)";
+            const src = el.src || el.currentSrc || "(unknown)";
             console.log("[IFRAME RESOURCE OK] <" + el.tagName + "> src=" + src);
           }
         }, true);
@@ -120,13 +120,16 @@ export function initPlayer(ctx) {
 
       if (savesDataString) {
         try {
-          var parsed = JSON.parse(savesDataString);
-          invoke("backup_saves", { saves: parsed }).then(function () {
-            console.log("[SAVE] Auto-save backed up directly to disk");
-          }).catch(function (e) {
-            console.warn("[SAVE] Direct backup failed:", e);
-            backupSavesToFile();
-          });
+          const parsed = JSON.parse(savesDataString);
+          (async () => {
+            try {
+              await invoke("backup_saves", { saves: parsed });
+              console.log("[SAVE] Auto-save backed up directly to disk");
+            } catch (e) {
+              console.warn("[SAVE] Direct backup failed:", e);
+              backupSavesToFile();
+            }
+          })();
         } catch (e) {
           console.warn("[SAVE] Failed to parse direct save data:", e);
           backupSavesToFile();
@@ -141,8 +144,8 @@ export function initPlayer(ctx) {
     // so we don't rely on localStorage flush timing (critical on Android).
     if (!settingsAutoSave || settingsAutoSave.checked) {
       if (gameFrame.contentWindow && gameFrame.src !== "about:blank") {
-        var saveTimeout;
-        var onSaveComplete = function (event) {
+        let saveTimeout;
+        const onSaveComplete = function (event) {
           if (event.data && event.data.type === "auto_save_complete") {
             window.removeEventListener("message", onSaveComplete);
             clearTimeout(saveTimeout);
@@ -177,31 +180,29 @@ export function initPlayer(ctx) {
   // Toolbar acts as a window title bar:
   // - In fullscreen: dragging exits fullscreen then starts window drag
   // - Not in fullscreen: dragging moves the window
-  var toolbarEl = document.getElementById("player-toolbar");
-  toolbarEl.addEventListener("mousedown", function(e) {
+  const toolbarEl = document.getElementById("player-toolbar");
+  toolbarEl.addEventListener("mousedown", async function(e) {
     if (e.target === backBtn || e.buttons !== 1) return;
     try {
       if (!window.__TAURI__ || !window.__TAURI__.window) return;
-      var win = window.__TAURI__.window.getCurrentWindow();
-      win.isFullscreen().then(function(isFs) {
-        if (isFs) {
-          // Exit fullscreen first, then start dragging
-          win.setFullscreen(false).then(function() {
-            var frame = document.getElementById("game-frame");
-            if (frame && frame.contentWindow) {
-              frame.contentWindow.postMessage({ type: 'aao-set-config', path: 'display.fullscreen', value: false }, '*');
-            }
-            win.startDragging();
-          });
-        } else {
-          win.startDragging();
+      const win = window.__TAURI__.window.getCurrentWindow();
+      const isFs = await win.isFullscreen();
+      if (isFs) {
+        // Exit fullscreen first, then start dragging
+        await win.setFullscreen(false);
+        const frame = document.getElementById("game-frame");
+        if (frame && frame.contentWindow) {
+          frame.contentWindow.postMessage({ type: 'aao-set-config', path: 'display.fullscreen', value: false }, '*');
         }
-      });
+        win.startDragging();
+      } else {
+        win.startDragging();
+      }
     } catch (err) {}
   });
 
   // Listen for messages from the engine iframe
-  window.addEventListener("message", function(e) {
+  window.addEventListener("message", async function(e) {
     if (!e.data || !e.data.type) return;
     if (e.data.type === 'aao-header-visibility') {
       if (e.data.hidden) {
@@ -211,7 +212,7 @@ export function initPlayer(ctx) {
       }
     } else if (e.data.type === 'aao-title-update') {
       // Engine loaded a new case — update toolbar title
-      var text = e.data.title || '';
+      let text = e.data.title || '';
       if (e.data.author) text += ' — ' + e.data.author;
       if (text) playerTitle.textContent = text;
     } else if (e.data.type === 'aao-fullscreen') {
@@ -225,24 +226,25 @@ export function initPlayer(ctx) {
       }
     } else if (e.data.type === 'aao-attach-code') {
       // Persist plugin code from the player's in-game Attach Code to Rust backend
-      var caseIds = e.data.caseId ? [e.data.caseId] : [];
-      invoke("attach_plugin_code", {
-        code: e.data.code,
-        filename: e.data.filename,
-        targetCaseIds: caseIds
-      }).then(function() {
+      const caseIds = e.data.caseId ? [e.data.caseId] : [];
+      try {
+        await invoke("attach_plugin_code", {
+          code: e.data.code,
+          filename: e.data.filename,
+          targetCaseIds: caseIds
+        });
         if (gameFrame.contentWindow) {
           gameFrame.contentWindow.postMessage({
             type: 'aao-attach-code-result', success: true
           }, '*');
         }
-      }).catch(function(err) {
+      } catch (err) {
         if (gameFrame.contentWindow) {
           gameFrame.contentWindow.postMessage({
             type: 'aao-attach-code-result', success: false, error: String(err)
           }, '*');
         }
-      });
+      }
     }
   });
 
@@ -257,12 +259,13 @@ export function initPlayer(ctx) {
   // --- Save Backup/Restore ---
 
   // Back up saves from localStorage to a file (survives app updates/reinstalls)
-  function backupSavesToFile() {
-    invoke("get_server_url").then(function (serverUrl) {
-      var bridgeId = nextBridgeId();
-      var iframe = document.createElement("iframe");
+  async function backupSavesToFile() {
+    try {
+      const serverUrl = await invoke("get_server_url");
+      const bridgeId = nextBridgeId();
+      const iframe = document.createElement("iframe");
       iframe.style.display = "none";
-      var done = false;
+      let done = false;
 
       function onMsg(event) {
         if (done || !event.data || event.data.type !== "game_saves") return;
@@ -271,14 +274,17 @@ export function initPlayer(ctx) {
         window.removeEventListener("message", onMsg);
         if (iframe.parentNode) document.body.removeChild(iframe);
 
-        var raw = event.data.data;
+        const raw = event.data.data;
         if (raw) {
-          var parsed = JSON.parse(raw);
-          invoke("backup_saves", { saves: parsed }).then(function () {
-            console.log("[SAVE] Backed up saves to file");
-          }).catch(function (e) {
-            console.warn("[SAVE] Backup failed:", e);
-          });
+          const parsed = JSON.parse(raw);
+          (async () => {
+            try {
+              await invoke("backup_saves", { saves: parsed });
+              console.log("[SAVE] Backed up saves to file");
+            } catch (e) {
+              console.warn("[SAVE] Backup failed:", e);
+            }
+          })();
         }
       }
 
@@ -292,27 +298,29 @@ export function initPlayer(ctx) {
       }, 3000);
       iframe.src = serverUrl + "/localstorage_bridge.html?id=" + bridgeId;
       document.body.appendChild(iframe);
-    });
+    } catch (e) {
+      console.warn("[SAVE] backupSavesToFile: get_server_url failed:", e);
+    }
   }
 
   // Restore saves from backup file to localStorage (runs once on startup)
-  function restoreSavesFromBackup() {
-    invoke("load_saves_backup").then(function (saves) {
+  async function restoreSavesFromBackup() {
+    try {
+      const saves = await invoke("load_saves_backup");
       if (!saves) {
         console.log("[SAVE] No saves backup to restore");
         return;
       }
       console.log("[SAVE] Restoring saves from backup...");
-      writeGameSaves(saves).then(function (result) {
-        if (result && result.success) {
-          console.log("[SAVE] Restored " + result.merged + " saves from backup");
-        } else {
-          console.warn("[SAVE] Restore failed:", result && result.error);
-        }
-      });
-    }).catch(function (e) {
+      const result = await writeGameSaves(saves);
+      if (result && result.success) {
+        console.log("[SAVE] Restored " + result.merged + " saves from backup");
+      } else {
+        console.warn("[SAVE] Restore failed:", result && result.error);
+      }
+    } catch (e) {
       console.warn("[SAVE] Could not load backup:", e);
-    });
+    }
   }
 
   // Restore saves on startup
@@ -323,10 +331,15 @@ export function initPlayer(ctx) {
   window.addEventListener("message", function (event) {
     if (event.data && event.data.type === "save_data_changed" && event.data.data) {
       try {
-        var parsed = JSON.parse(event.data.data);
-        invoke("backup_saves", { saves: parsed }).then(function () {
-          console.log("[SAVE] Save change backed up to disk");
-        });
+        const parsed = JSON.parse(event.data.data);
+        (async () => {
+          try {
+            await invoke("backup_saves", { saves: parsed });
+            console.log("[SAVE] Save change backed up to disk");
+          } catch (e) {
+            console.warn("[SAVE] Save change backup failed:", e);
+          }
+        })();
       } catch (e) {
         console.error("[SAVE] Failed to parse save data:", e);
       }

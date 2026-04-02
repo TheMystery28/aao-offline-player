@@ -5,53 +5,53 @@ import { createModal, groupCasesBySequence } from '../helpers.js';
  * doImportPlugin — imports a .aaoplug file using the target modal.
  */
 export function showPluginTargetModal(ctx, onConfirm) {
-  var invoke = ctx.invoke;
+  const invoke = ctx.invoke;
 
   invoke("list_cases").then(function (cases) {
-    var m = createModal("<strong>Select cases to install plugin</strong>", { wide: true });
+    const m = createModal("<strong>Select cases to install plugin</strong>", { wide: true });
 
-    var selectAllLabel = document.createElement("label");
+    const selectAllLabel = document.createElement("label");
     selectAllLabel.className = "collection-picker-item";
-    var selectAllCb = document.createElement("input");
+    const selectAllCb = document.createElement("input");
     selectAllCb.type = "checkbox";
-    var selectAllText = document.createElement("span");
+    const selectAllText = document.createElement("span");
     selectAllText.textContent = "Select All";
     selectAllText.style.fontWeight = "600";
     selectAllLabel.appendChild(selectAllCb);
     selectAllLabel.appendChild(selectAllText);
 
-    var picker = document.createElement("div");
+    const picker = document.createElement("div");
     picker.className = "collection-picker";
 
-    var checkboxes = [];
+    const checkboxes = [];
 
     // Group by sequence
-    var grouped = groupCasesBySequence(cases);
-    var sequenceGroups = {};
-    var groupKeys = Object.keys(grouped.sequenceGroups);
-    for (var g = 0; g < groupKeys.length; g++) {
+    const grouped = groupCasesBySequence(cases);
+    const sequenceGroups = {};
+    let groupKeys = Object.keys(grouped.sequenceGroups);
+    for (let g = 0; g < groupKeys.length; g++) {
       sequenceGroups[groupKeys[g]] = grouped.sequenceGroups[groupKeys[g]].cases;
     }
-    var standalone = grouped.standalone;
+    const standalone = grouped.standalone;
 
-    var groupKeys = Object.keys(sequenceGroups);
+    groupKeys = Object.keys(sequenceGroups);
     if (groupKeys.length > 0) {
-      var seqLabel = document.createElement("div");
+      const seqLabel = document.createElement("div");
       seqLabel.className = "collection-picker-group-label";
       seqLabel.textContent = "Sequences";
       picker.appendChild(seqLabel);
 
-      for (var g = 0; g < groupKeys.length; g++) {
-        var seqCases = sequenceGroups[groupKeys[g]];
-        for (var sc = 0; sc < seqCases.length; sc++) {
+      for (let g = 0; g < groupKeys.length; g++) {
+        const seqCases = sequenceGroups[groupKeys[g]];
+        for (let sc = 0; sc < seqCases.length; sc++) {
           (function (cs) {
-            var row = document.createElement("label");
+            const row = document.createElement("label");
             row.className = "collection-picker-item";
-            var cb = document.createElement("input");
+            const cb = document.createElement("input");
             cb.type = "checkbox";
-            var label = document.createElement("span");
+            const label = document.createElement("span");
             label.textContent = cs.title;
-            var meta = document.createElement("span");
+            const meta = document.createElement("span");
             meta.className = "picker-item-meta";
             meta.textContent = "ID " + cs.case_id;
             row.appendChild(cb);
@@ -65,20 +65,20 @@ export function showPluginTargetModal(ctx, onConfirm) {
     }
 
     if (standalone.length > 0) {
-      var caseLabel = document.createElement("div");
+      const caseLabel = document.createElement("div");
       caseLabel.className = "collection-picker-group-label";
       caseLabel.textContent = "Standalone Cases";
       picker.appendChild(caseLabel);
 
-      for (var s = 0; s < standalone.length; s++) {
+      for (let s = 0; s < standalone.length; s++) {
         (function (cs) {
-          var row = document.createElement("label");
+          const row = document.createElement("label");
           row.className = "collection-picker-item";
-          var cb = document.createElement("input");
+          const cb = document.createElement("input");
           cb.type = "checkbox";
-          var label = document.createElement("span");
+          const label = document.createElement("span");
           label.textContent = cs.title;
-          var meta = document.createElement("span");
+          const meta = document.createElement("span");
           meta.className = "picker-item-meta";
           meta.textContent = "ID " + cs.case_id;
           row.appendChild(cb);
@@ -91,25 +91,25 @@ export function showPluginTargetModal(ctx, onConfirm) {
     }
 
     selectAllCb.addEventListener("change", function () {
-      for (var j = 0; j < checkboxes.length; j++) {
+      for (let j = 0; j < checkboxes.length; j++) {
         checkboxes[j].checkbox.checked = selectAllCb.checked;
       }
     });
 
-    var buttons = document.createElement("div");
+    const buttons = document.createElement("div");
     buttons.className = "modal-row-buttons";
 
-    var installBtn = document.createElement("button");
+    const installBtn = document.createElement("button");
     installBtn.className = "modal-btn modal-btn-primary";
     installBtn.textContent = "Install";
 
-    var cancelBtn = document.createElement("button");
+    const cancelBtn = document.createElement("button");
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
 
     installBtn.addEventListener("click", function () {
-      var selected = [];
-      for (var j = 0; j < checkboxes.length; j++) {
+      const selected = [];
+      for (let j = 0; j < checkboxes.length; j++) {
         if (checkboxes[j].checkbox.checked) {
           selected.push(checkboxes[j].caseId);
         }
@@ -134,11 +134,11 @@ export function showPluginTargetModal(ctx, onConfirm) {
 }
 
 export function doImportPlugin(ctx, pluginPath) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
-  var loadLibrary = ctx.loadLibrary;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
+  const loadLibrary = ctx.loadLibrary;
 
-  var importResult = document.getElementById("import-result");
+  const importResult = document.getElementById("import-result");
   ctx.showPluginTargetModal(function (caseIds) {
     if (importResult) {
       importResult.textContent = "";

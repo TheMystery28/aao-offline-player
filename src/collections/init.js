@@ -38,7 +38,7 @@ export function initCollections(ctx) {
     showEditCollectionModal(ctx, col);
   };
 
-  var newCollectionBtn = document.getElementById("new-collection-btn");
+  const newCollectionBtn = document.getElementById("new-collection-btn");
   if (newCollectionBtn) {
     newCollectionBtn.addEventListener("click", function () {
       showNewCollectionModal(ctx);

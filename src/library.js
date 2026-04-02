@@ -20,24 +20,24 @@ import { buildSequenceGroupCore } from './collections/rendering.js';
  *   loadStorageInfo, appendCollectionGroup (from collections.js)
  */
 export function initLibrary(ctx) {
-  var invoke = ctx.invoke;
-  var Channel = ctx.Channel;
-  var statusMsg = ctx.statusMsg;
-  var caseList = ctx.caseList;
-  var emptyLibrary = ctx.emptyLibrary;
-  var libraryLoading = ctx.libraryLoading;
+  const invoke = ctx.invoke;
+  const Channel = ctx.Channel;
+  const statusMsg = ctx.statusMsg;
+  const caseList = ctx.caseList;
+  const emptyLibrary = ctx.emptyLibrary;
+  const libraryLoading = ctx.libraryLoading;
 
   // DOM refs
-  var librarySearch = document.getElementById("library-search");
-  var librarySort = document.getElementById("library-sort");
+  const librarySearch = document.getElementById("library-search");
+  const librarySort = document.getElementById("library-sort");
 
   // State
-  var cachedCases = [];
-  var cachedCollections = [];
+  let cachedCases = [];
+  let cachedCollections = [];
 
   // Coalesce rapid loadLibrary() calls via requestAnimationFrame.
   // Multiple calls in the same JS execution block result in a single refresh.
-  var isLibraryRefreshScheduled = false;
+  let isLibraryRefreshScheduled = false;
 
   function loadLibrary() {
     if (isLibraryRefreshScheduled) return;
@@ -62,7 +62,7 @@ export function initLibrary(ctx) {
         console.log("[LIBRARY] list_cases returned " + cachedCases.length + " cases, " +
           cachedCollections.length + " collections");
         ctx.knownCaseIds.length = 0;
-        for (var i = 0; i < cachedCases.length; i++) {
+        for (let i = 0; i < cachedCases.length; i++) {
           ctx.knownCaseIds.push(cachedCases[i].case_id);
         }
         applySearchAndSort();
@@ -76,10 +76,10 @@ export function initLibrary(ctx) {
   }
 
   function applySearchAndSort() {
-    var query = (librarySearch.value || "").trim().toLowerCase();
-    var sortBy = librarySort.value;
+    const query = (librarySearch.value || "").trim().toLowerCase();
+    const sortBy = librarySort.value;
 
-    var filtered = cachedCases;
+    let filtered = cachedCases;
     if (query) {
       filtered = cachedCases.filter(function (c) {
         return c.title.toLowerCase().indexOf(query) !== -1 ||
@@ -88,7 +88,7 @@ export function initLibrary(ctx) {
       });
     }
 
-    var sorted = filtered.slice();
+    const sorted = filtered.slice();
     if (sortBy === "name-asc") {
       sorted.sort(function (a, b) { return a.title.localeCompare(b.title); });
     } else if (sortBy === "name-desc") {
@@ -106,7 +106,7 @@ export function initLibrary(ctx) {
     renderCaseList(sorted, cachedCollections, query);
   }
 
-  var searchDebounceTimer = null;
+  let searchDebounceTimer = null;
   librarySearch.addEventListener("input", function () {
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     searchDebounceTimer = setTimeout(applySearchAndSort, 200);
@@ -128,33 +128,33 @@ export function initLibrary(ctx) {
     emptyLibrary.classList.add("hidden");
 
     // Build lookup maps
-    var casesById = {};
-    for (var ci = 0; ci < cases.length; ci++) {
+    const casesById = {};
+    for (let ci = 0; ci < cases.length; ci++) {
       casesById[cases[ci].case_id] = cases[ci];
     }
 
     // Group cases by sequence title
-    var grouped = groupCasesBySequence(cases);
-    var sequenceGroups = grouped.sequenceGroups;
-    var standalone = grouped.standalone;
+    const grouped = groupCasesBySequence(cases);
+    const sequenceGroups = grouped.sequenceGroups;
+    const standalone = grouped.standalone;
 
     // Sort sequence groups
-    var groupKeys = Object.keys(sequenceGroups);
-    for (var g = 0; g < groupKeys.length; g++) {
-      var groupTitle = groupKeys[g];
-      var group = sequenceGroups[groupTitle];
-      var listIds = group.list.map(function (p) { return p.id; });
+    const groupKeys = Object.keys(sequenceGroups);
+    for (let g = 0; g < groupKeys.length; g++) {
+      const groupTitle = groupKeys[g];
+      const group = sequenceGroups[groupTitle];
+      const listIds = group.list.map(function (p) { return p.id; });
       group.cases.sort(function (a, b) {
         return listIds.indexOf(a.case_id) - listIds.indexOf(b.case_id);
       });
     }
 
     // Determine which items are claimed by a collection
-    var claimedCaseIds = {};
-    var claimedSequenceTitles = {};
-    for (var col = 0; col < collections.length; col++) {
-      var items = collections[col].items || [];
-      for (var it = 0; it < items.length; it++) {
+    const claimedCaseIds = {};
+    const claimedSequenceTitles = {};
+    for (let col = 0; col < collections.length; col++) {
+      const items = collections[col].items || [];
+      for (let it = 0; it < items.length; it++) {
         if (items[it].type === "case") {
           claimedCaseIds[items[it].case_id] = true;
         } else if (items[it].type === "sequence") {
@@ -164,19 +164,19 @@ export function initLibrary(ctx) {
     }
 
     // Render collections first
-    for (var co = 0; co < collections.length; co++) {
+    for (let co = 0; co < collections.length; co++) {
       ctx.appendCollectionGroup(collections[co], casesById, sequenceGroups, searchQuery);
     }
 
     // Render remaining uncollected sequences
-    for (var gs = 0; gs < groupKeys.length; gs++) {
+    for (let gs = 0; gs < groupKeys.length; gs++) {
       if (!claimedSequenceTitles[groupKeys[gs]]) {
         appendSequenceGroup(groupKeys[gs], sequenceGroups[groupKeys[gs]].list, sequenceGroups[groupKeys[gs]].cases, searchQuery);
       }
     }
 
     // Render remaining uncollected standalone cases
-    for (var s = 0; s < standalone.length; s++) {
+    for (let s = 0; s < standalone.length; s++) {
       if (!claimedCaseIds[standalone[s].case_id]) {
         appendCaseCard(standalone[s]);
       }
@@ -184,18 +184,18 @@ export function initLibrary(ctx) {
   }
 
   function appendSequenceGroup(sequenceTitle, sequenceList, downloadedCases, searchQuery) {
-    var core = buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloadedCases, searchQuery);
+    const core = buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloadedCases, searchQuery);
     if (searchQuery && core.renderedParts === 0) {
       return;
     }
-    var footer = core.footer;
-    var downloadedIds = core.downloadedIds;
+    const footer = core.footer;
+    const downloadedIds = core.downloadedIds;
 
     // Library-specific footer buttons (not shown in collection view)
 
     // Update All button
     if (downloadedCases.length > 0) {
-      var updateAllBtn = document.createElement("button");
+      const updateAllBtn = document.createElement("button");
       updateAllBtn.className = "update-btn";
       updateAllBtn.textContent = "Update All";
       updateAllBtn.addEventListener("click", (function (cases) {
@@ -209,17 +209,17 @@ export function initLibrary(ctx) {
             "Script/dialog only",
             "Re-download all assets",
             function (choice) {
-              var redownload = (choice === 2);
+              const redownload = (choice === 2);
 
               // Update each part sequentially
-              var idx = 0;
+              let idx = 0;
               function updateNext() {
                 if (idx >= cases.length) {
                   loadLibrary();
                   statusMsg.textContent = "All " + cases.length + " parts updated.";
                   return;
                 }
-                var c = cases[idx];
+                const c = cases[idx];
                 idx++;
                 statusMsg.textContent = "Updating part " + idx + "/" + cases.length + ": " + c.title + "...";
                 ctx.startUpdate(c.case_id, redownload, function () {
@@ -236,13 +236,13 @@ export function initLibrary(ctx) {
 
     // Export sequence button
     if (downloadedCases.length > 1) {
-      var exportSeqBtn = document.createElement("button");
+      const exportSeqBtn = document.createElement("button");
       exportSeqBtn.className = "export-btn";
       exportSeqBtn.textContent = "Export Sequence";
       exportSeqBtn.addEventListener("click", (function (ids, title, list) {
         return function () {
-          var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
-          var defaultName = safeName + ".aaocase";
+          const safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+          const defaultName = safeName + ".aaocase";
           statusMsg.textContent = "Choosing export location...";
           invoke("pick_export_file", { defaultName: defaultName })
             .then(function (destPath) {
@@ -263,7 +263,7 @@ export function initLibrary(ctx) {
                     onEvent: onEvent
                   });
                 }).then(function (size) {
-                  var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
+                  let msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
                   if (saves) msg += " with saves";
                   statusMsg.textContent = msg;
                 }).catch(function (e) {
@@ -280,7 +280,7 @@ export function initLibrary(ctx) {
 
     // Saves & Plugins button for entire sequence
     if (downloadedCases.length > 0) {
-      var seqSavesBtn = document.createElement("button");
+      const seqSavesBtn = document.createElement("button");
       seqSavesBtn.className = "save-btn";
       seqSavesBtn.textContent = "Saves";
       seqSavesBtn.title = "Saves & plugins for all parts";
@@ -291,7 +291,7 @@ export function initLibrary(ctx) {
     }
 
     // Delete all button
-    var delAllBtn = document.createElement("button");
+    const delAllBtn = document.createElement("button");
     delAllBtn.className = "delete-btn";
     delAllBtn.textContent = "Delete All";
     delAllBtn.addEventListener("click", (function (cases, title) {
@@ -300,7 +300,7 @@ export function initLibrary(ctx) {
           'Delete all ' + cases.length + ' parts of "' + title + '"?\nThis cannot be undone.',
           "Delete All",
           function () {
-            var deletePromises = cases.map(function (c) {
+            const deletePromises = cases.map(function (c) {
               return invoke("delete_case", { caseId: c.case_id });
             });
             Promise.all(deletePromises)
@@ -317,12 +317,12 @@ export function initLibrary(ctx) {
   }
 
   function appendSequencePart(container, partInfo, partNum, manifest) {
-    var row = document.createElement("div");
+    const row = document.createElement("div");
     row.className = "sequence-part" + (manifest ? "" : " sequence-part-missing");
 
     if (manifest) {
-      var sizeStr = formatBytes(manifest.assets.total_size_bytes);
-      var failedCount = manifest.failed_assets ? manifest.failed_assets.length : 0;
+      const sizeStr = formatBytes(manifest.assets.total_size_bytes);
+      const failedCount = manifest.failed_assets ? manifest.failed_assets.length : 0;
       row.innerHTML =
         '<span class="sequence-part-info">' +
           '<span class="sequence-part-num">' + partNum + '.</span> ' +
@@ -333,10 +333,10 @@ export function initLibrary(ctx) {
           '</span>' +
         '</span>';
 
-      var actions = document.createElement("span");
+      const actions = document.createElement("span");
       actions.className = "sequence-part-actions";
 
-      var playBtn = document.createElement("button");
+      const playBtn = document.createElement("button");
       playBtn.className = "play-btn";
       playBtn.innerHTML = "&#9654;";
       playBtn.title = "Play this part";
@@ -345,7 +345,7 @@ export function initLibrary(ctx) {
       })(manifest));
       actions.appendChild(playBtn);
 
-      var updatePartBtn = document.createElement("button");
+      const updatePartBtn = document.createElement("button");
       updatePartBtn.className = "update-btn";
       updatePartBtn.textContent = "Update";
       updatePartBtn.addEventListener("click", (function (c) {
@@ -354,7 +354,7 @@ export function initLibrary(ctx) {
       actions.appendChild(updatePartBtn);
 
       if (failedCount > 0) {
-        var retryPartBtn = document.createElement("button");
+        const retryPartBtn = document.createElement("button");
         retryPartBtn.className = "retry-btn";
         retryPartBtn.textContent = "Retry (" + failedCount + ")";
         retryPartBtn.title = "Retry failed assets (likely dead links — may not help)";
@@ -364,7 +364,7 @@ export function initLibrary(ctx) {
         actions.appendChild(retryPartBtn);
       }
 
-      var linkPartBtn = document.createElement("button");
+      const linkPartBtn = document.createElement("button");
       linkPartBtn.className = "link-btn";
       linkPartBtn.textContent = "Link";
       linkPartBtn.title = "Copy AAO link";
@@ -373,7 +373,7 @@ export function initLibrary(ctx) {
       })(manifest.case_id));
       actions.appendChild(linkPartBtn);
 
-      var exportBtn = document.createElement("button");
+      const exportBtn = document.createElement("button");
       exportBtn.className = "export-btn";
       exportBtn.textContent = "Export";
       exportBtn.addEventListener("click", (function (c) {
@@ -381,7 +381,7 @@ export function initLibrary(ctx) {
       })(manifest));
       actions.appendChild(exportBtn);
 
-      var saveBtn = document.createElement("button");
+      const saveBtn = document.createElement("button");
       saveBtn.className = "save-btn";
       saveBtn.textContent = "Saves";
       saveBtn.title = "Saves & plugins";
@@ -390,7 +390,7 @@ export function initLibrary(ctx) {
       })(manifest));
       actions.appendChild(saveBtn);
 
-      var pluginBtn = document.createElement("button");
+      const pluginBtn = document.createElement("button");
       pluginBtn.className = "plugin-btn";
       pluginBtn.textContent = "Plugins";
       pluginBtn.title = "Manage plugins";
@@ -399,7 +399,7 @@ export function initLibrary(ctx) {
       })(manifest));
       actions.appendChild(pluginBtn);
 
-      var deleteBtn = document.createElement("button");
+      const deleteBtn = document.createElement("button");
       deleteBtn.className = "delete-btn";
       deleteBtn.textContent = "Delete";
       deleteBtn.addEventListener("click", (function (c) {
@@ -408,9 +408,9 @@ export function initLibrary(ctx) {
       actions.appendChild(deleteBtn);
 
       // ARIA labels for screen readers
-      var partBtns = actions.querySelectorAll("button");
-      for (var pb = 0; pb < partBtns.length; pb++) {
-        var label = partBtns[pb].textContent.replace(/[^a-zA-Z ]/g, "").trim();
+      const partBtns = actions.querySelectorAll("button");
+      for (let pb = 0; pb < partBtns.length; pb++) {
+        const label = partBtns[pb].textContent.replace(/[^a-zA-Z ]/g, "").trim();
         partBtns[pb].setAttribute("aria-label", label + " " + manifest.title);
       }
 
@@ -465,10 +465,10 @@ export function initLibrary(ctx) {
     ctx.progressBarInner.style.width = "0%";
     ctx.progressText.textContent = "";
 
-    var onEvent = new Channel();
+    const onEvent = new Channel();
     onEvent.onmessage = function (msg) {
       if (msg.event === "progress") {
-        var pct = Math.round((msg.data.completed / msg.data.total) * 100);
+        const pct = Math.round((msg.data.completed / msg.data.total) * 100);
         ctx.progressBarInner.style.width = pct + "%";
         ctx.progressText.textContent = msg.data.completed + " / " + msg.data.total + " files (" + pct + "%)";
       } else if (msg.event === "finished") {
@@ -483,8 +483,8 @@ export function initLibrary(ctx) {
 
   function exportCase(caseId, title) {
     console.log("[EXPORT] exportCase called, caseId=" + caseId + " title=" + title);
-    var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
-    var defaultName = safeName + ".aaocase";
+    const safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+    const defaultName = safeName + ".aaocase";
     statusMsg.textContent = "Choosing export location...";
     invoke("pick_export_file", { defaultName: defaultName })
       .then(function (destPath) {
@@ -501,7 +501,7 @@ export function initLibrary(ctx) {
               onEvent: onEvent
             });
           }).then(function (size) {
-            var msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
+            let msg = 'Exported "' + title + '" (' + formatBytes(size) + ")";
             if (saves) msg += " with saves";
             statusMsg.textContent = msg;
           }).catch(function (e) {

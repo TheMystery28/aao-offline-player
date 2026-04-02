@@ -5,12 +5,12 @@
  * @returns {number|null}
  */
 export function parseCaseId(input) {
-  var trimmed = input.trim();
-  var num = parseInt(trimmed, 10);
+  const trimmed = input.trim();
+  const num = parseInt(trimmed, 10);
   if (!isNaN(num) && num > 0 && String(num) === trimmed) {
     return num;
   }
-  var match = trimmed.match(/(?:trial_id|id_proces)=(\d+)/);
+  const match = trimmed.match(/(?:trial_id|id_proces)=(\d+)/);
   if (match) {
     return parseInt(match[1], 10);
   }
@@ -20,9 +20,9 @@ export function parseCaseId(input) {
 /** @param {number} bytes @returns {string} */
 export function formatBytes(bytes) {
   if (bytes === 0) return "0 B";
-  var units = ["B", "KB", "MB", "GB"];
-  var i = 0;
-  var b = bytes;
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  let b = bytes;
   while (b >= 1024 && i < units.length - 1) {
     b /= 1024;
     i++;
@@ -32,41 +32,41 @@ export function formatBytes(bytes) {
 
 /** @param {number} ms @returns {string} */
 export function formatDuration(ms) {
-  var secs = Math.round(ms / 1000);
+  const secs = Math.round(ms / 1000);
   if (secs < 60) return secs + "s";
-  var mins = Math.floor(secs / 60);
-  var remainSecs = secs % 60;
+  const mins = Math.floor(secs / 60);
+  const remainSecs = secs % 60;
   if (mins < 60) return mins + "m " + remainSecs + "s";
-  var hrs = Math.floor(mins / 60);
-  var remainMins = mins % 60;
+  const hrs = Math.floor(mins / 60);
+  const remainMins = mins % 60;
   return hrs + "h " + remainMins + "m";
 }
 
 /** @param {string} isoStr @returns {string} */
 export function formatDate(isoStr) {
   if (!isoStr) return "";
-  var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  var parts = isoStr.split("T")[0].split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const parts = isoStr.split("T")[0].split("-");
   if (parts.length !== 3) return isoStr.split("T")[0];
-  var y = parts[0];
-  var m = parseInt(parts[1], 10) - 1;
-  var d = parseInt(parts[2], 10);
+  const y = parts[0];
+  const m = parseInt(parts[1], 10) - 1;
+  const d = parseInt(parts[2], 10);
   return months[m] + " " + d + ", " + y;
 }
 
 /** @param {string} text @returns {string} */
 export function escapeHtml(text) {
   if (!text) return "";
-  var div = document.createElement("div");
+  const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
 }
 
 /** @param {string} str @returns {string} */
 export function base64DecodeUtf8(str) {
-  var raw = atob(str);
-  var bytes = new Uint8Array(raw.length);
-  for (var i = 0; i < raw.length; i++) {
+  const raw = atob(str);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) {
     bytes[i] = raw.charCodeAt(i);
   }
   return new TextDecoder().decode(bytes);
@@ -79,11 +79,11 @@ export function base64DecodeUtf8(str) {
  */
 /** Group cases into sequence groups + standalone. Eliminates duplicated grouping logic. */
 export function groupCasesBySequence(cases) {
-  var sequenceGroups = {};
-  var standalone = [];
-  for (var i = 0; i < cases.length; i++) {
-    var c = cases[i];
-    var seq = c.sequence;
+  const sequenceGroups = {};
+  const standalone = [];
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i];
+    const seq = c.sequence;
     if (seq && seq.title && seq.list && seq.list.length > 1) {
       if (!sequenceGroups[seq.title]) {
         sequenceGroups[seq.title] = { list: seq.list, cases: [] };
@@ -98,7 +98,7 @@ export function groupCasesBySequence(cases) {
 
 /** Apply spoiler blur to an element if the setting is checked. */
 export function applySpoilerBlur(el) {
-  var blurEl = document.getElementById("settings-blur-spoilers");
+  const blurEl = document.getElementById("settings-blur-spoilers");
   if (blurEl && blurEl.checked) {
     el.classList.add("spoiler-blur");
   } else {
@@ -112,20 +112,20 @@ export function removeSpoilerBlur(el) {
 }
 
 export function createModal(titleHtml, options) {
-  var opts = options || {};
-  var overlay = document.createElement("div");
+  const opts = options || {};
+  const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  var modal = document.createElement("div");
+  const modal = document.createElement("div");
   modal.className = "modal-dialog" + (opts.wide ? " modal-dialog-wide" : "");
-  var titleId = "modal-title-" + Date.now();
+  const titleId = "modal-title-" + Date.now();
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
   modal.setAttribute("aria-labelledby", titleId);
-  var titleEl = document.createElement("div");
+  const titleEl = document.createElement("div");
   titleEl.className = "modal-message";
   titleEl.id = titleId;
   titleEl.innerHTML = titleHtml;
-  var content = document.createElement("div");
+  const content = document.createElement("div");
 
   function close() { if (overlay.parentNode) document.body.removeChild(overlay); }
   overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
@@ -138,11 +138,11 @@ export function createModal(titleHtml, options) {
 
   // Optional buttons: [{ text, className, onClick }]
   if (opts.buttons && opts.buttons.length > 0) {
-    var btnRow = document.createElement("div");
+    const btnRow = document.createElement("div");
     btnRow.className = "modal-buttons";
-    for (var i = 0; i < opts.buttons.length; i++) {
+    for (let i = 0; i < opts.buttons.length; i++) {
       (function (cfg) {
-        var btn = document.createElement("button");
+        const btn = document.createElement("button");
         btn.className = cfg.className || "modal-btn";
         btn.textContent = cfg.text;
         btn.addEventListener("click", function () { close(); if (cfg.onClick) cfg.onClick(); });
@@ -155,12 +155,12 @@ export function createModal(titleHtml, options) {
   // Focus trap: Tab cycles within the modal
   modal.addEventListener("keydown", function (e) {
     if (e.key !== "Tab") return;
-    var focusable = modal.querySelectorAll(
+    const focusable = modal.querySelectorAll(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
     if (focusable.length === 0) return;
-    var first = focusable[0];
-    var last = focusable[focusable.length - 1];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
     if (e.shiftKey) {
       if (document.activeElement === first) { e.preventDefault(); last.focus(); }
     } else {
@@ -172,7 +172,7 @@ export function createModal(titleHtml, options) {
   document.body.appendChild(overlay);
 
   // Auto-focus first focusable element
-  var initialFocus = modal.querySelector(
+  const initialFocus = modal.querySelector(
     'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
   );
   if (initialFocus) initialFocus.focus();
@@ -184,18 +184,18 @@ export function createModal(titleHtml, options) {
 
 /** @param {Array<{url: string, error: string}>} failedAssets */
 export function showFailedAssetsModal(failedAssets) {
-  var m = createModal("<strong>" + failedAssets.length + " failed asset(s)</strong>", { wide: true });
-  var list = document.createElement("div");
+  const m = createModal("<strong>" + failedAssets.length + " failed asset(s)</strong>", { wide: true });
+  const list = document.createElement("div");
   list.className = "plugin-list";
-  for (var i = 0; i < failedAssets.length; i++) {
-    var item = document.createElement("div");
+  for (let i = 0; i < failedAssets.length; i++) {
+    const item = document.createElement("div");
     item.className = "plugin-list-item";
-    var nameSpan = document.createElement("span");
+    const nameSpan = document.createElement("span");
     nameSpan.className = "plugin-name";
     nameSpan.textContent = failedAssets[i].url || "unknown";
     nameSpan.style.fontSize = "0.75rem";
     nameSpan.style.wordBreak = "break-all";
-    var errSpan = document.createElement("span");
+    const errSpan = document.createElement("span");
     errSpan.style.color = "#a66";
     errSpan.style.fontSize = "0.75rem";
     errSpan.style.flexShrink = "0";
@@ -205,7 +205,7 @@ export function showFailedAssetsModal(failedAssets) {
     list.appendChild(item);
   }
   m.content.appendChild(list);
-  var closeBtn = document.createElement("button");
+  const closeBtn = document.createElement("button");
   closeBtn.className = "modal-btn modal-btn-cancel";
   closeBtn.textContent = "Close";
   closeBtn.style.width = "100%";
@@ -216,7 +216,7 @@ export function showFailedAssetsModal(failedAssets) {
 
 /** @param {string} message @param {string} btn1Label @param {string} btn2Label @param {function(string): void} callback */
 export function showUpdateModal(message, btn1Label, btn2Label, callback) {
-  var m = createModal(message, {
+  const m = createModal(message, {
     buttons: [
       { text: btn1Label, className: "modal-btn modal-btn-primary", onClick: function () { callback(1); } },
       { text: btn2Label, className: "modal-btn modal-btn-secondary", onClick: function () { callback(2); } },
@@ -227,20 +227,20 @@ export function showUpdateModal(message, btn1Label, btn2Label, callback) {
 
 /** @param {string} message @param {string} confirmLabel @param {function(): void} onConfirm @param {function(): void} [onCancel] */
 export function showConfirmModal(message, confirmLabel, onConfirm, onCancel) {
-  var done = false;
-  var m = createModal(message);
-  var buttons = document.createElement("div");
+  let done = false;
+  const m = createModal(message);
+  const buttons = document.createElement("div");
   buttons.className = "modal-buttons";
-  var yesBtn = document.createElement("button");
+  const yesBtn = document.createElement("button");
   yesBtn.className = "modal-btn modal-btn-primary";
   yesBtn.textContent = confirmLabel || "OK";
-  var cancelBtn = document.createElement("button");
+  const cancelBtn = document.createElement("button");
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
   yesBtn.addEventListener("click", function () { done = true; m.close(); if (onConfirm) onConfirm(); });
   cancelBtn.addEventListener("click", function () { done = true; m.close(); if (onCancel) onCancel(); });
   // Dismiss (click-outside / Escape) also triggers onCancel
-  var origClose = m.close;
+  const origClose = m.close;
   m.close = function () { origClose(); if (!done && onCancel) onCancel(); };
   buttons.appendChild(yesBtn);
   buttons.appendChild(cancelBtn);
@@ -249,28 +249,28 @@ export function showConfirmModal(message, confirmLabel, onConfirm, onCancel) {
 
 /** @param {string} message @param {string} inputLabel @param {string} defaultValue @param {string} confirmLabel @param {function(string): void} onConfirm */
 export function showPromptModal(message, inputLabel, defaultValue, confirmLabel, onConfirm) {
-  var m = createModal(message);
-  var field = document.createElement("div");
+  const m = createModal(message);
+  const field = document.createElement("div");
   field.className = "modal-field";
-  var label = document.createElement("label");
+  const label = document.createElement("label");
   label.textContent = inputLabel;
-  var input = document.createElement("input");
+  const input = document.createElement("input");
   input.type = "text";
   input.value = defaultValue || "";
   input.placeholder = inputLabel;
   field.appendChild(label);
   field.appendChild(input);
   m.content.appendChild(field);
-  var buttons = document.createElement("div");
+  const buttons = document.createElement("div");
   buttons.className = "modal-buttons";
-  var okBtn = document.createElement("button");
+  const okBtn = document.createElement("button");
   okBtn.className = "modal-btn modal-btn-primary";
   okBtn.textContent = confirmLabel || "OK";
-  var cancelBtn = document.createElement("button");
+  const cancelBtn = document.createElement("button");
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
   okBtn.addEventListener("click", function () {
-    var val = input.value.trim();
+    const val = input.value.trim();
     if (!val) { input.style.borderColor = "#a33"; input.focus(); return; }
     m.close();
     onConfirm(val);

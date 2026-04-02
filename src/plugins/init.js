@@ -19,7 +19,7 @@ export function initPlugins(ctx) {
   ctx.showPluginTargetModal = function(cb) { showPluginTargetModal(ctx,cb); };
   ctx.doImportPlugin = function(p) { doImportPlugin(ctx,p); };
 
-  var panelFns = initPluginPanel(ctx);
+  const panelFns = initPluginPanel(ctx);
   ctx.loadGlobalPluginsPanel = panelFns.loadGlobalPluginsPanel;
 
   return {

@@ -6,62 +6,62 @@ import { escapeHtml, createModal } from '../helpers.js';
  * key: collection_id, sequence_title, or case_id (string). Empty for default.
  */
 export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, key) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
 
-  var m = createModal("<strong>Plugin Params &mdash; " + escapeHtml(pluginFilename) + "</strong><br>" +
+  const m = createModal("<strong>Plugin Params &mdash; " + escapeHtml(pluginFilename) + "</strong><br>" +
     "<small>Level: " + escapeHtml(levelLabel) + "</small>");
 
-  var content = document.createElement("div");
+  const content = document.createElement("div");
   content.className = "scroll-panel";
   content.style.maxHeight = "300px";
 
-  var loadingMsg = document.createElement("div");
+  const loadingMsg = document.createElement("div");
   loadingMsg.textContent = "Loading...";
   loadingMsg.className = "muted";
   content.appendChild(loadingMsg);
 
-  var paramsData = {};
-  var descriptorsCache = null; // filled after loading
+  let paramsData = {};
+  let descriptorsCache = null; // filled after loading
 
   function renderParams(params) {
     content.innerHTML = "";
     // Merge descriptor keys into display (show all known params, not just overridden ones)
-    var allKeys = Object.keys(params);
+    const allKeys = Object.keys(params);
     if (descriptorsCache && typeof descriptorsCache === "object") {
-      var descKeys = Object.keys(descriptorsCache);
-      for (var dk = 0; dk < descKeys.length; dk++) {
+      const descKeys = Object.keys(descriptorsCache);
+      for (let dk = 0; dk < descKeys.length; dk++) {
         if (allKeys.indexOf(descKeys[dk]) === -1) {
           allKeys.push(descKeys[dk]);
         }
       }
     }
     if (allKeys.length === 0) {
-      var emptyMsg = document.createElement("div");
+      const emptyMsg = document.createElement("div");
       emptyMsg.className = "muted";
       emptyMsg.textContent = "No params set at this level. Add new params below.";
       content.appendChild(emptyMsg);
     }
-    for (var i = 0; i < allKeys.length; i++) {
+    for (let i = 0; i < allKeys.length; i++) {
       (function(paramKey) {
-        var row = document.createElement("div");
+        const row = document.createElement("div");
         row.className = "flex-row";
         row.style.cssText = "gap:6px; margin:4px 0;";
 
-        var desc = descriptorsCache && descriptorsCache[paramKey] ? descriptorsCache[paramKey] : null;
-        var val = params[paramKey];
+        const desc = descriptorsCache && descriptorsCache[paramKey] ? descriptorsCache[paramKey] : null;
+        let val = params[paramKey];
         // If no value set but descriptor has a default, show the default
         if (val === undefined && desc && desc["default"] !== undefined) {
           val = desc["default"];
         }
 
-        var keyLabel = document.createElement("span");
+        const keyLabel = document.createElement("span");
         keyLabel.style.cssText = "min-width:100px; font-size:13px; color:#ccc;";
         keyLabel.textContent = (desc && desc.label) ? desc.label : paramKey;
         keyLabel.title = paramKey;
 
-        var input;
-        var paramType = desc ? desc.type : null;
+        let input;
+        const paramType = desc ? desc.type : null;
 
         if (paramType === "number" || (paramType === null && typeof val === "number")) {
           // Number with optional range
@@ -72,7 +72,7 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
             input.max = String(desc.max !== undefined ? desc.max : 100);
             input.step = String(desc.step !== undefined ? desc.step : 1);
             input.value = String(val !== undefined ? val : 0);
-            var valSpan = document.createElement("span");
+            const valSpan = document.createElement("span");
             valSpan.style.cssText = "min-width:30px; font-size:12px; color:#aaa;";
             valSpan.textContent = " " + input.value;
             input.addEventListener("input", function() {
@@ -103,9 +103,9 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
         } else if (paramType === "select" && desc && desc.options) {
           input = document.createElement("select");
           input.className = "dark-input";
-          var opts = desc.options || [];
-          for (var oi = 0; oi < opts.length; oi++) {
-            var opt = document.createElement("option");
+          const opts = desc.options || [];
+          for (let oi = 0; oi < opts.length; oi++) {
+            const opt = document.createElement("option");
             if (typeof opts[oi] === "object") {
               opt.value = opts[oi].value;
               opt.textContent = opts[oi].label;
@@ -133,7 +133,7 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
 
         // Only show delete button for params actually overridden at this level
         if (params[paramKey] !== undefined) {
-          var delBtn = document.createElement("button");
+          const delBtn = document.createElement("button");
           delBtn.textContent = "x";
           delBtn.className = "small-btn danger-btn";
           delBtn.className += " btn-small";
@@ -149,26 +149,26 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
   }
 
   // Add new param row
-  var addRow = document.createElement("div");
+  const addRow = document.createElement("div");
   addRow.className = "flex-row";
   addRow.style.cssText = "gap:6px; margin-top:8px;";
-  var addKeyInput = document.createElement("input");
+  const addKeyInput = document.createElement("input");
   addKeyInput.type = "text";
   addKeyInput.placeholder = "param name";
   addKeyInput.className = "dark-input";
   addKeyInput.style.width = "100px";
-  var addValInput = document.createElement("input");
+  const addValInput = document.createElement("input");
   addValInput.type = "text";
   addValInput.placeholder = "value";
   addValInput.className = "dark-input";
   addValInput.style.width = "80px";
-  var addBtn = document.createElement("button");
+  const addBtn = document.createElement("button");
   addBtn.className = "small-btn";
   addBtn.textContent = "+ Add";
   addBtn.addEventListener("click", function() {
-    var k = addKeyInput.value.trim();
+    const k = addKeyInput.value.trim();
     if (!k) return;
-    var v = addValInput.value.trim();
+    const v = addValInput.value.trim();
     // Auto-detect type
     if (v === "true") paramsData[k] = true;
     else if (v === "false") paramsData[k] = false;
@@ -182,10 +182,10 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
   addRow.appendChild(addValInput);
   addRow.appendChild(addBtn);
 
-  var btns = document.createElement("div");
+  const btns = document.createElement("div");
   btns.className = "modal-buttons";
 
-  var saveBtn = document.createElement("button");
+  const saveBtn = document.createElement("button");
   saveBtn.className = "modal-btn modal-btn-primary";
   saveBtn.textContent = "Save";
   saveBtn.addEventListener("click", function() {
@@ -202,7 +202,7 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
     });
   });
 
-  var cancelBtn = document.createElement("button");
+  const cancelBtn = document.createElement("button");
   cancelBtn.className = "modal-btn modal-btn-cancel";
   cancelBtn.textContent = "Cancel";
   cancelBtn.addEventListener("click", m.close);
@@ -220,7 +220,7 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
     invoke("get_plugin_params", { filename: pluginFilename })
   ]).then(function(results) {
     descriptorsCache = results[0]; // null if no descriptors
-    var allParams = results[1];
+    const allParams = results[1];
     if (level === "default") {
       paramsData = (allParams && allParams["default"]) ? JSON.parse(JSON.stringify(allParams["default"])) : {};
     } else if (allParams && allParams[level] && allParams[level][key]) {
@@ -231,7 +231,7 @@ export function showPluginParamsModal(ctx, pluginFilename, levelLabel, level, ke
     renderParams(paramsData);
   }).catch(function(e) {
     content.innerHTML = "";
-    var errMsg = document.createElement("div");
+    const errMsg = document.createElement("div");
     errMsg.textContent = "Error loading params: " + e;
     errMsg.style.color = "#ff6b6b";
     content.appendChild(errMsg);

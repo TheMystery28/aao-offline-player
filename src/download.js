@@ -6,24 +6,24 @@ import { parseCaseId, formatBytes, formatDuration, escapeHtml, showConfirmModal,
  * @param {AppContext} ctx - Context bag from the main closure
  */
 export function initDownload(ctx) {
-  var invoke = ctx.invoke;
-  var Channel = ctx.Channel;
-  var statusMsg = ctx.statusMsg;
-  var loadLibrary = ctx.loadLibrary;
-  var getKnownCaseIds = ctx.getKnownCaseIds;
+  const invoke = ctx.invoke;
+  const Channel = ctx.Channel;
+  const statusMsg = ctx.statusMsg;
+  const loadLibrary = ctx.loadLibrary;
+  const getKnownCaseIds = ctx.getKnownCaseIds;
 
   // DOM refs
-  var downloadBtn = document.getElementById("download-btn");
-  var caseIdInput = document.getElementById("case-id-input");
-  var downloadResult = document.getElementById("download-result");
-  var progressContainer = document.getElementById("progress-container");
-  var progressPhase = document.getElementById("progress-phase");
-  var progressBarInner = document.getElementById("progress-bar-inner");
-  var progressText = document.getElementById("progress-text");
-  var cancelDownloadBtn = document.getElementById("cancel-download-btn");
+  const downloadBtn = document.getElementById("download-btn");
+  const caseIdInput = document.getElementById("case-id-input");
+  const downloadResult = document.getElementById("download-result");
+  const progressContainer = document.getElementById("progress-container");
+  const progressPhase = document.getElementById("progress-phase");
+  const progressBarInner = document.getElementById("progress-bar-inner");
+  const progressText = document.getElementById("progress-text");
+  const cancelDownloadBtn = document.getElementById("cancel-download-btn");
 
-  var downloadInProgress = false;
-  var downloadQueue = [];
+  let downloadInProgress = false;
+  const downloadQueue = [];
 
   function createDownloadProgressHandler(options) {
     return function (msg) {
@@ -34,21 +34,21 @@ export function initDownload(ctx) {
         progressPhase.textContent = (options.startedLabel || "Downloading") + " " + msg.data.total + " assets...";
         progressText.textContent = "0 / " + msg.data.total;
       } else if (msg.event === "progress") {
-        var pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
+        const pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
         progressBarInner.style.width = pct + "%";
         progressText.textContent =
           msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
         if (msg.data.current_url) {
-          var fname = msg.data.current_url.split("/").pop();
+          let fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
           applySpoilerBlur(progressText);
         }
         if (msg.data.elapsed_ms > 1000 && msg.data.bytes_downloaded > 0) {
-          var speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
+          const speed = msg.data.bytes_downloaded / (msg.data.elapsed_ms / 1000);
           progressText.textContent += " — " + formatBytes(speed) + "/s";
           if (msg.data.completed > 0 && msg.data.completed < msg.data.total) {
-            var etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
+            const etaMs = (msg.data.total - msg.data.completed) * (msg.data.elapsed_ms / msg.data.completed);
             progressText.textContent += " — ~" + formatDuration(etaMs) + " left";
           }
         }
@@ -56,7 +56,7 @@ export function initDownload(ctx) {
         progressBarInner.style.width = "100%";
         progressPhase.textContent = options.finishedLabel || "Complete!";
         removeSpoilerBlur(progressText);
-        var failedText = msg.data.failed > 0
+        const failedText = msg.data.failed > 0
           ? ", " + msg.data.failed + " " + (options.failedLabel || "failed")
           : "";
         progressText.textContent =
@@ -71,7 +71,7 @@ export function initDownload(ctx) {
 
   function processQueue() {
     if (downloadInProgress || downloadQueue.length === 0) return;
-    var next = downloadQueue.shift();
+    const next = downloadQueue.shift();
     statusMsg.textContent = "Starting queued download...";
     if (next.type === "single") {
       startDownload(next.caseId);
@@ -81,11 +81,14 @@ export function initDownload(ctx) {
   }
 
   // Cancel button handler
-  cancelDownloadBtn.addEventListener("click", function () {
-    invoke("cancel_download").then(function () {
+  cancelDownloadBtn.addEventListener("click", async function () {
+    try {
+      await invoke("cancel_download");
       progressPhase.textContent = "Cancelling...";
       cancelDownloadBtn.classList.add("hidden");
-    });
+    } catch (e) {
+      console.warn("[DOWNLOAD] cancel_download failed:", e);
+    }
   });
 
   // --- Download button listener ---
@@ -97,7 +100,7 @@ export function initDownload(ctx) {
   });
 
   downloadBtn.addEventListener("click", function () {
-    var caseId = parseCaseId(caseIdInput.value);
+    const caseId = parseCaseId(caseIdInput.value);
     if (!caseId) {
       downloadResult.textContent =
         "Please enter a valid case ID or AAO URL.";
@@ -110,7 +113,7 @@ export function initDownload(ctx) {
       return;
     }
 
-    function proceedWithDownload() {
+    async function proceedWithDownload() {
       // First fetch case info to check for sequence
       downloadBtn.disabled = true;
     caseIdInput.disabled = true;
@@ -121,76 +124,75 @@ export function initDownload(ctx) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
 
-    var knownCaseIds = getKnownCaseIds();
-    invoke("fetch_case_info", { caseId: caseId })
-      .then(function (caseInfo) {
-        var seq = caseInfo.sequence;
-        if (seq && seq.list && seq.list.length > 1) {
-          // This case is part of a sequence
-          progressContainer.classList.add("hidden");
-          var partNames = seq.list.map(function (p) { return p.title || ("Case " + p.id); });
-          var msg = 'This case is part of "' + (seq.title || "Untitled Sequence") + '" (' +
-            seq.list.length + " parts):\n\n";
-          for (var i = 0; i < partNames.length; i++) {
-            var partId = seq.list[i].id;
-            var alreadyDl = knownCaseIds.indexOf(partId) !== -1;
-            msg += (i + 1) + ". " + partNames[i] + (alreadyDl ? " (already downloaded)" : "") + "\n";
-          }
-          var allIds = seq.list.map(function (p) { return p.id; });
-          var seqTitle = seq.title || "Untitled Sequence";
-          var m = createModal(msg);
-          m.titleEl.style.whiteSpace = "pre-wrap";
-
-          function cancelSeqModal() {
-            m.close();
-            downloadBtn.disabled = false;
-            caseIdInput.disabled = false;
-          }
-
-          var seqBtns = document.createElement("div");
-          seqBtns.className = "modal-buttons";
-
-          var seqAllBtn = document.createElement("button");
-          seqAllBtn.className = "modal-btn modal-btn-primary";
-          seqAllBtn.textContent = "Download All Parts";
-          seqAllBtn.addEventListener("click", function () {
-            m.close();
-            startSequenceDownload(allIds, seqTitle);
-          });
-
-          var seqOneBtn = document.createElement("button");
-          seqOneBtn.className = "modal-btn modal-btn-secondary";
-          seqOneBtn.textContent = "This Case Only";
-          seqOneBtn.addEventListener("click", function () {
-            m.close();
-            startDownload(caseId);
-          });
-
-          var seqCancelBtn = document.createElement("button");
-          seqCancelBtn.className = "modal-btn modal-btn-cancel";
-          seqCancelBtn.textContent = "Cancel";
-          seqCancelBtn.addEventListener("click", cancelSeqModal);
-
-          seqBtns.appendChild(seqAllBtn);
-          seqBtns.appendChild(seqOneBtn);
-          seqBtns.appendChild(seqCancelBtn);
-          m.modal.appendChild(seqBtns);
-        } else {
-          // No sequence, download single case
-          progressContainer.classList.add("hidden");
-          startDownload(caseId);
+    const knownCaseIds = getKnownCaseIds();
+    try {
+      const caseInfo = await invoke("fetch_case_info", { caseId: caseId });
+      const seq = caseInfo.sequence;
+      if (seq && seq.list && seq.list.length > 1) {
+        // This case is part of a sequence
+        progressContainer.classList.add("hidden");
+        const partNames = seq.list.map(function (p) { return p.title || ("Case " + p.id); });
+        let msg = 'This case is part of "' + (seq.title || "Untitled Sequence") + '" (' +
+          seq.list.length + " parts):\n\n";
+        for (let i = 0; i < partNames.length; i++) {
+          const partId = seq.list[i].id;
+          const alreadyDl = knownCaseIds.indexOf(partId) !== -1;
+          msg += (i + 1) + ". " + partNames[i] + (alreadyDl ? " (already downloaded)" : "") + "\n";
         }
-      })
-      .catch(function (e) {
-        // If fetch_case_info fails, fall back to direct download
-        console.warn("[DOWNLOAD] fetch_case_info failed, falling back to direct download:", e);
+        const allIds = seq.list.map(function (p) { return p.id; });
+        const seqTitle = seq.title || "Untitled Sequence";
+        const m = createModal(msg);
+        m.titleEl.style.whiteSpace = "pre-wrap";
+
+        function cancelSeqModal() {
+          m.close();
+          downloadBtn.disabled = false;
+          caseIdInput.disabled = false;
+        }
+
+        const seqBtns = document.createElement("div");
+        seqBtns.className = "modal-buttons";
+
+        const seqAllBtn = document.createElement("button");
+        seqAllBtn.className = "modal-btn modal-btn-primary";
+        seqAllBtn.textContent = "Download All Parts";
+        seqAllBtn.addEventListener("click", function () {
+          m.close();
+          startSequenceDownload(allIds, seqTitle);
+        });
+
+        const seqOneBtn = document.createElement("button");
+        seqOneBtn.className = "modal-btn modal-btn-secondary";
+        seqOneBtn.textContent = "This Case Only";
+        seqOneBtn.addEventListener("click", function () {
+          m.close();
+          startDownload(caseId);
+        });
+
+        const seqCancelBtn = document.createElement("button");
+        seqCancelBtn.className = "modal-btn modal-btn-cancel";
+        seqCancelBtn.textContent = "Cancel";
+        seqCancelBtn.addEventListener("click", cancelSeqModal);
+
+        seqBtns.appendChild(seqAllBtn);
+        seqBtns.appendChild(seqOneBtn);
+        seqBtns.appendChild(seqCancelBtn);
+        m.modal.appendChild(seqBtns);
+      } else {
+        // No sequence, download single case
         progressContainer.classList.add("hidden");
         startDownload(caseId);
-      });
+      }
+    } catch (e) {
+      // If fetch_case_info fails, fall back to direct download
+      console.warn("[DOWNLOAD] fetch_case_info failed, falling back to direct download:", e);
+      progressContainer.classList.add("hidden");
+      startDownload(caseId);
+    }
     }
 
     // Duplicate check (for single case)
-    var knownCaseIds = getKnownCaseIds();
+    const knownCaseIds = getKnownCaseIds();
     if (knownCaseIds.indexOf(caseId) !== -1) {
       showConfirmModal(
         "Case " + caseId + " is already in your library.\nDownload again? (This will overwrite it.)",
@@ -218,7 +220,7 @@ export function initDownload(ctx) {
     );
   }
 
-  function startUpdate(caseId, redownloadAssets, onDone) {
+  async function startUpdate(caseId, redownloadAssets, onDone) {
     console.log("[UPDATE] startUpdate caseId=" + caseId + " redownloadAssets=" + redownloadAssets);
     downloadInProgress = true;
     downloadBtn.disabled = true;
@@ -234,48 +236,46 @@ export function initDownload(ctx) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
 
-    var onEvent = new Channel();
+    const onEvent = new Channel();
     onEvent.onmessage = createDownloadProgressHandler({
       finishedLabel: "Update complete!",
       logPrefix: "[UPDATE EVENT]"
     });
 
-    invoke("update_case", {
-      caseId: caseId,
-      redownloadAssets: redownloadAssets,
-      onEvent: onEvent
-    })
-      .then(function (manifest) {
-        console.log("[UPDATE] update_case success:", JSON.stringify({
-          case_id: manifest.case_id,
-          title: manifest.title,
-          total_downloaded: manifest.assets.total_downloaded,
-          failed_count: manifest.failed_assets ? manifest.failed_assets.length : 0
-        }));
-        downloadResult.innerHTML =
-          '<strong>' + escapeHtml(manifest.title) + '</strong> updated!';
-        downloadResult.className = "result-success";
-        if (!onDone) loadLibrary(); // Skip when called from batch (e.g., Update All)
-      })
-      .catch(function (e) {
-        console.error("[UPDATE] update_case error:", e);
-        downloadResult.textContent = "Update error: " + e;
-        downloadResult.className = "result-error";
-      })
-      .finally(function () {
-        downloadInProgress = false;
-        downloadBtn.disabled = false;
-        caseIdInput.disabled = false;
-        cancelDownloadBtn.classList.add("hidden");
-        if (onDone) {
-          onDone();
-        } else {
-          setTimeout(function () {
-            progressContainer.classList.add("hidden");
-          }, 4000);
-        }
-        processQueue();
+    try {
+      const manifest = await invoke("update_case", {
+        caseId: caseId,
+        redownloadAssets: redownloadAssets,
+        onEvent: onEvent
       });
+      console.log("[UPDATE] update_case success:", JSON.stringify({
+        case_id: manifest.case_id,
+        title: manifest.title,
+        total_downloaded: manifest.assets.total_downloaded,
+        failed_count: manifest.failed_assets ? manifest.failed_assets.length : 0
+      }));
+      downloadResult.innerHTML =
+        '<strong>' + escapeHtml(manifest.title) + '</strong> updated!';
+      downloadResult.className = "result-success";
+      if (!onDone) loadLibrary(); // Skip when called from batch (e.g., Update All)
+    } catch (e) {
+      console.error("[UPDATE] update_case error:", e);
+      downloadResult.textContent = "Update error: " + e;
+      downloadResult.className = "result-error";
+    } finally {
+      downloadInProgress = false;
+      downloadBtn.disabled = false;
+      caseIdInput.disabled = false;
+      cancelDownloadBtn.classList.add("hidden");
+      if (onDone) {
+        onDone();
+      } else {
+        setTimeout(function () {
+          progressContainer.classList.add("hidden");
+        }, 4000);
+      }
+      processQueue();
+    }
   }
 
   function retryCase(caseId, failedAssets) {
@@ -284,10 +284,10 @@ export function initDownload(ctx) {
       return;
     }
 
-    var aaoCount = 0;
-    var externalCount = 0;
+    let aaoCount = 0;
+    let externalCount = 0;
     if (failedAssets) {
-      for (var i = 0; i < failedAssets.length; i++) {
+      for (let i = 0; i < failedAssets.length; i++) {
         if (failedAssets[i].url && failedAssets[i].url.indexOf("aaonline.fr") !== -1) {
           aaoCount++;
         } else {
@@ -296,7 +296,7 @@ export function initDownload(ctx) {
       }
     }
 
-    var msg = "Retry " + (failedAssets ? failedAssets.length : "") + " failed assets?\n\n";
+    let msg = "Retry " + (failedAssets ? failedAssets.length : "") + " failed assets?\n\n";
     if (aaoCount > 0 && externalCount > 0) {
       msg += aaoCount + " failed from aaonline.fr — the site was probably temporarily down. " +
         "Retrying these should work.\n\n" +
@@ -314,7 +314,7 @@ export function initDownload(ctx) {
     msg += "Only previously failed assets will be retried — nothing already downloaded " +
       "will be re-downloaded.";
 
-    showConfirmModal(msg, "Retry", function () {
+    showConfirmModal(msg, "Retry", async function () {
     console.log("[RETRY] retryCase caseId=" + caseId);
     downloadInProgress = true;
     downloadBtn.disabled = true;
@@ -327,7 +327,7 @@ export function initDownload(ctx) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
 
-    var onEvent = new Channel();
+    const onEvent = new Channel();
     onEvent.onmessage = createDownloadProgressHandler({
       startedLabel: "Retrying",
       finishedLabel: "Retry complete!",
@@ -335,40 +335,38 @@ export function initDownload(ctx) {
       logPrefix: "[RETRY EVENT]"
     });
 
-    invoke("retry_failed_assets", { caseId: caseId, onEvent: onEvent })
-      .then(function (manifest) {
-        console.log("[RETRY] retry_failed_assets success:", JSON.stringify({
-          case_id: manifest.case_id,
-          total_downloaded: manifest.assets.total_downloaded,
-          still_failed: manifest.failed_assets ? manifest.failed_assets.length : 0
-        }));
-        var stillFailed = manifest.failed_assets ? manifest.failed_assets.length : 0;
-        if (stillFailed === 0) {
-          downloadResult.textContent = "All assets downloaded successfully!";
-          downloadResult.className = "result-success";
-        } else {
-          downloadResult.textContent = stillFailed + " asset(s) still failed (server may be down).";
-          downloadResult.className = "result-error";
-        }
-        loadLibrary();
-      })
-      .catch(function (e) {
-        console.error("[RETRY] retry_failed_assets error:", e);
-        downloadResult.textContent = "Retry error: " + e;
+    try {
+      const manifest = await invoke("retry_failed_assets", { caseId: caseId, onEvent: onEvent });
+      console.log("[RETRY] retry_failed_assets success:", JSON.stringify({
+        case_id: manifest.case_id,
+        total_downloaded: manifest.assets.total_downloaded,
+        still_failed: manifest.failed_assets ? manifest.failed_assets.length : 0
+      }));
+      const stillFailed = manifest.failed_assets ? manifest.failed_assets.length : 0;
+      if (stillFailed === 0) {
+        downloadResult.textContent = "All assets downloaded successfully!";
+        downloadResult.className = "result-success";
+      } else {
+        downloadResult.textContent = stillFailed + " asset(s) still failed (server may be down).";
         downloadResult.className = "result-error";
-      })
-      .finally(function () {
-        downloadInProgress = false;
-        downloadBtn.disabled = false;
-        setTimeout(function () {
-          progressContainer.classList.add("hidden");
-        }, 4000);
-        processQueue();
-      });
+      }
+      loadLibrary();
+    } catch (e) {
+      console.error("[RETRY] retry_failed_assets error:", e);
+      downloadResult.textContent = "Retry error: " + e;
+      downloadResult.className = "result-error";
+    } finally {
+      downloadInProgress = false;
+      downloadBtn.disabled = false;
+      setTimeout(function () {
+        progressContainer.classList.add("hidden");
+      }, 4000);
+      processQueue();
+    }
     });
   }
 
-  function startSequenceDownload(caseIds, sequenceTitle) {
+  async function startSequenceDownload(caseIds, sequenceTitle) {
     if (downloadInProgress) {
       downloadQueue.push({ type: "sequence", caseIds: caseIds, sequenceTitle: sequenceTitle });
       statusMsg.textContent = "Queued for download (" + downloadQueue.length + " in queue).";
@@ -387,7 +385,7 @@ export function initDownload(ctx) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
 
-    var onEvent = new Channel();
+    const onEvent = new Channel();
     onEvent.onmessage = createDownloadProgressHandler({
       finishedLabel: "Sequence download complete!",
       logPrefix: "[SEQUENCE EVENT]",
@@ -398,34 +396,32 @@ export function initDownload(ctx) {
       }
     });
 
-    invoke("download_sequence", { caseIds: caseIds, onEvent: onEvent })
-      .then(function (manifests) {
-        console.log("[DOWNLOAD] download_sequence success: " + manifests.length + " parts");
-        downloadResult.innerHTML =
-          '<strong>' + escapeHtml(sequenceTitle) + '</strong> (' +
-          manifests.length + ' parts) &mdash; ready to play!';
-        downloadResult.className = "result-success";
-        caseIdInput.value = "";
-        loadLibrary();
-      })
-      .catch(function (e) {
-        console.error("[DOWNLOAD] download_sequence error:", e);
-        downloadResult.textContent = "Error: " + e;
-        downloadResult.className = "result-error";
-      })
-      .finally(function () {
-        downloadInProgress = false;
-        downloadBtn.disabled = false;
-        caseIdInput.disabled = false;
-        cancelDownloadBtn.classList.add("hidden");
-        setTimeout(function () {
-          progressContainer.classList.add("hidden");
-        }, 4000);
-        processQueue();
-      });
+    try {
+      const manifests = await invoke("download_sequence", { caseIds: caseIds, onEvent: onEvent });
+      console.log("[DOWNLOAD] download_sequence success: " + manifests.length + " parts");
+      downloadResult.innerHTML =
+        '<strong>' + escapeHtml(sequenceTitle) + '</strong> (' +
+        manifests.length + ' parts) &mdash; ready to play!';
+      downloadResult.className = "result-success";
+      caseIdInput.value = "";
+      loadLibrary();
+    } catch (e) {
+      console.error("[DOWNLOAD] download_sequence error:", e);
+      downloadResult.textContent = "Error: " + e;
+      downloadResult.className = "result-error";
+    } finally {
+      downloadInProgress = false;
+      downloadBtn.disabled = false;
+      caseIdInput.disabled = false;
+      cancelDownloadBtn.classList.add("hidden");
+      setTimeout(function () {
+        progressContainer.classList.add("hidden");
+      }, 4000);
+      processQueue();
+    }
   }
 
-  function startDownload(caseId) {
+  async function startDownload(caseId) {
     if (downloadInProgress) {
       downloadQueue.push({ type: "single", caseId: caseId });
       statusMsg.textContent = "Queued for download (" + downloadQueue.length + " in queue).";
@@ -445,60 +441,58 @@ export function initDownload(ctx) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
 
-    var onEvent = new Channel();
+    const onEvent = new Channel();
     onEvent.onmessage = createDownloadProgressHandler({
       finishedLabel: "Download complete!",
       logPrefix: "[DOWNLOAD EVENT]"
     });
 
-    invoke("download_case", { caseId: caseId, onEvent: onEvent })
-      .then(function (manifest) {
-        console.log("[DOWNLOAD] download_case success:", JSON.stringify({
-          case_id: manifest.case_id,
-          title: manifest.title,
-          total_downloaded: manifest.assets.total_downloaded,
-          total_size: manifest.assets.total_size_bytes,
-          failed_count: manifest.failed_assets ? manifest.failed_assets.length : 0
-        }));
-        downloadResult.innerHTML =
-          '<strong>' + escapeHtml(manifest.title) + '</strong> by ' +
-          escapeHtml(manifest.author) + ' &mdash; ready to play!';
-        downloadResult.className = "result-success";
-        caseIdInput.value = "";
-        loadLibrary();
-        // Scroll the new case into view after a brief delay
-        setTimeout(function () {
-          var card = document.querySelector('.case-card[data-case-id="' + manifest.case_id + '"]');
-          if (card) {
-            card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-            card.classList.add("case-card-highlight");
-            setTimeout(function () { card.classList.remove("case-card-highlight"); }, 2000);
-          }
-        }, 200);
-      })
-      .catch(function (e) {
-        console.error("[DOWNLOAD] download_case error:", e);
-        var errMsg = String(e);
-        // Make common errors more readable
-        if (errMsg.indexOf("404") !== -1 || errMsg.indexOf("not found") !== -1) {
-          downloadResult.textContent = "Case not found. Check the ID and try again.";
-        } else if (errMsg.indexOf("timeout") !== -1 || errMsg.indexOf("connection") !== -1) {
-          downloadResult.textContent = "Connection failed. Check your internet and try again.";
-        } else {
-          downloadResult.textContent = "Error: " + errMsg;
+    try {
+      const manifest = await invoke("download_case", { caseId: caseId, onEvent: onEvent });
+      console.log("[DOWNLOAD] download_case success:", JSON.stringify({
+        case_id: manifest.case_id,
+        title: manifest.title,
+        total_downloaded: manifest.assets.total_downloaded,
+        total_size: manifest.assets.total_size_bytes,
+        failed_count: manifest.failed_assets ? manifest.failed_assets.length : 0
+      }));
+      downloadResult.innerHTML =
+        '<strong>' + escapeHtml(manifest.title) + '</strong> by ' +
+        escapeHtml(manifest.author) + ' &mdash; ready to play!';
+      downloadResult.className = "result-success";
+      caseIdInput.value = "";
+      loadLibrary();
+      // Scroll the new case into view after a brief delay
+      setTimeout(function () {
+        const card = document.querySelector('.case-card[data-case-id="' + manifest.case_id + '"]');
+        if (card) {
+          card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          card.classList.add("case-card-highlight");
+          setTimeout(function () { card.classList.remove("case-card-highlight"); }, 2000);
         }
-        downloadResult.className = "result-error";
-      })
-      .finally(function () {
-        downloadInProgress = false;
-        downloadBtn.disabled = false;
-        caseIdInput.disabled = false;
-        cancelDownloadBtn.classList.add("hidden");
-        setTimeout(function () {
-          progressContainer.classList.add("hidden");
-        }, 4000);
-        processQueue();
-      });
+      }, 200);
+    } catch (e) {
+      console.error("[DOWNLOAD] download_case error:", e);
+      const errMsg = String(e);
+      // Make common errors more readable
+      if (errMsg.indexOf("404") !== -1 || errMsg.indexOf("not found") !== -1) {
+        downloadResult.textContent = "Case not found. Check the ID and try again.";
+      } else if (errMsg.indexOf("timeout") !== -1 || errMsg.indexOf("connection") !== -1) {
+        downloadResult.textContent = "Connection failed. Check your internet and try again.";
+      } else {
+        downloadResult.textContent = "Error: " + errMsg;
+      }
+      downloadResult.className = "result-error";
+    } finally {
+      downloadInProgress = false;
+      downloadBtn.disabled = false;
+      caseIdInput.disabled = false;
+      cancelDownloadBtn.classList.add("hidden");
+      setTimeout(function () {
+        progressContainer.classList.add("hidden");
+      }, 4000);
+      processQueue();
+    }
   }
 
   return {

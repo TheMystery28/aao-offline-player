@@ -7,25 +7,25 @@ import { formatBytes, showConfirmModal, applySpoilerBlur, removeSpoilerBlur } fr
  * @returns {{ loadSettings: function, loadStorageInfo: function }}
  */
 export function initSettings(invoke, Channel, statusMsg) {
-  var settingsToggle = document.getElementById("settings-toggle");
-  var settingsPanel = document.getElementById("settings-panel");
-  var settingsLanguage = document.getElementById("settings-language");
-  var settingsConcurrency = document.getElementById("settings-concurrency");
-  var concurrencyValue = document.getElementById("concurrency-value");
-  var dataDirPath = document.getElementById("data-dir-path");
-  var openDataDirBtn = document.getElementById("open-data-dir-btn");
-  var storageText = document.getElementById("storage-text");
-  var optimizeStorageBtn = document.getElementById("optimize-storage-btn");
-  var clearUnusedBtn = document.getElementById("clear-unused-defaults-btn");
-  var progressContainer = document.getElementById("progress-container");
-  var progressPhase = document.getElementById("progress-phase");
-  var progressBarInner = document.getElementById("progress-bar-inner");
-  var progressText = document.getElementById("progress-text");
+  const settingsToggle = document.getElementById("settings-toggle");
+  const settingsPanel = document.getElementById("settings-panel");
+  const settingsLanguage = document.getElementById("settings-language");
+  const settingsConcurrency = document.getElementById("settings-concurrency");
+  const concurrencyValue = document.getElementById("concurrency-value");
+  const dataDirPath = document.getElementById("data-dir-path");
+  const openDataDirBtn = document.getElementById("open-data-dir-btn");
+  const storageText = document.getElementById("storage-text");
+  const optimizeStorageBtn = document.getElementById("optimize-storage-btn");
+  const clearUnusedBtn = document.getElementById("clear-unused-defaults-btn");
+  const progressContainer = document.getElementById("progress-container");
+  const progressPhase = document.getElementById("progress-phase");
+  const progressBarInner = document.getElementById("progress-bar-inner");
+  const progressText = document.getElementById("progress-text");
 
-  var settingsSaveTimeout = null;
+  let settingsSaveTimeout = null;
 
   settingsToggle.addEventListener("click", function () {
-    var isOpen = !settingsPanel.classList.contains("hidden");
+    const isOpen = !settingsPanel.classList.contains("hidden");
     if (isOpen) {
       settingsPanel.classList.add("hidden");
       settingsToggle.classList.remove("open");
@@ -36,8 +36,8 @@ export function initSettings(invoke, Channel, statusMsg) {
     }
   });
 
-  var settingsAutoSave = document.getElementById("settings-autosave");
-  var settingsBlurSpoilers = document.getElementById("settings-blur-spoilers");
+  const settingsAutoSave = document.getElementById("settings-autosave");
+  const settingsBlurSpoilers = document.getElementById("settings-blur-spoilers");
 
   function loadSettings() {
     invoke("get_settings").then(function (settings) {
@@ -52,7 +52,7 @@ export function initSettings(invoke, Channel, statusMsg) {
   }
 
   function saveSettings() {
-    var settings = {
+    const settings = {
       language: settingsLanguage.value,
       concurrent_downloads: parseInt(settingsConcurrency.value, 10),
       auto_save: settingsAutoSave ? settingsAutoSave.checked : true,
@@ -79,16 +79,16 @@ export function initSettings(invoke, Channel, statusMsg) {
   if (settingsBlurSpoilers) settingsBlurSpoilers.addEventListener("change", debounceSave);
 
   function buildStorageSection(label, size, parts, indent) {
-    var cls = indent ? "storage-toggle storage-sub" : "storage-toggle";
-    var html = '<button class="' + cls + '" onclick="this.classList.toggle(\'open\');this.nextElementSibling.classList.toggle(\'open\')">';
+    const cls = indent ? "storage-toggle storage-sub" : "storage-toggle";
+    let html = '<button class="' + cls + '" onclick="this.classList.toggle(\'open\');this.nextElementSibling.classList.toggle(\'open\')">';
     html += label + " — " + formatBytes(size) + "</button>";
     html += '<div class="storage-collapse">';
-    for (var i = 0; i < parts.length; i++) {
+    for (let i = 0; i < parts.length; i++) {
       if (parts[i].length > 2 && parts[i][2]) {
         // Nested collapsible section: [label, size, subParts]
         html += buildStorageSection(parts[i][0], parts[i][1], parts[i][2], true);
       } else {
-        var subCls = indent ? "storage-row storage-sub-deep" : "storage-row storage-sub";
+        const subCls = indent ? "storage-row storage-sub-deep" : "storage-row storage-sub";
         html += '<div class="' + subCls + '"><span>' + parts[i][0] + '</span><span>' + formatBytes(parts[i][1]) + '</span></div>';
       }
     }
@@ -99,29 +99,29 @@ export function initSettings(invoke, Channel, statusMsg) {
   function loadStorageInfo() {
     invoke("get_storage_info").then(function (info) {
       dataDirPath.textContent = info.data_dir;
-      var storageEl = document.getElementById("storage-info");
+      const storageEl = document.getElementById("storage-info");
 
-      var html = '<div class="storage-details">';
+      let html = '<div class="storage-details">';
       html += '<div class="storage-row storage-total"><span>Total</span><span>' + formatBytes(info.total_size_bytes) + '</span></div>';
 
       // Cases — collapsible
-      var caseParts = [];
+      const caseParts = [];
       if (info.cases_assets_bytes > 0) caseParts.push(["Assets", info.cases_assets_bytes]);
       if (info.cases_metadata_bytes > 0) caseParts.push(["Metadata", info.cases_metadata_bytes]);
       if (info.cases_plugins_bytes > 0) caseParts.push(["Plugins", info.cases_plugins_bytes]);
-      var casesLabel = info.cases_count + " case" + (info.cases_count !== 1 ? "s" : "");
+      const casesLabel = info.cases_count + " case" + (info.cases_count !== 1 ? "s" : "");
       html += buildStorageSection(casesLabel, info.cases_size_bytes, caseParts, false);
 
       // Default assets — collapsible
       if (info.defaults_size_bytes > 0) {
-        var defaultParts = [];
+        const defaultParts = [];
         if (info.defaults_sprites_bytes > 0) defaultParts.push(["Sprites", info.defaults_sprites_bytes]);
         if (info.defaults_music_bytes > 0) defaultParts.push(["Music", info.defaults_music_bytes]);
         if (info.defaults_sounds_bytes > 0) defaultParts.push(["Sounds", info.defaults_sounds_bytes]);
         if (info.defaults_voices_bytes > 0) defaultParts.push(["Voices", info.defaults_voices_bytes]);
         if (info.defaults_shared_bytes > 0) {
-          var sharedSub = [];
-          var sharedLabel = info.defaults_shared_count + " file" + (info.defaults_shared_count !== 1 ? "s" : "");
+          const sharedSub = [];
+          const sharedLabel = info.defaults_shared_count + " file" + (info.defaults_shared_count !== 1 ? "s" : "");
           if (info.defaults_shared_images_bytes > 0) sharedSub.push(["Images", info.defaults_shared_images_bytes]);
           if (info.defaults_shared_audio_bytes > 0) sharedSub.push(["Audio", info.defaults_shared_audio_bytes]);
           if (info.defaults_shared_other_bytes > 0) sharedSub.push(["Other", info.defaults_shared_other_bytes]);
@@ -140,7 +140,7 @@ export function initSettings(invoke, Channel, statusMsg) {
       storageEl.className = "";
     }).catch(function (e) {
       console.error("[SETTINGS] Failed to load storage info:", e);
-      var storageEl = document.getElementById("storage-info");
+      const storageEl = document.getElementById("storage-info");
       storageEl.textContent = "Unable to compute storage info.";
     });
   }
@@ -159,14 +159,14 @@ export function initSettings(invoke, Channel, statusMsg) {
     progressBarInner.style.width = "0%";
     progressText.textContent = "Scanning cases...";
 
-    var onEvent = new Channel();
+    const onEvent = new Channel();
     onEvent.onmessage = function (msg) {
       if (msg.event === "progress") {
-        var pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
+        const pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
         progressBarInner.style.width = pct + "%";
         progressText.textContent = msg.data.completed + " / " + msg.data.total + " (" + pct + "%)";
         if (msg.data.current_url) {
-          var fname = msg.data.current_url.split("/").pop();
+          let fname = msg.data.current_url.split("/").pop();
           if (fname.length > 40) fname = fname.substring(0, 37) + "...";
           progressText.textContent += " — " + fname;
           applySpoilerBlur(progressText);

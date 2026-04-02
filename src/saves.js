@@ -2,32 +2,32 @@ import { escapeHtml, base64DecodeUtf8, showConfirmModal, formatBytes, createModa
 
 // --- Saves ---
 
-var bridgeIdCounter = 0;
+let bridgeIdCounter = 0;
 
 /** @param {AppContext} ctx */
 export function initSaves(ctx) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
-  var loadLibrary = ctx.loadLibrary;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
+  const loadLibrary = ctx.loadLibrary;
 
-  var importResult = document.getElementById("import-result");
+  const importResult = document.getElementById("import-result");
 
   function nextBridgeId(prefix) {
     return prefix + "_" + (++bridgeIdCounter);
   }
 
   function parsePastedSave(input) {
-    var trimmed = input.trim();
+    const trimmed = input.trim();
     if (!trimmed) return null;
 
-    var parsed = null;
+    let parsed = null;
 
     // 1. Try URL with save_data= parameter
-    var saveDataMatch = trimmed.match(/[?&]save_data=([^&]+)/);
+    const saveDataMatch = trimmed.match(/[?&]save_data=([^&]+)/);
     if (saveDataMatch) {
       try {
-        var decoded = decodeURIComponent(saveDataMatch[1]);
-        var json = base64DecodeUtf8(decoded);
+        const decoded = decodeURIComponent(saveDataMatch[1]);
+        const json = base64DecodeUtf8(decoded);
         parsed = JSON.parse(json);
       } catch (e) { /* not a valid URL save */ }
     }
@@ -35,7 +35,7 @@ export function initSaves(ctx) {
     // 2. Try raw base64
     if (!parsed) {
       try {
-        var json2 = base64DecodeUtf8(trimmed);
+        const json2 = base64DecodeUtf8(trimmed);
         parsed = JSON.parse(json2);
       } catch (e) { /* not base64 */ }
     }
@@ -59,32 +59,32 @@ export function initSaves(ctx) {
   }
 
   function showPasteSaveModal() {
-    var m = createModal("<strong>Import Save from Link or Code</strong>", { wide: true });
+    const m = createModal("<strong>Import Save from Link or Code</strong>", { wide: true });
 
-    var field = document.createElement("div");
+    const field = document.createElement("div");
     field.className = "modal-field";
-    var label = document.createElement("label");
+    const label = document.createElement("label");
     label.textContent = "Paste a save link, base64 save code, or raw JSON";
-    var textarea = document.createElement("textarea");
+    const textarea = document.createElement("textarea");
     textarea.className = "attach-code-textarea";
     textarea.rows = 4;
     textarea.placeholder = "https://aaonline.fr/player.php?trial_id=...&save_data=...\nor base64 code\nor raw JSON";
     field.appendChild(label);
     field.appendChild(textarea);
 
-    var buttons = document.createElement("div");
+    const buttons = document.createElement("div");
     buttons.className = "modal-row-buttons";
 
-    var importBtn = document.createElement("button");
+    const importBtn = document.createElement("button");
     importBtn.className = "modal-btn modal-btn-primary";
     importBtn.textContent = "Import";
 
-    var cancelBtn = document.createElement("button");
+    const cancelBtn = document.createElement("button");
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
 
     importBtn.addEventListener("click", function () {
-      var result = parsePastedSave(textarea.value);
+      const result = parsePastedSave(textarea.value);
       if (!result) {
         textarea.style.borderColor = "#a33";
         statusMsg.textContent = "Could not parse save data. Paste a save link, base64 code, or raw JSON.";
@@ -94,7 +94,7 @@ export function initSaves(ctx) {
       m.close();
       statusMsg.textContent = "Importing save for case " + result.trialId + "...";
 
-      var savesObj = {};
+      const savesObj = {};
       savesObj[String(result.trialId)] = {};
       savesObj[String(result.trialId)][String(Date.now())] = result.saveString;
 
@@ -122,22 +122,22 @@ export function initSaves(ctx) {
   }
 
   function showSavesPluginsModal(caseIds, title) {
-    var m = createModal("<strong>Saves &amp; Plugins &mdash; " + escapeHtml(title) + "</strong>");
+    const m = createModal("<strong>Saves &amp; Plugins &mdash; " + escapeHtml(title) + "</strong>");
 
-    var buttons = document.createElement("div");
+    const buttons = document.createElement("div");
     buttons.className = "modal-buttons";
 
     // Saves section label
-    var savesLabel = document.createElement("div");
+    const savesLabel = document.createElement("div");
     savesLabel.className = "section-label";
     savesLabel.textContent = "Saves";
 
-    var exportSavesBtn = document.createElement("button");
+    const exportSavesBtn = document.createElement("button");
     exportSavesBtn.className = "modal-btn modal-btn-primary";
     exportSavesBtn.textContent = "Export Saves";
     exportSavesBtn.addEventListener("click", function () { m.close(); exportSave(caseIds, title); });
 
-    var importSavesBtn = document.createElement("button");
+    const importSavesBtn = document.createElement("button");
     importSavesBtn.className = "modal-btn modal-btn-secondary";
     importSavesBtn.textContent = "Import Saves";
     importSavesBtn.addEventListener("click", function () {
@@ -152,7 +152,7 @@ export function initSaves(ctx) {
       }).catch(function(e) { console.error("[SAVES] pick_import_file error:", e); });
     });
 
-    var pasteSaveBtn = document.createElement("button");
+    const pasteSaveBtn = document.createElement("button");
     pasteSaveBtn.className = "modal-btn";
     pasteSaveBtn.textContent = "Paste Save Link/Code";
     pasteSaveBtn.addEventListener("click", function () { m.close(); showPasteSaveModal(); });
@@ -161,7 +161,7 @@ export function initSaves(ctx) {
     buttons.appendChild(importSavesBtn);
     buttons.appendChild(pasteSaveBtn);
 
-    var cancelBtn = document.createElement("button");
+    const cancelBtn = document.createElement("button");
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
     cancelBtn.addEventListener("click", m.close);
@@ -171,21 +171,21 @@ export function initSaves(ctx) {
     checkPluginsForCases(caseIds).then(function (anyPlugins) {
       if (!anyPlugins) return;
 
-      var pluginsLabel = document.createElement("div");
+      const pluginsLabel = document.createElement("div");
       pluginsLabel.className = "section-label";
       pluginsLabel.style.marginTop = "0.75rem";
       pluginsLabel.textContent = "Plugins";
 
-      var exportPluginsBtn = document.createElement("button");
+      const exportPluginsBtn = document.createElement("button");
       exportPluginsBtn.className = "modal-btn";
       exportPluginsBtn.textContent = "Export Plugins";
       exportPluginsBtn.addEventListener("click", function () {
         m.close();
-        var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+        const safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
         invoke("pick_export_plugin_file", { defaultName: safeName + ".aaoplug" }).then(function (destPath) {
           if (!destPath) return;
           statusMsg.textContent = "Exporting plugins...";
-          var caseId = Array.isArray(caseIds) ? caseIds[0] : caseIds;
+          const caseId = Array.isArray(caseIds) ? caseIds[0] : caseIds;
           invoke("export_case_plugins", { caseId: caseId, destPath: destPath }).then(function (size) {
             statusMsg.textContent = "Exported plugins (" + formatBytes(size) + ")";
           }).catch(function (e) {
@@ -203,32 +203,32 @@ export function initSaves(ctx) {
   }
 
   function showExportOptionsModal(onConfirm) {
-    var m = createModal("What to include in the export?");
+    const m = createModal("What to include in the export?");
 
-    var savesLabel = document.createElement("label");
+    const savesLabel = document.createElement("label");
     savesLabel.className = "regular_label checkbox-label";
-    var savesCb = document.createElement("input");
+    const savesCb = document.createElement("input");
     savesCb.type = "checkbox";
     savesCb.checked = true;
     savesLabel.appendChild(savesCb);
     savesLabel.appendChild(document.createTextNode(" Include saves"));
 
-    var pluginsLabel = document.createElement("label");
+    const pluginsLabel = document.createElement("label");
     pluginsLabel.className = "regular_label checkbox-label";
-    var pluginsCb = document.createElement("input");
+    const pluginsCb = document.createElement("input");
     pluginsCb.type = "checkbox";
     pluginsCb.checked = true;
     pluginsLabel.appendChild(pluginsCb);
     pluginsLabel.appendChild(document.createTextNode(" Include plugins"));
 
-    var buttons = document.createElement("div");
+    const buttons = document.createElement("div");
     buttons.className = "modal-row-buttons";
 
-    var exportBtn = document.createElement("button");
+    const exportBtn = document.createElement("button");
     exportBtn.className = "modal-btn modal-btn-primary";
     exportBtn.textContent = "Export";
 
-    var cancelBtn = document.createElement("button");
+    const cancelBtn = document.createElement("button");
     cancelBtn.className = "modal-btn modal-btn-cancel";
     cancelBtn.textContent = "Cancel";
 
@@ -272,8 +272,8 @@ export function initSaves(ctx) {
   }
 
   function doExportSave(caseIds, title, saves, includePlugins) {
-      var safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
-      var defaultName = safeName + ".aaosave";
+      const safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+      const defaultName = safeName + ".aaosave";
       statusMsg.textContent = "Choosing export location...";
 
       invoke("pick_export_save_file", { defaultName: defaultName })
@@ -309,15 +309,15 @@ export function initSaves(ctx) {
     invoke("import_save", { sourcePath: path })
       .then(function (result) {
         return writeGameSaves(result.saves).then(function (writeResult) {
-          var mergedCount = (writeResult && writeResult.merged) || 0;
+          const mergedCount = (writeResult && writeResult.merged) || 0;
 
-          var cases = (result.metadata && result.metadata.cases) || [];
-          var totalSaves = 0;
-          for (var i = 0; i < cases.length; i++) {
+          const cases = (result.metadata && result.metadata.cases) || [];
+          let totalSaves = 0;
+          for (let i = 0; i < cases.length; i++) {
             totalSaves += (cases[i].save_count || 0);
           }
 
-          var msg = "Imported " + totalSaves + " save(s) for " + cases.length + " case(s)";
+          let msg = "Imported " + totalSaves + " save(s) for " + cases.length + " case(s)";
           if (mergedCount > 0) msg += " (" + mergedCount + " new)";
           if (result.plugins_installed && result.plugins_installed.length > 0) {
             msg += ", plugins installed for " + result.plugins_installed.length + " case(s)";
@@ -338,7 +338,7 @@ export function initSaves(ctx) {
   // --- Save Bridge Helpers ---
 
   function findLastSequenceSave(sequenceList) {
-    var caseIds = sequenceList.map(function (p) { return p.id; });
+    const caseIds = sequenceList.map(function (p) { return p.id; });
     return invoke("find_latest_save", { caseIds: caseIds }).then(function (result) {
       if (result) {
         return {
@@ -353,13 +353,13 @@ export function initSaves(ctx) {
 
   function findLastSequenceSaveBridge(sequenceList) {
     return invoke("get_server_url").then(function (serverUrl) {
-      var bridgeId = "read_" + (++bridgeIdCounter);
+      const bridgeId = "read_" + (++bridgeIdCounter);
       console.log("[SAVE] Server URL:", serverUrl, "bridgeId:", bridgeId);
 
       return new Promise(function (resolve) {
-        var iframe = document.createElement("iframe");
+        const iframe = document.createElement("iframe");
         iframe.style.display = "none";
-        var resolved = false;
+        let resolved = false;
 
         // Listen for postMessage from the bridge page (filter by bridgeId)
         function onMessage(event) {
@@ -375,8 +375,8 @@ export function initSaves(ctx) {
           window.removeEventListener("message", onMessage);
           document.body.removeChild(iframe);
 
-          var raw = event.data.data;
-          var gameSaves = raw ? JSON.parse(raw) : null;
+          const raw = event.data.data;
+          const gameSaves = raw ? JSON.parse(raw) : null;
           if (!gameSaves) {
             console.log("[SAVE] No game_saves in server localStorage");
             resolve(null);
@@ -384,16 +384,16 @@ export function initSaves(ctx) {
           }
 
           console.log("[SAVE] game_saves keys:", Object.keys(gameSaves));
-          var latestDate = 0;
-          var latestPartId = null;
-          var latestSaveString = null;
+          let latestDate = 0;
+          let latestPartId = null;
+          let latestSaveString = null;
 
-          for (var i = 0; i < sequenceList.length; i++) {
-            var partId = sequenceList[i].id;
+          for (let i = 0; i < sequenceList.length; i++) {
+            const partId = sequenceList[i].id;
             if (!(partId in gameSaves)) continue;
             console.log("[SAVE] Part", partId, "has", Object.keys(gameSaves[partId]).length, "saves");
-            for (var saveDate in gameSaves[partId]) {
-              var ts = parseInt(saveDate, 10);
+            for (let saveDate in gameSaves[partId]) {
+              const ts = parseInt(saveDate, 10);
               if (ts > latestDate) {
                 latestDate = ts;
                 latestPartId = partId;
@@ -441,11 +441,11 @@ export function initSaves(ctx) {
    */
   function readGameSaves(caseIds) {
     return invoke("get_server_url").then(function (serverUrl) {
-      var bridgeId = "saves_" + (++bridgeIdCounter);
+      const bridgeId = "saves_" + (++bridgeIdCounter);
       return new Promise(function (resolve) {
-        var iframe = document.createElement("iframe");
+        const iframe = document.createElement("iframe");
         iframe.style.display = "none";
-        var resolved = false;
+        let resolved = false;
 
         function onMessage(event) {
           if (resolved) return;
@@ -455,8 +455,8 @@ export function initSaves(ctx) {
           window.removeEventListener("message", onMessage);
           document.body.removeChild(iframe);
 
-          var raw = event.data.data;
-          var gameSaves = raw ? JSON.parse(raw) : null;
+          const raw = event.data.data;
+          const gameSaves = raw ? JSON.parse(raw) : null;
           if (!gameSaves) {
             resolve(null);
             return;
@@ -464,10 +464,10 @@ export function initSaves(ctx) {
 
           // Filter to requested case IDs if specified
           if (caseIds && caseIds.length > 0) {
-            var filtered = {};
-            var found = false;
-            for (var i = 0; i < caseIds.length; i++) {
-              var id = String(caseIds[i]);
+            const filtered = {};
+            let found = false;
+            for (let i = 0; i < caseIds.length; i++) {
+              const id = String(caseIds[i]);
               if (id in gameSaves) {
                 filtered[id] = gameSaves[id];
                 found = true;
@@ -502,12 +502,12 @@ export function initSaves(ctx) {
    */
   function writeGameSaves(savesJson) {
     return invoke("get_server_url").then(function (serverUrl) {
-      var bridgeId = "write_" + (++bridgeIdCounter);
+      const bridgeId = "write_" + (++bridgeIdCounter);
       console.log("[SAVE]", bridgeId, "writeGameSaves starting");
       return new Promise(function (resolve) {
-        var iframe = document.createElement("iframe");
+        const iframe = document.createElement("iframe");
         iframe.style.display = "none";
-        var resolved = false;
+        let resolved = false;
 
         function onMessage(event) {
           if (!event.data) return;
@@ -549,7 +549,7 @@ export function initSaves(ctx) {
   }
 
   function copyTrialLink(caseId) {
-    var url = "https://aaonline.fr/player.php?trial_id=" + caseId;
+    const url = "https://aaonline.fr/player.php?trial_id=" + caseId;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(url).then(function () {
         statusMsg.textContent = "Link copied: " + url;
@@ -575,17 +575,17 @@ export function initSaves(ctx) {
   }
 
   function promptExportOptions(caseIds, callback) {
-    var pluginChecks = caseIds.map(function (id) {
+    const pluginChecks = caseIds.map(function (id) {
       return invoke("list_plugins", { caseId: id });
     });
     Promise.all([
       invoke("read_saves_for_export", { caseIds: caseIds }),
       Promise.all(pluginChecks)
     ]).then(function (results) {
-      var saves = results[0];
-      var pluginStates = results[1];
-      var hasSaves = saves !== null;
-      var hasPlugins = pluginStates.some(function (ps) {
+      const saves = results[0];
+      const pluginStates = results[1];
+      const hasSaves = saves !== null;
+      const hasPlugins = pluginStates.some(function (ps) {
         return ps.scripts.length > 0 || ps.disabled.length > 0;
       });
       if (!hasSaves && !hasPlugins) {

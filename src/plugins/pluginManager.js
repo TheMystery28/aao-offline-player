@@ -4,30 +4,30 @@ import { escapeHtml, showConfirmModal, createModal } from '../helpers.js';
  * Plugin Manager Modal — shows case plugins + global plugins for a single case.
  */
 export function showPluginManagerModal(ctx, caseId, caseTitle) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
-  var loadLibrary = ctx.loadLibrary;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
+  const loadLibrary = ctx.loadLibrary;
 
-  var m = createModal("<strong>Plugins &mdash; " + escapeHtml(caseTitle) + "</strong>", { wide: true });
+  const m = createModal("<strong>Plugins &mdash; " + escapeHtml(caseTitle) + "</strong>", { wide: true });
 
-  var listContainer = document.createElement("div");
+  const listContainer = document.createElement("div");
   listContainer.className = "plugin-list";
 
-  var actionsRow = document.createElement("div");
+  const actionsRow = document.createElement("div");
   actionsRow.className = "plugin-actions-row";
 
-  var importBtn = document.createElement("button");
+  const importBtn = document.createElement("button");
   importBtn.className = "modal-btn modal-btn-primary";
   importBtn.textContent = "Import .aaoplug";
 
-  var attachBtn = document.createElement("button");
+  const attachBtn = document.createElement("button");
   attachBtn.className = "modal-btn modal-btn-secondary";
   attachBtn.textContent = "Attach Code";
 
   actionsRow.appendChild(importBtn);
   actionsRow.appendChild(attachBtn);
 
-  var closeBtn = document.createElement("button");
+  const closeBtn = document.createElement("button");
   closeBtn.className = "modal-btn modal-btn-cancel";
   closeBtn.textContent = "Close";
   closeBtn.style.width = "100%";
@@ -40,22 +40,22 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
   function refreshList() {
     invoke("list_plugins", { caseId: caseId })
       .then(function (manifest) {
-        var scripts = (manifest && manifest.scripts) || [];
-        var disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
+        const scripts = (manifest && manifest.scripts) || [];
+        const disabledList = (manifest && Array.isArray(manifest.disabled)) ? manifest.disabled : [];
         listContainer.innerHTML = "";
         if (scripts.length === 0) {
-          var empty = document.createElement("div");
+          const empty = document.createElement("div");
           empty.className = "plugin-list-empty";
           empty.textContent = "No plugins installed.";
           listContainer.appendChild(empty);
         } else {
-          for (var i = 0; i < scripts.length; i++) {
+          for (let i = 0; i < scripts.length; i++) {
             (function (filename) {
-              var isDisabled = disabledList.indexOf(filename) !== -1;
-              var item = document.createElement("div");
+              const isDisabled = disabledList.indexOf(filename) !== -1;
+              const item = document.createElement("div");
               item.className = "plugin-list-item" + (isDisabled ? " disabled" : "");
 
-              var toggle = document.createElement("input");
+              const toggle = document.createElement("input");
               toggle.type = "checkbox";
               toggle.checked = !isDisabled;
               toggle.title = isDisabled ? "Enable plugin" : "Disable plugin";
@@ -69,11 +69,11 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
                   .catch(function (e) { statusMsg.textContent = "Error toggling plugin: " + e; });
               });
 
-              var name = document.createElement("span");
+              const name = document.createElement("span");
               name.className = "plugin-name";
               name.textContent = filename;
 
-              var removeBtn = document.createElement("button");
+              const removeBtn = document.createElement("button");
               removeBtn.className = "plugin-remove-btn";
               removeBtn.textContent = "Remove";
               removeBtn.addEventListener("click", function () {
@@ -88,7 +88,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
                 );
               });
 
-              var paramsBtn = document.createElement("button");
+              const paramsBtn = document.createElement("button");
               paramsBtn.className = "small-btn";
               paramsBtn.textContent = "Params";
               paramsBtn.className += " btn-small";
@@ -108,7 +108,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
       })
       .catch(function (e) {
         listContainer.innerHTML = "";
-        var errEl = document.createElement("div");
+        const errEl = document.createElement("div");
         errEl.className = "plugin-list-empty";
         errEl.textContent = "Error loading plugins: " + e;
         listContainer.appendChild(errEl);
@@ -152,11 +152,11 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
   closeBtn.addEventListener("click", close);
 
   // Global plugins section
-  var globalLabel = document.createElement("div");
+  const globalLabel = document.createElement("div");
   globalLabel.className = "section-label";
   globalLabel.textContent = "Global Plugins";
 
-  var globalListContainer = document.createElement("div");
+  const globalListContainer = document.createElement("div");
   globalListContainer.className = "plugin-list";
 
   function refreshGlobalList() {
@@ -164,36 +164,36 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
       invoke("list_global_plugins"),
       invoke("list_plugins", { caseId: caseId })
     ]).then(function (results) {
-      var globalManifest = results[0];
-      var caseState = results[1];
+      const globalManifest = results[0];
+      const caseState = results[1];
 
-      var scripts = (globalManifest && globalManifest.scripts) || [];
-      var plugins = (globalManifest && globalManifest.plugins) || {};
+      const scripts = (globalManifest && globalManifest.scripts) || [];
+      const plugins = (globalManifest && globalManifest.plugins) || {};
 
-      var activeForCase = {};
-      var caseScripts = (caseState && caseState.scripts) || [];
-      for (var a = 0; a < caseScripts.length; a++) {
+      const activeForCase = {};
+      const caseScripts = (caseState && caseState.scripts) || [];
+      for (let a = 0; a < caseScripts.length; a++) {
         activeForCase[caseScripts[a]] = true;
       }
 
       globalListContainer.innerHTML = "";
       if (scripts.length === 0) {
-        var empty = document.createElement("div");
+        const empty = document.createElement("div");
         empty.className = "plugin-list-empty";
         empty.textContent = "No plugins installed.";
         globalListContainer.appendChild(empty);
       } else {
-        for (var i = 0; i < scripts.length; i++) {
+        for (let i = 0; i < scripts.length; i++) {
           (function (filename) {
-            var pe = plugins[filename] || {};
-            var scope = pe.scope || {};
-            var isActiveForCase = !!activeForCase[filename];
-            var isDisabled = !isActiveForCase;
+            const pe = plugins[filename] || {};
+            const scope = pe.scope || {};
+            const isActiveForCase = !!activeForCase[filename];
+            const isDisabled = !isActiveForCase;
 
-            var item = document.createElement("div");
+            const item = document.createElement("div");
             item.className = "plugin-list-item" + (isDisabled ? " disabled" : "");
 
-            var toggle = document.createElement("input");
+            const toggle = document.createElement("input");
             toggle.type = "checkbox";
             toggle.checked = isActiveForCase;
             toggle.title = isActiveForCase ? "Disable for this case" : "Enable for this case";
@@ -212,11 +212,11 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
                 .catch(function (e) { statusMsg.textContent = "Error: " + e; });
             });
 
-            var name = document.createElement("span");
+            const name = document.createElement("span");
             name.className = "plugin-name";
             name.textContent = filename;
 
-            var badge = document.createElement("span");
+            const badge = document.createElement("span");
             badge.style.cssText = "font-size:10px;color:#888;margin-left:4px;flex-shrink:0;";
             if (scope.all === true) {
               badge.textContent = isActiveForCase ? "(global)" : "(global, excluded)";
@@ -224,7 +224,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
               badge.textContent = "(enabled)";
             }
 
-            var removeBtn = document.createElement("button");
+            const removeBtn = document.createElement("button");
             removeBtn.className = "plugin-remove-btn";
             removeBtn.textContent = "Remove";
             removeBtn.addEventListener("click", function () {
@@ -246,7 +246,7 @@ export function showPluginManagerModal(ctx, caseId, caseTitle) {
     }).catch(function(e) { console.error("[PLUGINS] Failed to refresh plugin manager:", e); });
   }
 
-  var caseLabel = document.createElement("div");
+  const caseLabel = document.createElement("div");
   caseLabel.className = "section-label";
   caseLabel.style.marginTop = "0.75rem";
   caseLabel.textContent = "Case Plugins";

@@ -4,20 +4,20 @@ import { formatBytes, formatDate, escapeHtml, showFailedAssetsModal, showConfirm
  * Render a collection group with header, items, and footer actions.
  */
 export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups, searchQuery) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
-  var caseList = ctx.caseList;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
+  const caseList = ctx.caseList;
 
-  var items = collection.items || [];
-  var itemCount = items.length;
+  const items = collection.items || [];
+  const itemCount = items.length;
 
   // Count total size across all items in the collection
-  var totalSize = 0;
-  var totalCases = 0;
-  for (var i = 0; i < items.length; i++) {
+  let totalSize = 0;
+  let totalCases = 0;
+  for (let i = 0; i < items.length; i++) {
     if (items[i].type === "sequence" && sequenceGroups[items[i].title]) {
-      var seqCases = sequenceGroups[items[i].title].cases;
-      for (var sc = 0; sc < seqCases.length; sc++) {
+      const seqCases = sequenceGroups[items[i].title].cases;
+      for (let sc = 0; sc < seqCases.length; sc++) {
         totalSize += seqCases[sc].assets.total_size_bytes;
         totalCases++;
       }
@@ -27,11 +27,11 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
     }
   }
 
-  var group = document.createElement("div");
+  const group = document.createElement("div");
   group.className = "collection-group";
 
   // Header
-  var header = document.createElement("div");
+  const header = document.createElement("div");
   header.className = "collection-header";
   header.setAttribute("tabindex", "0");
   header.setAttribute("role", "button");
@@ -45,7 +45,7 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
       ' &middot; ' + formatBytes(totalSize) +
     '</span>';
 
-  var colPluginsBtn = document.createElement("button");
+  const colPluginsBtn = document.createElement("button");
   colPluginsBtn.className = "small-btn header-plugins-btn";
   colPluginsBtn.textContent = "Plugins";
   colPluginsBtn.title = "Configure plugin params for this collection";
@@ -53,7 +53,7 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
     return function (e) {
       e.stopPropagation();
       invoke("list_global_plugins").then(function (manifest) {
-        var scripts = (manifest && manifest.scripts) || [];
+        const scripts = (manifest && manifest.scripts) || [];
         if (scripts.length === 0) {
           statusMsg.textContent = "No global plugins installed. Open the Plugins panel to add one.";
           ctx.pluginsPanel.classList.remove("hidden");
@@ -68,11 +68,11 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   })(collection));
   header.appendChild(colPluginsBtn);
 
-  var itemsContainer = document.createElement("div");
+  const itemsContainer = document.createElement("div");
   itemsContainer.className = "collection-items";
 
   header.addEventListener("click", function () {
-    var isOpen = !itemsContainer.classList.contains("hidden");
+    const isOpen = !itemsContainer.classList.contains("hidden");
     if (isOpen) {
       itemsContainer.classList.add("hidden");
       header.querySelector(".collection-header-toggle").innerHTML = "&#9654;";
@@ -88,21 +88,21 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   });
 
   // Render each item in order
-  var renderedItems = 0;
-  for (var j = 0; j < items.length; j++) {
-    var item = items[j];
+  let renderedItems = 0;
+  for (let j = 0; j < items.length; j++) {
+    const item = items[j];
     if (item.type === "sequence" && sequenceGroups[item.title]) {
-      var sg = sequenceGroups[item.title];
-      var beforeCount = itemsContainer.children.length;
+      const sg = sequenceGroups[item.title];
+      const beforeCount = itemsContainer.children.length;
       appendSequenceGroupInto(ctx, itemsContainer, item.title, sg.list, sg.cases, searchQuery);
       if (itemsContainer.children.length > beforeCount) renderedItems++;
     } else if (item.type === "case" && allCases[item.case_id]) {
       // When searching, skip cases that don't match
       if (searchQuery) {
-        var caseData = allCases[item.case_id];
-        var cTitle = (caseData.title || "").toLowerCase();
-        var cAuthor = (caseData.author || "").toLowerCase();
-        var cId = String(caseData.case_id);
+        const caseData = allCases[item.case_id];
+        const cTitle = (caseData.title || "").toLowerCase();
+        const cAuthor = (caseData.author || "").toLowerCase();
+        const cId = String(caseData.case_id);
         if (cTitle.indexOf(searchQuery) === -1 && cAuthor.indexOf(searchQuery) === -1 && cId.indexOf(searchQuery) === -1) {
           continue;
         }
@@ -118,13 +118,13 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   }
 
   // Footer actions
-  var footer = document.createElement("div");
+  const footer = document.createElement("div");
   footer.className = "collection-actions";
 
   // Play from Part 1 -- play the first playable case across all items in order
-  var firstPlayable = findFirstPlayableInCollection(ctx, items, allCases, sequenceGroups);
+  const firstPlayable = findFirstPlayableInCollection(ctx, items, allCases, sequenceGroups);
   if (firstPlayable) {
-    var playFirstBtn = document.createElement("button");
+    const playFirstBtn = document.createElement("button");
     playFirstBtn.className = "play-btn";
     playFirstBtn.innerHTML = "&#9654; Play from Part 1";
     playFirstBtn.addEventListener("click", (function (c) {
@@ -134,9 +134,9 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   }
 
   // Continue button -- find latest save across all cases in the collection
-  var allCollectionCaseIds = getCollectionCaseIds(ctx, items, allCases, sequenceGroups);
+  const allCollectionCaseIds = getCollectionCaseIds(ctx, items, allCases, sequenceGroups);
   if (allCollectionCaseIds.length > 0) {
-    var continueBtn = document.createElement("button");
+    const continueBtn = document.createElement("button");
     continueBtn.className = "play-btn continue-btn";
     continueBtn.innerHTML = "&#9654; Continue";
     continueBtn.title = "Resume from your most recent save across all cases in this collection";
@@ -144,18 +144,18 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
       return function () {
         statusMsg.textContent = "Checking saves...";
         // Build a fake sequenceList from caseIds so we can reuse findLastSequenceSave
-        var fakeList = caseIds.map(function (id) { return { id: id }; });
+        const fakeList = caseIds.map(function (id) { return { id: id }; });
         ctx.findLastSequenceSave(fakeList).then(function (lastSave) {
           if (!lastSave) {
             statusMsg.textContent = "No saves found in this collection.";
             return;
           }
-          var matchTitle = casesMap[lastSave.partId] ? casesMap[lastSave.partId].title : ("Case " + lastSave.partId);
+          const matchTitle = casesMap[lastSave.partId] ? casesMap[lastSave.partId].title : ("Case " + lastSave.partId);
           statusMsg.textContent = 'Resuming from save in "' + matchTitle + '"...';
           invoke("open_game", { caseId: lastSave.partId })
             .then(function (url) {
-              var sep = url.indexOf("?") === -1 ? "?" : "&";
-              var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
+              const sep = url.indexOf("?") === -1 ? "?" : "&";
+              const fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
               ctx.showPlayer(matchTitle, fullUrl);
             })
             .catch(function (e) { statusMsg.textContent = "Error: " + e; });
@@ -166,7 +166,7 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   }
 
   // Edit button
-  var editBtn = document.createElement("button");
+  const editBtn = document.createElement("button");
   editBtn.className = "edit-collection-btn";
   editBtn.textContent = "Edit";
   editBtn.addEventListener("click", (function (col) {
@@ -175,7 +175,7 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   footer.appendChild(editBtn);
 
   // Export Collection button
-  var exportColBtn = document.createElement("button");
+  const exportColBtn = document.createElement("button");
   exportColBtn.className = "export-btn";
   exportColBtn.textContent = "Export Collection";
   exportColBtn.addEventListener("click", (function (col, caseIds) {
@@ -184,7 +184,7 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
   footer.appendChild(exportColBtn);
 
   // Delete button
-  var delBtn = document.createElement("button");
+  const delBtn = document.createElement("button");
   delBtn.className = "delete-btn";
   delBtn.textContent = "Delete Collection";
   delBtn.addEventListener("click", (function (col) {
@@ -214,28 +214,28 @@ export function appendCollectionGroup(ctx, collection, allCases, sequenceGroups,
  * Returns handles so callers can add extra buttons before appending to the DOM.
  */
 export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloadedCases, searchQuery) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
 
-  var totalParts = sequenceList.length;
-  var downloadedCount = downloadedCases.length;
-  var totalSize = 0;
-  var downloadedIds = [];
-  for (var i = 0; i < downloadedCases.length; i++) {
+  const totalParts = sequenceList.length;
+  const downloadedCount = downloadedCases.length;
+  let totalSize = 0;
+  const downloadedIds = [];
+  for (let i = 0; i < downloadedCases.length; i++) {
     totalSize += downloadedCases[i].assets.total_size_bytes;
     downloadedIds.push(downloadedCases[i].case_id);
   }
-  var missingIds = [];
-  for (var j = 0; j < sequenceList.length; j++) {
+  const missingIds = [];
+  for (let j = 0; j < sequenceList.length; j++) {
     if (downloadedIds.indexOf(sequenceList[j].id) === -1) {
       missingIds.push(sequenceList[j].id);
     }
   }
 
-  var groupEl = document.createElement("div");
+  const groupEl = document.createElement("div");
   groupEl.className = "sequence-group";
 
-  var header = document.createElement("div");
+  const header = document.createElement("div");
   header.className = "sequence-header";
   header.setAttribute("tabindex", "0");
   header.setAttribute("role", "button");
@@ -248,7 +248,7 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
       ' &middot; ' + formatBytes(totalSize) +
     '</span>';
 
-  var seqInPluginsBtn = document.createElement("button");
+  const seqInPluginsBtn = document.createElement("button");
   seqInPluginsBtn.className = "small-btn header-plugins-btn";
   seqInPluginsBtn.textContent = "Plugins";
   seqInPluginsBtn.title = "Configure plugin params for this sequence";
@@ -256,7 +256,7 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
     return function (e) {
       e.stopPropagation();
       invoke("list_global_plugins").then(function (manifest) {
-        var scripts = (manifest && manifest.scripts) || [];
+        const scripts = (manifest && manifest.scripts) || [];
         if (scripts.length === 0) {
           statusMsg.textContent = "No global plugins installed. Open the Plugins panel to add one.";
           ctx.pluginsPanel.classList.remove("hidden");
@@ -271,11 +271,11 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
   })(sequenceTitle));
   header.appendChild(seqInPluginsBtn);
 
-  var partsContainer = document.createElement("div");
+  const partsContainer = document.createElement("div");
   partsContainer.className = "sequence-parts";
 
   header.addEventListener("click", function () {
-    var isOpen = !partsContainer.classList.contains("hidden");
+    const isOpen = !partsContainer.classList.contains("hidden");
     if (isOpen) {
       partsContainer.classList.add("hidden");
       header.querySelector(".sequence-header-toggle").innerHTML = "&#9654;";
@@ -290,21 +290,21 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); header.click(); }
   });
 
-  var renderedParts = 0;
-  for (var k = 0; k < sequenceList.length; k++) {
-    var partInfo = sequenceList[k];
+  let renderedParts = 0;
+  for (let k = 0; k < sequenceList.length; k++) {
+    const partInfo = sequenceList[k];
 
     // When searching, skip parts that don't match
     if (searchQuery) {
-      var partTitle = (partInfo.title || "").toLowerCase();
-      var partId = String(partInfo.id);
+      const partTitle = (partInfo.title || "").toLowerCase();
+      const partId = String(partInfo.id);
       if (partTitle.indexOf(searchQuery) === -1 && partId.indexOf(searchQuery) === -1) {
         continue;
       }
     }
 
-    var downloaded = null;
-    for (var d = 0; d < downloadedCases.length; d++) {
+    let downloaded = null;
+    for (let d = 0; d < downloadedCases.length; d++) {
       if (downloadedCases[d].case_id === partInfo.id) {
         downloaded = downloadedCases[d];
         break;
@@ -320,13 +320,13 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
   }
 
   // Sequence-specific footer
-  var seqFooter = document.createElement("div");
+  const seqFooter = document.createElement("div");
   seqFooter.className = "sequence-actions";
 
   if (downloadedCases.length > 0) {
-    var firstCase = null;
-    for (var f = 0; f < sequenceList.length; f++) {
-      for (var fc = 0; fc < downloadedCases.length; fc++) {
+    let firstCase = null;
+    for (let f = 0; f < sequenceList.length; f++) {
+      for (let fc = 0; fc < downloadedCases.length; fc++) {
         if (downloadedCases[fc].case_id === sequenceList[f].id) {
           firstCase = downloadedCases[fc];
           break;
@@ -335,7 +335,7 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
       if (firstCase) break;
     }
     if (firstCase) {
-      var playBtn = document.createElement("button");
+      const playBtn = document.createElement("button");
       playBtn.className = "play-btn";
       playBtn.innerHTML = "&#9654; Play from Part 1";
       playBtn.addEventListener("click", (function (c) {
@@ -347,7 +347,7 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
 
   // Continue (play from last save) button
   if (downloadedCases.length > 0) {
-    var continueBtn = document.createElement("button");
+    const continueBtn = document.createElement("button");
     continueBtn.className = "play-btn continue-btn";
     continueBtn.innerHTML = "&#9654; Continue";
     continueBtn.title = "Resume from your most recent save across all parts";
@@ -360,8 +360,8 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
             return;
           }
           // Find the matching downloaded case for the title
-          var matchTitle = "Part " + lastSave.partId;
-          for (var mc = 0; mc < dlCases.length; mc++) {
+          let matchTitle = "Part " + lastSave.partId;
+          for (let mc = 0; mc < dlCases.length; mc++) {
             if (dlCases[mc].case_id === lastSave.partId) {
               matchTitle = dlCases[mc].title;
               break;
@@ -371,8 +371,8 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
           invoke("open_game", { caseId: lastSave.partId })
             .then(function (url) {
               // Append save_data to the URL
-              var sep = url.indexOf("?") === -1 ? "?" : "&";
-              var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
+              const sep = url.indexOf("?") === -1 ? "?" : "&";
+              const fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
               ctx.showPlayer(matchTitle, fullUrl);
             })
             .catch(function (e) {
@@ -385,7 +385,7 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
   }
 
   if (missingIds.length > 0) {
-    var dlBtn = document.createElement("button");
+    const dlBtn = document.createElement("button");
     dlBtn.className = "update-btn";
     dlBtn.textContent = "Download " + missingIds.length + " remaining";
     dlBtn.addEventListener("click", (function (ids, title) {
@@ -416,7 +416,7 @@ export function buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloa
  * Append a sequence group into a container (used inside collections).
  */
 export function appendSequenceGroupInto(ctx, container, sequenceTitle, sequenceList, downloadedCases, searchQuery) {
-  var core = buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloadedCases, searchQuery);
+  const core = buildSequenceGroupCore(ctx, sequenceTitle, sequenceList, downloadedCases, searchQuery);
   if (searchQuery && core.renderedParts === 0) return;
   core.group.appendChild(core.footer);
   container.appendChild(core.group);
@@ -426,17 +426,17 @@ export function appendSequenceGroupInto(ctx, container, sequenceTitle, sequenceL
  * Render a case card inside a container (used within collection items).
  */
 export function appendCaseCardInto(ctx, container, c) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
 
-  var card = document.createElement("div");
+  const card = document.createElement("div");
   card.className = "case-card";
   card.dataset.caseId = c.case_id;
 
-  var sizeStr = formatBytes(c.assets.total_size_bytes);
-  var assetCount = c.assets.total_downloaded;
-  var dateStr = c.download_date ? formatDate(c.download_date) : "";
-  var failedCount = c.failed_assets ? c.failed_assets.length : 0;
+  const sizeStr = formatBytes(c.assets.total_size_bytes);
+  const assetCount = c.assets.total_downloaded;
+  const dateStr = c.download_date ? formatDate(c.download_date) : "";
+  const failedCount = c.failed_assets ? c.failed_assets.length : 0;
 
   card.innerHTML =
     '<div class="case-info">' +
@@ -463,9 +463,9 @@ export function appendCaseCardInto(ctx, container, c) {
     "</div>";
 
   // ARIA labels so screen readers distinguish buttons across case cards
-  var ariaButtons = card.querySelectorAll(".case-actions button");
-  for (var ab = 0; ab < ariaButtons.length; ab++) {
-    var btnText = ariaButtons[ab].textContent.replace(/[^a-zA-Z ]/g, "").trim();
+  const ariaButtons = card.querySelectorAll(".case-actions button");
+  for (let ab = 0; ab < ariaButtons.length; ab++) {
+    const btnText = ariaButtons[ab].textContent.replace(/[^a-zA-Z ]/g, "").trim();
     ariaButtons[ab].setAttribute("aria-label", btnText + " " + c.title);
   }
 
@@ -483,8 +483,8 @@ export function appendCaseCardInto(ctx, container, c) {
         statusMsg.textContent = 'Resuming "' + caseTitle + '"...';
         invoke("open_game", { caseId: caseId })
           .then(function (url) {
-            var sep = url.indexOf("?") === -1 ? "?" : "&";
-            var fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
+            const sep = url.indexOf("?") === -1 ? "?" : "&";
+            const fullUrl = url + sep + "save_data=" + encodeURIComponent(lastSave.saveDataBase64);
             ctx.showPlayer(caseTitle, fullUrl);
           })
           .catch(function (e) { statusMsg.textContent = "Error: " + e; });
@@ -494,13 +494,13 @@ export function appendCaseCardInto(ctx, container, c) {
   card.querySelector(".update-btn").addEventListener("click", function () {
     ctx.updateCase(c.case_id);
   });
-  var retryBtn = card.querySelector(".retry-btn");
+  const retryBtn = card.querySelector(".retry-btn");
   if (retryBtn) {
     retryBtn.addEventListener("click", function () {
       ctx.retryCase(c.case_id, c.failed_assets);
     });
   }
-  var failedSpan = card.querySelector(".case-failed");
+  const failedSpan = card.querySelector(".case-failed");
   if (failedSpan && c.failed_assets) {
     failedSpan.addEventListener("click", (function (fa) {
       return function (e) { e.stopPropagation(); showFailedAssetsModal(fa); };
@@ -526,12 +526,12 @@ export function appendCaseCardInto(ctx, container, c) {
 }
 
 export function findFirstPlayableInCollection(ctx, items, allCases, sequenceGroups) {
-  for (var i = 0; i < items.length; i++) {
-    var item = items[i];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     if (item.type === "sequence" && sequenceGroups[item.title]) {
-      var sg = sequenceGroups[item.title];
-      for (var f = 0; f < sg.list.length; f++) {
-        for (var fc = 0; fc < sg.cases.length; fc++) {
+      const sg = sequenceGroups[item.title];
+      for (let f = 0; f < sg.list.length; f++) {
+        for (let fc = 0; fc < sg.cases.length; fc++) {
           if (sg.cases[fc].case_id === sg.list[f].id) {
             return sg.cases[fc];
           }
@@ -545,12 +545,12 @@ export function findFirstPlayableInCollection(ctx, items, allCases, sequenceGrou
 }
 
 export function getCollectionCaseIds(ctx, items, allCases, sequenceGroups) {
-  var ids = [];
-  for (var i = 0; i < items.length; i++) {
-    var item = items[i];
+  const ids = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     if (item.type === "sequence" && sequenceGroups[item.title]) {
-      var sg = sequenceGroups[item.title];
-      for (var c = 0; c < sg.cases.length; c++) {
+      const sg = sequenceGroups[item.title];
+      for (let c = 0; c < sg.cases.length; c++) {
         ids.push(sg.cases[c].case_id);
       }
     } else if (item.type === "case" && allCases[item.case_id]) {
@@ -561,11 +561,11 @@ export function getCollectionCaseIds(ctx, items, allCases, sequenceGroups) {
 }
 
 export function exportCollection(ctx, collection, caseIds) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
 
-  var safeName = collection.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
-  var defaultName = safeName + ".aaocase";
+  const safeName = collection.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+  const defaultName = safeName + ".aaocase";
   statusMsg.textContent = "Choosing export location...";
   invoke("pick_export_file", { defaultName: defaultName })
     .then(function (destPath) {
@@ -584,7 +584,7 @@ export function exportCollection(ctx, collection, caseIds) {
             onEvent: onEvent
           });
         }).then(function (size) {
-          var msg = 'Exported collection "' + collection.title + '" (' + formatBytes(size) + ")";
+          let msg = 'Exported collection "' + collection.title + '" (' + formatBytes(size) + ")";
           if (saves) msg += " with saves";
           statusMsg.textContent = msg;
         }).catch(function (e) {

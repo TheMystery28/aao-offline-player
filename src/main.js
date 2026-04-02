@@ -46,84 +46,85 @@ import { initCollections } from './collections/init.js';
  * server, reads game_saves and engine config, writes them to the current origin.
  * Completes silently if no old data exists or if migration was already done.
  */
-function migrateLocalStorage() {
-  return invoke("get_settings").then(function (settings) {
-    if (settings.migration_complete) return Promise.resolve();
+async function migrateLocalStorage() {
+  try {
+    const settings = await invoke("get_settings");
+    if (settings.migration_complete) return;
 
-    return invoke("get_migration_server_url").then(function (oldUrl) {
-      return new Promise(function (resolve) {
-        var iframe = document.createElement("iframe");
-        iframe.style.display = "none";
-        var done = false;
+    const oldUrl = await invoke("get_migration_server_url");
+    await new Promise(function (resolve) {
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      let done = false;
 
-        function cleanup() {
-          if (iframe.parentNode) document.body.removeChild(iframe);
+      function cleanup() {
+        if (iframe.parentNode) document.body.removeChild(iframe);
+      }
+
+      function onMsg(event) {
+        if (done || !event.data || event.data.type !== "migration_data") return;
+        done = true;
+        window.removeEventListener("message", onMsg);
+        cleanup();
+
+        const data = event.data.data;
+        if (data) {
+          if (data.game_saves) {
+            try { localStorage.setItem("game_saves", data.game_saves); }
+            catch (e) { console.warn("[MIGRATE] Failed to write game_saves:", e); }
+          }
+          if (data.aao_engine_config) {
+            try { localStorage.setItem("aao_engine_config", data.aao_engine_config); }
+            catch (e) { console.warn("[MIGRATE] Failed to write engine_config:", e); }
+          }
+          console.log("[MIGRATE] Migrated localStorage from old origin");
         }
 
-        function onMsg(event) {
-          if (done || !event.data || event.data.type !== "migration_data") return;
+        invoke("save_settings", {
+          settings: Object.assign({}, settings, { migration_complete: true })
+        }).then(resolve).catch(resolve);
+      }
+
+      window.addEventListener("message", onMsg);
+      setTimeout(function () {
+        if (!done) {
           done = true;
           window.removeEventListener("message", onMsg);
           cleanup();
-
-          var data = event.data.data;
-          if (data) {
-            if (data.game_saves) {
-              try { localStorage.setItem("game_saves", data.game_saves); }
-              catch (e) { console.warn("[MIGRATE] Failed to write game_saves:", e); }
-            }
-            if (data.aao_engine_config) {
-              try { localStorage.setItem("aao_engine_config", data.aao_engine_config); }
-              catch (e) { console.warn("[MIGRATE] Failed to write engine_config:", e); }
-            }
-            console.log("[MIGRATE] Migrated localStorage from old origin");
-          }
-
+          // Mark complete even on timeout (no old data or server unreachable)
           invoke("save_settings", {
             settings: Object.assign({}, settings, { migration_complete: true })
           }).then(resolve).catch(resolve);
         }
+      }, 3000);
 
-        window.addEventListener("message", onMsg);
-        setTimeout(function () {
-          if (!done) {
-            done = true;
-            window.removeEventListener("message", onMsg);
-            cleanup();
-            // Mark complete even on timeout (no old data or server unreachable)
-            invoke("save_settings", {
-              settings: Object.assign({}, settings, { migration_complete: true })
-            }).then(resolve).catch(resolve);
-          }
-        }, 3000);
-
-        iframe.src = oldUrl + "/localstorage_migrate.html";
-        document.body.appendChild(iframe);
-      });
+      iframe.src = oldUrl + "/localstorage_migrate.html";
+      document.body.appendChild(iframe);
     });
-  }).catch(function (e) {
+  } catch (e) {
     console.warn("[MIGRATE] Migration failed:", e);
-  });
+  }
 }
 
-window.addEventListener("DOMContentLoaded", function () {
+window.addEventListener("DOMContentLoaded", async function () {
   // Run one-time localStorage migration before initializing the app.
   // This ensures old saves are available in the new protocol origin.
-  migrateLocalStorage().then(initApp);
+  await migrateLocalStorage();
+  initApp();
 
   function initApp() {
-  var statusMsg = document.getElementById("status-msg");
-  var caseList = document.getElementById("case-list");
-  var emptyLibrary = document.getElementById("empty-library");
-  var libraryLoading = document.getElementById("library-loading");
+  const statusMsg = document.getElementById("status-msg");
+  const caseList = document.getElementById("case-list");
+  const emptyLibrary = document.getElementById("empty-library");
+  const libraryLoading = document.getElementById("library-loading");
 
   // Track known case IDs for duplicate detection
-  var knownCaseIds = [];
+  const knownCaseIds = [];
 
   // --- Shared context bag ---
   // All modules access cross-module functions through this object at call-time.
   // This resolves circular dependencies (library <-> collections).
-  var ctx = {
+  const ctx = {
     invoke: invoke,
     Channel: Channel,
     statusMsg: statusMsg,
@@ -134,7 +135,7 @@ window.addEventListener("DOMContentLoaded", function () {
   };
 
   // --- Saves ---
-  var savesFns = initSaves({
+  const savesFns = initSaves({
     invoke: invoke,
     statusMsg: statusMsg,
     loadLibrary: function () { ctx.loadLibrary(); }
@@ -153,7 +154,7 @@ window.addEventListener("DOMContentLoaded", function () {
   ctx.copyTrialLink = savesFns.copyTrialLink;
 
   // --- Player ---
-  var playerFns = initPlayer({
+  const playerFns = initPlayer({
     invoke: invoke,
     statusMsg: statusMsg,
     loadLibrary: function () { ctx.loadLibrary(); },
@@ -165,7 +166,7 @@ window.addEventListener("DOMContentLoaded", function () {
   ctx.showLauncher = playerFns.showLauncher;
 
   // --- Plugins ---
-  var pluginsFns = initPlugins({
+  const pluginsFns = initPlugins({
     invoke: invoke,
     statusMsg: statusMsg,
     loadLibrary: function () { ctx.loadLibrary(); },
@@ -184,7 +185,7 @@ window.addEventListener("DOMContentLoaded", function () {
   ctx.pluginsToggle = pluginsFns.pluginsToggle;
 
   // --- Download ---
-  var downloadFns = initDownload({
+  const downloadFns = initDownload({
     invoke: invoke,
     Channel: Channel,
     statusMsg: statusMsg,
@@ -203,7 +204,7 @@ window.addEventListener("DOMContentLoaded", function () {
   ctx.progressText = downloadFns.progressText;
 
   // --- Library ---
-  var libraryFns = initLibrary(ctx);
+  const libraryFns = initLibrary(ctx);
   ctx.loadLibrary = libraryFns.loadLibrary;
   ctx.getCachedCases = libraryFns.getCachedCases;
   ctx.getCachedCollections = libraryFns.getCachedCollections;
@@ -214,7 +215,7 @@ window.addEventListener("DOMContentLoaded", function () {
   ctx.withExportProgress = libraryFns.withExportProgress;
 
   // --- Collections ---
-  var collectionsFns = initCollections(ctx);
+  const collectionsFns = initCollections(ctx);
   ctx.appendCollectionGroup = collectionsFns.appendCollectionGroup;
   ctx.appendSequenceGroupInto = collectionsFns.appendSequenceGroupInto;
   ctx.appendCaseCardInto = collectionsFns.appendCaseCardInto;
@@ -222,7 +223,7 @@ window.addEventListener("DOMContentLoaded", function () {
   ctx.showEditCollectionModal = collectionsFns.showEditCollectionModal;
 
   // --- Settings ---
-  var settingsFns = initSettings(invoke, Channel, statusMsg);
+  const settingsFns = initSettings(invoke, Channel, statusMsg);
   ctx.loadSettings = settingsFns.loadSettings;
   ctx.loadStorageInfo = settingsFns.loadStorageInfo;
 

@@ -6,14 +6,14 @@ import { escapeHtml, createModal } from '../helpers.js';
  * If globally disabled: shows enabled_for overrides.
  */
 export function showScopeEditorModal(ctx, pluginFilename) {
-  var invoke = ctx.invoke;
-  var statusMsg = ctx.statusMsg;
-  var getCachedCases = ctx.getCachedCases;
-  var getCachedCollections = ctx.getCachedCollections;
+  const invoke = ctx.invoke;
+  const statusMsg = ctx.statusMsg;
+  const getCachedCases = ctx.getCachedCases;
+  const getCachedCollections = ctx.getCachedCollections;
 
-  var m = createModal("<strong>Scope &mdash; " + escapeHtml(pluginFilename) + "</strong>", { wide: true });
+  const m = createModal("<strong>Scope &mdash; " + escapeHtml(pluginFilename) + "</strong>", { wide: true });
 
-  var contentEl = document.createElement("div");
+  const contentEl = document.createElement("div");
   contentEl.className = "scroll-panel";
   contentEl.style.maxHeight = "400px";
 
@@ -23,17 +23,17 @@ export function showScopeEditorModal(ctx, pluginFilename) {
   }
 
   function resolveCollectionTitle(colId) {
-    var cols = getCachedCollections();
-    for (var i = 0; i < (cols || []).length; i++) {
+    const cols = getCachedCollections();
+    for (let i = 0; i < (cols || []).length; i++) {
       if (cols[i].id === colId) return cols[i].title;
     }
     return colId;
   }
 
   function resolveCaseTitle(caseId) {
-    var cases = getCachedCases();
-    var id = Number(caseId);
-    for (var i = 0; i < (cases || []).length; i++) {
+    const cases = getCachedCases();
+    const id = Number(caseId);
+    for (let i = 0; i < (cases || []).length; i++) {
       if (cases[i].case_id === id) return cases[i].title;
     }
     return "Case " + caseId;
@@ -45,23 +45,23 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       invoke("get_plugin_params", { filename: pluginFilename }),
       invoke("get_plugin_descriptors", { filename: pluginFilename }).catch(function() { return null; })
     ]).then(function (results) {
-      var manifest = results[0];
-      var allParams = results[1] || {};
-      var descriptors = results[2]; // null if no descriptors
-      var plugins = (manifest && manifest.plugins) || {};
-      var entry = plugins[pluginFilename] || {};
-      var scope = entry.scope || {};
-      var globallyDisabled = !(scope.all === true);
+      const manifest = results[0];
+      const allParams = results[1] || {};
+      const descriptors = results[2]; // null if no descriptors
+      const plugins = (manifest && manifest.plugins) || {};
+      const entry = plugins[pluginFilename] || {};
+      const scope = entry.scope || {};
+      const globallyDisabled = !(scope.all === true);
 
       function formatParamSummary(params, descs) {
         if (!params || typeof params !== 'object') return '';
-        var keys = Object.keys(params);
+        const keys = Object.keys(params);
         if (keys.length === 0) return '';
-        var parts = [];
-        for (var fi = 0; fi < keys.length; fi++) {
-          var k = keys[fi];
-          var v = params[k];
-          var lbl = (descs && descs[k] && descs[k].label) ? descs[k].label : k;
+        const parts = [];
+        for (let fi = 0; fi < keys.length; fi++) {
+          const k = keys[fi];
+          let v = params[k];
+          const lbl = (descs && descs[k] && descs[k].label) ? descs[k].label : k;
           if (typeof v === 'boolean') v = v ? 'enabled' : 'disabled';
           else if (typeof v === 'string' && v.length > 25) v = '"' + v.substring(0, 22) + '..."';
           else if (typeof v === 'string') v = '"' + v + '"';
@@ -72,38 +72,38 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       }
 
       function getSubScopeOverrides(scopeType, scopeKey) {
-        var subs = [];
-        var cachedCases = getCachedCases() || [];
-        var cachedCollections = getCachedCollections() || [];
+        const subs = [];
+        const cachedCases = getCachedCases() || [];
+        const cachedCollections = getCachedCollections() || [];
 
         if (scopeType === 'collection') {
-          var col = null;
-          for (var ci = 0; ci < cachedCollections.length; ci++) {
+          let col = null;
+          for (let ci = 0; ci < cachedCollections.length; ci++) {
             if (cachedCollections[ci].id === scopeKey) { col = cachedCollections[ci]; break; }
           }
           if (!col) return subs;
-          for (var ii = 0; ii < col.items.length; ii++) {
-            var colItem = col.items[ii];
+          for (let ii = 0; ii < col.items.length; ii++) {
+            const colItem = col.items[ii];
             if (colItem.type === 'sequence') {
-              var seqP = allParams.by_sequence && allParams.by_sequence[colItem.title];
+              const seqP = allParams.by_sequence && allParams.by_sequence[colItem.title];
               if (seqP && Object.keys(seqP).length > 0) {
                 subs.push({ label: 'Seq: ' + colItem.title, params: seqP });
               }
-              for (var sc = 0; sc < cachedCases.length; sc++) {
+              for (let sc = 0; sc < cachedCases.length; sc++) {
                 if (cachedCases[sc].sequence && cachedCases[sc].sequence.title === colItem.title) {
-                  var cid = String(cachedCases[sc].case_id);
-                  var cp = allParams.by_case && allParams.by_case[cid];
+                  const cid = String(cachedCases[sc].case_id);
+                  const cp = allParams.by_case && allParams.by_case[cid];
                   if (cp && Object.keys(cp).length > 0) {
                     subs.push({ label: 'Case: ' + cachedCases[sc].title, params: cp });
                   }
                 }
               }
             } else if (colItem.type === 'case') {
-              var ck = String(colItem.case_id);
-              var caseP = allParams.by_case && allParams.by_case[ck];
+              const ck = String(colItem.case_id);
+              const caseP = allParams.by_case && allParams.by_case[ck];
               if (caseP && Object.keys(caseP).length > 0) {
-                var cTitle = ck;
-                for (var ct = 0; ct < cachedCases.length; ct++) {
+                let cTitle = ck;
+                for (let ct = 0; ct < cachedCases.length; ct++) {
                   if (cachedCases[ct].case_id === colItem.case_id) { cTitle = cachedCases[ct].title; break; }
                 }
                 subs.push({ label: 'Case: ' + cTitle, params: caseP });
@@ -111,10 +111,10 @@ export function showScopeEditorModal(ctx, pluginFilename) {
             }
           }
         } else if (scopeType === 'sequence') {
-          for (var si = 0; si < cachedCases.length; si++) {
+          for (let si = 0; si < cachedCases.length; si++) {
             if (cachedCases[si].sequence && cachedCases[si].sequence.title === scopeKey) {
-              var seqCaseId = String(cachedCases[si].case_id);
-              var seqCaseP = allParams.by_case && allParams.by_case[seqCaseId];
+              const seqCaseId = String(cachedCases[si].case_id);
+              const seqCaseP = allParams.by_case && allParams.by_case[seqCaseId];
               if (seqCaseP && Object.keys(seqCaseP).length > 0) {
                 subs.push({ label: 'Case: ' + cachedCases[si].title, params: seqCaseP });
               }
@@ -127,10 +127,10 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       contentEl.innerHTML = "";
 
       // Global toggle
-      var globalRow = document.createElement("div");
+      const globalRow = document.createElement("div");
       globalRow.className = "flex-row";
       globalRow.style.cssText = "margin-bottom:0.75rem; padding-bottom:0.5rem; border-bottom:1px solid #2a2a4a;";
-      var globalToggle = document.createElement("input");
+      const globalToggle = document.createElement("input");
       globalToggle.type = "checkbox";
       globalToggle.checked = !globallyDisabled;
       globalToggle.style.accentColor = "#4a90d9";
@@ -141,7 +141,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
           .then(refreshScopeEditor)
           .catch(function (e) { statusMsg.textContent = "Error: " + e; });
       });
-      var globalLabelEl = document.createElement("span");
+      const globalLabelEl = document.createElement("span");
       globalLabelEl.style.cssText = "color:#ccc; font-size:0.9rem;";
       globalLabelEl.textContent = "Globally " + (globallyDisabled ? "disabled" : "enabled");
       globalRow.appendChild(globalToggle);
@@ -149,7 +149,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       contentEl.appendChild(globalRow);
 
       // Section label
-      var sectionLabel = document.createElement("div");
+      const sectionLabel = document.createElement("div");
       sectionLabel.className = "section-label";
       if (globallyDisabled) {
         sectionLabel.textContent = "Enabled for (overrides)";
@@ -160,7 +160,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
 
       // Build override list
       // In unified model, enabled_for/disabled_for are under scope
-      var overrides = {};
+      let overrides = {};
       if (globallyDisabled) {
         // Show what's explicitly enabled
         overrides = {
@@ -176,42 +176,42 @@ export function showScopeEditorModal(ctx, pluginFilename) {
           collections: []
         };
       }
-      var overrideItems = [];
+      const overrideItems = [];
 
-      var colArr = overrides.collections || [];
-      for (var ci = 0; ci < colArr.length; ci++) {
+      const colArr = overrides.collections || [];
+      for (let ci = 0; ci < colArr.length; ci++) {
         overrideItems.push({ type: "collection", key: String(colArr[ci]), label: "Collection: " + resolveCollectionTitle(String(colArr[ci])) });
       }
-      var seqArr = overrides.sequences || [];
-      for (var si = 0; si < seqArr.length; si++) {
+      const seqArr = overrides.sequences || [];
+      for (let si = 0; si < seqArr.length; si++) {
         overrideItems.push({ type: "sequence", key: String(seqArr[si]), label: "Sequence: " + seqArr[si] });
       }
-      var caseArr = overrides.cases || [];
-      for (var cai = 0; cai < caseArr.length; cai++) {
+      const caseArr = overrides.cases || [];
+      for (let cai = 0; cai < caseArr.length; cai++) {
         overrideItems.push({ type: "case", key: String(caseArr[cai]), label: "Case: " + resolveCaseTitle(caseArr[cai]) });
       }
 
       if (overrideItems.length === 0) {
-        var emptyMsg = document.createElement("div");
+        const emptyMsg = document.createElement("div");
         emptyMsg.className = "muted";
         emptyMsg.style.cssText = "font-size:0.82rem; padding:0.3rem 0;";
         emptyMsg.textContent = "No per-scope overrides.";
         contentEl.appendChild(emptyMsg);
       } else {
-        for (var oi = 0; oi < overrideItems.length; oi++) {
+        for (let oi = 0; oi < overrideItems.length; oi++) {
           (function (item) {
-            var row = document.createElement("div");
+            const row = document.createElement("div");
             row.className = "global-plugin-row";
-            var label = document.createElement("span");
+            const label = document.createElement("span");
             label.className = "plugin-name";
             label.textContent = item.label;
 
-            var paramsBtn = document.createElement("button");
+            const paramsBtn = document.createElement("button");
             paramsBtn.className = "small-btn btn-small";
             paramsBtn.textContent = "Params";
             paramsBtn.style.marginLeft = "auto";
             paramsBtn.addEventListener("click", function () {
-              var paramLevel, paramKey;
+              let paramLevel, paramKey;
               if (item.type === "collection") {
                 paramLevel = "by_collection"; paramKey = item.key;
               } else if (item.type === "sequence") {
@@ -222,7 +222,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
               ctx.showPluginParamsModal(pluginFilename, item.label, paramLevel, paramKey);
             });
 
-            var removeBtn = document.createElement("button");
+            const removeBtn = document.createElement("button");
             removeBtn.className = "plugin-remove-btn";
             removeBtn.textContent = "Remove";
             removeBtn.addEventListener("click", function () {
@@ -240,42 +240,42 @@ export function showScopeEditorModal(ctx, pluginFilename) {
             contentEl.appendChild(row);
 
             // Inline param summary for this scope level
-            var scopeParams = null;
+            let scopeParams = null;
             if (item.type === 'collection') scopeParams = allParams.by_collection && allParams.by_collection[item.key];
             else if (item.type === 'sequence') scopeParams = allParams.by_sequence && allParams.by_sequence[item.key];
             else if (item.type === 'case') scopeParams = allParams.by_case && allParams.by_case[item.key];
 
             if (scopeParams && Object.keys(scopeParams).length > 0) {
-              var summaryRow = document.createElement('div');
+              const summaryRow = document.createElement('div');
               summaryRow.className = 'flex-row';
               summaryRow.style.cssText = 'gap:0.3rem; padding:0.15rem 0 0 1.2rem;';
-              var summaryEl = document.createElement('span');
+              const summaryEl = document.createElement('span');
               summaryEl.className = 'param-summary';
-              var summaryText = formatParamSummary(scopeParams, descriptors);
+              const summaryText = formatParamSummary(scopeParams, descriptors);
               summaryEl.textContent = summaryText;
               summaryEl.title = summaryText;
-              var resetBtn = document.createElement('button');
+              const resetBtn = document.createElement('button');
               resetBtn.className = 'small-btn btn-reset';
               resetBtn.textContent = 'Reset';
               resetBtn.title = 'Clear param overrides at this scope and all sub-scopes within it';
               (function(scopeType, scopeKey) {
                 resetBtn.addEventListener('click', function() {
                   // Build list of all levels to clear: this level + sub-scopes
-                  var clearOps = [];
-                  var pLevel = scopeType === 'collection' ? 'by_collection' : scopeType === 'sequence' ? 'by_sequence' : 'by_case';
+                  const clearOps = [];
+                  const pLevel = scopeType === 'collection' ? 'by_collection' : scopeType === 'sequence' ? 'by_sequence' : 'by_case';
                   clearOps.push({ level: pLevel, key: scopeKey });
 
                   // Also clear sub-scope overrides
-                  var subs = getSubScopeOverrides(scopeType, scopeKey);
-                  for (var ri = 0; ri < subs.length; ri++) {
-                    var subLabel = subs[ri].label;
+                  const subs = getSubScopeOverrides(scopeType, scopeKey);
+                  for (let ri = 0; ri < subs.length; ri++) {
+                    const subLabel = subs[ri].label;
                     if (subLabel.indexOf('Seq: ') === 0) {
                       clearOps.push({ level: 'by_sequence', key: subLabel.substring(5) });
                     } else if (subLabel.indexOf('Case: ') === 0) {
                       // Need the case ID, not the title — find it from cached cases
-                      var subCases = getCachedCases() || [];
-                      var subTitle = subLabel.substring(6);
-                      for (var rci = 0; rci < subCases.length; rci++) {
+                      const subCases = getCachedCases() || [];
+                      const subTitle = subLabel.substring(6);
+                      for (let rci = 0; rci < subCases.length; rci++) {
                         if (subCases[rci].title === subTitle) {
                           clearOps.push({ level: 'by_case', key: String(subCases[rci].case_id) });
                           break;
@@ -284,8 +284,8 @@ export function showScopeEditorModal(ctx, pluginFilename) {
                     }
                   }
 
-                  var chain = Promise.resolve();
-                  for (var ci = 0; ci < clearOps.length; ci++) {
+                  let chain = Promise.resolve();
+                  for (let ci = 0; ci < clearOps.length; ci++) {
                     (function(op) {
                       chain = chain.then(function() {
                         return invoke('set_global_plugin_params', { filename: pluginFilename, level: op.level, key: op.key, params: {} });
@@ -302,12 +302,12 @@ export function showScopeEditorModal(ctx, pluginFilename) {
             }
 
             // Sub-scope overrides (cases/sequences inside this scope with their own params)
-            var subOverrides = getSubScopeOverrides(item.type, item.key);
+            const subOverrides = getSubScopeOverrides(item.type, item.key);
             if (subOverrides.length > 0) {
-              var subList = document.createElement('div');
+              const subList = document.createElement('div');
               subList.style.cssText = 'padding:0.1rem 0 0.3rem 1.2rem;';
-              for (var soi = 0; soi < subOverrides.length; soi++) {
-                var subRow = document.createElement('div');
+              for (let soi = 0; soi < subOverrides.length; soi++) {
+                const subRow = document.createElement('div');
                 subRow.style.cssText = 'font-size:0.68rem; color:#8a8; padding:0.05rem 0;';
                 subRow.textContent = '\u251C ' + subOverrides[soi].label + ': ' + formatParamSummary(subOverrides[soi].params, descriptors);
                 subList.appendChild(subRow);
@@ -319,24 +319,24 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       }
 
       // Inline default params display
-      var defaultParams = allParams['default'] || {};
-      var defaultSection = document.createElement('div');
+      const defaultParams = allParams['default'] || {};
+      const defaultSection = document.createElement('div');
       defaultSection.style.cssText = 'margin-top:0.5rem; padding-top:0.4rem; border-top:1px solid #2a2a4a;';
 
-      var defaultRow = document.createElement('div');
+      const defaultRow = document.createElement('div');
       defaultRow.className = 'global-plugin-row';
-      var defaultLabel = document.createElement('span');
+      const defaultLabel = document.createElement('span');
       defaultLabel.className = 'section-label';
       defaultLabel.style.marginBottom = '0';
       defaultLabel.textContent = 'Default';
-      var defaultEditBtn = document.createElement('button');
+      const defaultEditBtn = document.createElement('button');
       defaultEditBtn.className = 'small-btn btn-small';
       defaultEditBtn.textContent = 'Edit';
       defaultEditBtn.style.marginLeft = 'auto';
       defaultEditBtn.addEventListener('click', function () {
         ctx.showPluginParamsModal(pluginFilename, 'Default', 'default', '');
       });
-      var defaultResetBtn = document.createElement('button');
+      const defaultResetBtn = document.createElement('button');
       defaultResetBtn.className = 'small-btn btn-reset';
       defaultResetBtn.textContent = 'Reset';
       defaultResetBtn.title = 'Clear all default param overrides';
@@ -350,15 +350,15 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       defaultRow.appendChild(defaultResetBtn);
       defaultSection.appendChild(defaultRow);
 
-      var defaultKeys = Object.keys(defaultParams);
+      const defaultKeys = Object.keys(defaultParams);
       if (defaultKeys.length > 0) {
-        var defSummaryEl = document.createElement('div');
+        const defSummaryEl = document.createElement('div');
         defSummaryEl.className = 'param-summary';
         defSummaryEl.style.padding = '0.15rem 0 0 1.2rem';
         defSummaryEl.textContent = formatParamSummary(defaultParams, descriptors);
         defaultSection.appendChild(defSummaryEl);
       } else {
-        var defEmpty = document.createElement('div');
+        const defEmpty = document.createElement('div');
         defEmpty.style.cssText = 'font-size:0.72rem; color:#666; padding:0.15rem 0 0 1.2rem;';
         defEmpty.textContent = '(using plugin defaults)';
         defaultSection.appendChild(defEmpty);
@@ -366,17 +366,17 @@ export function showScopeEditorModal(ctx, pluginFilename) {
       contentEl.appendChild(defaultSection);
 
       // Add override button + inline picker
-      var addBtnLabel = globallyDisabled ? "+ Enable for Scope" : "+ Add Exception";
-      var addBtn = document.createElement("button");
+      const addBtnLabel = globallyDisabled ? "+ Enable for Scope" : "+ Add Exception";
+      const addBtn = document.createElement("button");
       addBtn.className = "small-btn";
       addBtn.textContent = addBtnLabel;
       addBtn.style.cssText = "margin-top:0.5rem; font-size:0.78rem;";
 
-      var pickerContainer = document.createElement("div");
+      const pickerContainer = document.createElement("div");
       pickerContainer.className = "scroll-panel";
       pickerContainer.style.cssText = "max-height:180px; padding:0.3rem 0; display:none; margin-top:0.3rem;";
 
-      var pickerBuilt = false;
+      let pickerBuilt = false;
       addBtn.addEventListener("click", function () {
         if (pickerContainer.style.display === "none") {
           pickerContainer.style.display = "block";
@@ -395,26 +395,26 @@ export function showScopeEditorModal(ctx, pluginFilename) {
         pickerContainer.innerHTML = "";
 
         // Use cached data (already populated by loadLibrary)
-        var cases = getCachedCases() || [];
-        var cols = getCachedCollections() || [];
+        const cases = getCachedCases() || [];
+        const cols = getCachedCollections() || [];
 
         function renderPicker(cases, cols) {
           pickerContainer.innerHTML = "";
-          var collectionCaseIds = {};
-          var collectionSeqTitles = {};
-          for (var ci = 0; ci < cols.length; ci++) {
-            var colItems = cols[ci].items || [];
-            for (var ii = 0; ii < colItems.length; ii++) {
+          const collectionCaseIds = {};
+          const collectionSeqTitles = {};
+          for (let ci = 0; ci < cols.length; ci++) {
+            const colItems = cols[ci].items || [];
+            for (let ii = 0; ii < colItems.length; ii++) {
               if (colItems[ii].type === "case") collectionCaseIds[colItems[ii].case_id] = true;
               if (colItems[ii].type === "sequence") collectionSeqTitles[colItems[ii].title] = true;
             }
           }
 
-          var seqTitles = [];
-          var seenSeqs = {};
-          var sequenceCaseIds = {};
-          for (var si = 0; si < cases.length; si++) {
-            var seq = cases[si].sequence;
+          const seqTitles = [];
+          const seenSeqs = {};
+          const sequenceCaseIds = {};
+          for (let si = 0; si < cases.length; si++) {
+            const seq = cases[si].sequence;
             if (seq && seq.title) {
               sequenceCaseIds[cases[si].case_id] = true;
               if (!seenSeqs[seq.title] && !collectionSeqTitles[seq.title]) {
@@ -424,28 +424,28 @@ export function showScopeEditorModal(ctx, pluginFilename) {
             }
           }
 
-          var standaloneCases = [];
-          for (var sci = 0; sci < cases.length; sci++) {
+          const standaloneCases = [];
+          for (let sci = 0; sci < cases.length; sci++) {
             if (!sequenceCaseIds[cases[sci].case_id] && !collectionCaseIds[cases[sci].case_id]) {
               standaloneCases.push(cases[sci]);
             }
           }
 
           function isAlreadyOverridden(scopeType, scopeKey) {
-            var fieldArr = (currentOverrides[scopeType === "case" ? "cases" : (scopeType === "sequence" ? "sequences" : "collections")] || []);
-            for (var i = 0; i < fieldArr.length; i++) {
+            const fieldArr = (currentOverrides[scopeType === "case" ? "cases" : (scopeType === "sequence" ? "sequences" : "collections")] || []);
+            for (let i = 0; i < fieldArr.length; i++) {
               if (String(fieldArr[i]) === String(scopeKey)) return true;
             }
             return false;
           }
 
           function makePickerRow(label, scopeType, scopeKey) {
-            var row = document.createElement("label");
+            const row = document.createElement("label");
             row.style.cssText = "display:flex; align-items:center; gap:0.4rem; color:#ddd; font-size:0.82rem; padding:0.15rem 0; cursor:pointer;";
-            var cb = document.createElement("input");
+            const cb = document.createElement("input");
             cb.type = "checkbox";
             cb.style.accentColor = "#4a90d9";
-            var alreadyDone = isAlreadyOverridden(scopeType, scopeKey);
+            const alreadyDone = isAlreadyOverridden(scopeType, scopeKey);
             cb.checked = alreadyDone;
             cb.disabled = alreadyDone;
             if (alreadyDone) row.style.opacity = "0.5";
@@ -464,7 +464,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
           }
 
           function makeGroupLabel(text) {
-            var lbl = document.createElement("div");
+            const lbl = document.createElement("div");
             lbl.style.cssText = "color:#888; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.04em; margin:0.4rem 0 0.2rem 0;";
             lbl.textContent = text;
             return lbl;
@@ -472,24 +472,24 @@ export function showScopeEditorModal(ctx, pluginFilename) {
 
           if (cols.length > 0) {
             pickerContainer.appendChild(makeGroupLabel("Collections"));
-            for (var colIdx = 0; colIdx < cols.length; colIdx++) {
+            for (let colIdx = 0; colIdx < cols.length; colIdx++) {
               pickerContainer.appendChild(makePickerRow(cols[colIdx].title, "collection", cols[colIdx].id));
             }
           }
           if (seqTitles.length > 0) {
             pickerContainer.appendChild(makeGroupLabel("Sequences"));
-            for (var seqIdx = 0; seqIdx < seqTitles.length; seqIdx++) {
+            for (let seqIdx = 0; seqIdx < seqTitles.length; seqIdx++) {
               pickerContainer.appendChild(makePickerRow(seqTitles[seqIdx], "sequence", seqTitles[seqIdx]));
             }
           }
           if (standaloneCases.length > 0) {
             pickerContainer.appendChild(makeGroupLabel("Individual Cases"));
-            for (var caseIdx = 0; caseIdx < standaloneCases.length; caseIdx++) {
+            for (let caseIdx = 0; caseIdx < standaloneCases.length; caseIdx++) {
               pickerContainer.appendChild(makePickerRow(standaloneCases[caseIdx].title, "case", String(standaloneCases[caseIdx].case_id)));
             }
           }
           if (pickerContainer.children.length === 0) {
-            var noItems = document.createElement("div");
+            const noItems = document.createElement("div");
             noItems.className = "muted";
             noItems.style.fontSize = "0.82rem";
             noItems.textContent = "No cases downloaded yet.";
@@ -500,7 +500,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
         if (cases.length > 0 || cols.length > 0) {
           renderPicker(cases, cols);
         } else {
-          var loadMsg = document.createElement("div");
+          const loadMsg = document.createElement("div");
           loadMsg.className = "muted";
           loadMsg.style.fontSize = "0.82rem";
           loadMsg.textContent = "Loading...";
@@ -519,7 +519,7 @@ export function showScopeEditorModal(ctx, pluginFilename) {
     }).catch(function(e) { console.error("[PLUGINS] Failed to load scope editor:", e); });
   }
 
-  var closeBtn = document.createElement("button");
+  const closeBtn = document.createElement("button");
   closeBtn.className = "modal-btn modal-btn-cancel";
   closeBtn.textContent = "Close";
   closeBtn.style.width = "100%";
