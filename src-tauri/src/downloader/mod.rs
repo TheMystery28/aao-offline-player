@@ -65,33 +65,23 @@ pub struct SitePaths {
 }
 
 impl SitePaths {
-    pub fn icon_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.icon_subdir)
+    fn picture_path(&self, subdir: &str) -> String {
+        format!("{}{}", self.picture_dir, subdir)
     }
-    pub fn talking_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.talking_subdir)
-    }
-    pub fn still_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.still_subdir)
-    }
-    pub fn startup_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.startup_subdir)
-    }
-    pub fn evidence_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.evidence_subdir)
-    }
-    pub fn bg_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.bg_subdir)
-    }
-    pub fn popups_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.popups_subdir)
-    }
-    pub fn locks_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.locks_subdir)
-    }
-    pub fn defaultplaces_path(&self) -> String {
-        format!("{}{}", self.picture_dir, self.defaultplaces_subdir)
-    }
+
+    pub fn icon_path(&self) -> String { self.picture_path(&self.icon_subdir) }
+    pub fn talking_path(&self) -> String { self.picture_path(&self.talking_subdir) }
+    pub fn still_path(&self) -> String { self.picture_path(&self.still_subdir) }
+    pub fn startup_path(&self) -> String { self.picture_path(&self.startup_subdir) }
+    pub fn evidence_path(&self) -> String { self.picture_path(&self.evidence_subdir) }
+    pub fn bg_path(&self) -> String { self.picture_path(&self.bg_subdir) }
+    pub fn popups_path(&self) -> String { self.picture_path(&self.popups_subdir) }
+    pub fn locks_path(&self) -> String { self.picture_path(&self.locks_subdir) }
+    pub fn defaultplaces_path(&self) -> String { self.picture_path(&self.defaultplaces_subdir) }
+
+    pub fn music_path(&self) -> &str { &self.music_dir }
+    pub fn sounds_path(&self) -> &str { &self.sounds_dir }
+    pub fn voices_path(&self) -> &str { &self.voices_dir }
 }
 
 /// Case metadata parsed from trial_information.
@@ -312,5 +302,110 @@ mod tests {
             );
         }
         assert_eq!(obj.len(), expected_keys.len(), "CaseInfo should have exactly {} fields", expected_keys.len());
+    }
+
+    // --- SitePaths regression tests ---
+    // These tests lock the exact output of every SitePaths path method BEFORE the
+    // private-helper refactor. They must continue to pass unchanged after the refactor.
+
+    fn make_site_paths() -> SitePaths {
+        SitePaths {
+            picture_dir: "BASE/".to_string(),
+            icon_subdir: "icons/".to_string(),
+            talking_subdir: "talking/".to_string(),
+            still_subdir: "still/".to_string(),
+            startup_subdir: "startup/".to_string(),
+            evidence_subdir: "evidence/".to_string(),
+            bg_subdir: "bg/".to_string(),
+            defaultplaces_subdir: "places/".to_string(),
+            popups_subdir: "popups/".to_string(),
+            locks_subdir: "locks/".to_string(),
+            music_dir: "MUSIC/".to_string(),
+            sounds_dir: "SOUNDS/".to_string(),
+            voices_dir: "VOICES/".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_site_paths_icon_path() {
+        assert_eq!(make_site_paths().icon_path(), "BASE/icons/");
+    }
+
+    #[test]
+    fn test_site_paths_talking_path() {
+        assert_eq!(make_site_paths().talking_path(), "BASE/talking/");
+    }
+
+    #[test]
+    fn test_site_paths_still_path() {
+        assert_eq!(make_site_paths().still_path(), "BASE/still/");
+    }
+
+    #[test]
+    fn test_site_paths_startup_path() {
+        assert_eq!(make_site_paths().startup_path(), "BASE/startup/");
+    }
+
+    #[test]
+    fn test_site_paths_evidence_path() {
+        assert_eq!(make_site_paths().evidence_path(), "BASE/evidence/");
+    }
+
+    #[test]
+    fn test_site_paths_bg_path() {
+        assert_eq!(make_site_paths().bg_path(), "BASE/bg/");
+    }
+
+    #[test]
+    fn test_site_paths_defaultplaces_path() {
+        assert_eq!(make_site_paths().defaultplaces_path(), "BASE/places/");
+    }
+
+    #[test]
+    fn test_site_paths_popups_path() {
+        assert_eq!(make_site_paths().popups_path(), "BASE/popups/");
+    }
+
+    #[test]
+    fn test_site_paths_locks_path() {
+        assert_eq!(make_site_paths().locks_path(), "BASE/locks/");
+    }
+
+    /// Each path method returns picture_dir concatenated with its own subdir, not any other.
+    #[test]
+    fn test_site_paths_each_method_uses_correct_subdir() {
+        // Use distinct values so a mix-up in subdir selection is immediately visible.
+        let s = SitePaths {
+            picture_dir: "P/".to_string(),
+            icon_subdir: "A/".to_string(),
+            talking_subdir: "B/".to_string(),
+            still_subdir: "C/".to_string(),
+            startup_subdir: "D/".to_string(),
+            evidence_subdir: "E/".to_string(),
+            bg_subdir: "F/".to_string(),
+            defaultplaces_subdir: "G/".to_string(),
+            popups_subdir: "H/".to_string(),
+            locks_subdir: "I/".to_string(),
+            music_dir: "M/".to_string(),
+            sounds_dir: "S/".to_string(),
+            voices_dir: "V/".to_string(),
+        };
+        assert_eq!(s.icon_path(),          "P/A/");
+        assert_eq!(s.talking_path(),       "P/B/");
+        assert_eq!(s.still_path(),         "P/C/");
+        assert_eq!(s.startup_path(),       "P/D/");
+        assert_eq!(s.evidence_path(),      "P/E/");
+        assert_eq!(s.bg_path(),            "P/F/");
+        assert_eq!(s.defaultplaces_path(), "P/G/");
+        assert_eq!(s.popups_path(),        "P/H/");
+        assert_eq!(s.locks_path(),         "P/I/");
+    }
+
+    #[test]
+    fn test_site_paths_audio_methods() {
+        let s = make_site_paths();
+        assert_eq!(s.music_path(),  "MUSIC/");
+        assert_eq!(s.sounds_path(), "SOUNDS/");
+        assert_eq!(s.voices_path(), "VOICES/");
     }
 }

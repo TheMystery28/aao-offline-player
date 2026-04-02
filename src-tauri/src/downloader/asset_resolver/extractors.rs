@@ -198,7 +198,7 @@ pub(super) fn extract_music(
             } else {
                 add_internal(
                     assets, seen,
-                    &paths.music_dir, LocalPaths::music(),
+                    paths.music_path(), LocalPaths::music(),
                     path, "mp3", "music", false,
                 );
             }
@@ -231,7 +231,7 @@ pub(super) fn extract_sounds(
             } else {
                 add_internal(
                     assets, seen,
-                    &paths.sounds_dir, LocalPaths::sounds(),
+                    paths.sounds_path(), LocalPaths::sounds(),
                     path, "mp3", "sound", false,
                 );
             }
@@ -370,7 +370,7 @@ pub(super) fn extract_voices(
 ) {
     for voice_id in 1..=3 {
         for ext in &["opus", "wav", "mp3"] {
-            let server_path = format!("{}voice_singleblip_{}.{}", paths.voices_dir, voice_id, ext);
+            let server_path = format!("{}voice_singleblip_{}.{}", paths.voices_path(), voice_id, ext);
             let local_path = format!("{}voice_singleblip_{}.{}", LocalPaths::voices(), voice_id, ext);
             let url = build_url(&server_path);
             add_asset(assets, seen, url, "voice", true, local_path);
