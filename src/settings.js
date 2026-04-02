@@ -1,5 +1,14 @@
 import { formatBytes, showConfirmModal, applySpoilerBlur, removeSpoilerBlur } from './helpers.js';
 
+function formatRelativeTime(unixSecs) {
+  if (!unixSecs) return "Never run";
+  var diff = Math.floor(Date.now() / 1000) - unixSecs;
+  if (diff < 60) return "Just now";
+  if (diff < 3600) return Math.floor(diff / 60) + " min ago";
+  if (diff < 86400) return Math.floor(diff / 3600) + " hours ago";
+  return Math.floor(diff / 86400) + " days ago";
+}
+
 /**
  * @param {function(string, Object=): Promise} invoke
  * @param {new(): {onmessage: function}} Channel
@@ -16,12 +25,18 @@ export function initSettings(invoke, Channel, statusMsg) {
   const openDataDirBtn = document.getElementById("open-data-dir-btn");
   const storageText = document.getElementById("storage-text");
   const optimizeStorageBtn = document.getElementById("optimize-storage-btn");
+  const lastOptimizedText = document.getElementById("last-optimized-text");
   const progressContainer = document.getElementById("progress-container");
   const progressPhase = document.getElementById("progress-phase");
   const progressBarInner = document.getElementById("progress-bar-inner");
   const progressText = document.getElementById("progress-text");
 
   let settingsSaveTimeout = null;
+  let lastOptimizedAt = null;
+
+  function refreshLastOptimizedText() {
+    lastOptimizedText.textContent = "Last run: " + formatRelativeTime(lastOptimizedAt);
+  }
 
   settingsToggle.addEventListener("click", function () {
     const isOpen = !settingsPanel.classList.contains("hidden");
@@ -32,6 +47,7 @@ export function initSettings(invoke, Channel, statusMsg) {
       settingsPanel.classList.remove("hidden");
       settingsToggle.classList.add("open");
       loadStorageInfo();
+      refreshLastOptimizedText();
     }
   });
 
@@ -45,6 +61,8 @@ export function initSettings(invoke, Channel, statusMsg) {
       concurrencyValue.textContent = settings.concurrent_downloads;
       if (settingsAutoSave) settingsAutoSave.checked = settings.auto_save;
       if (settingsBlurSpoilers) settingsBlurSpoilers.checked = settings.blur_spoilers;
+      lastOptimizedAt = settings.last_optimized_at;
+      refreshLastOptimizedText();
     }).catch(function (e) {
       console.error("[SETTINGS] Failed to load settings:", e);
     });
@@ -178,6 +196,8 @@ export function initSettings(invoke, Channel, statusMsg) {
       optimizeStorageBtn.disabled = false;
       removeSpoilerBlur(progressText);
       progressContainer.classList.add("hidden");
+      lastOptimizedAt = result.last_optimized_at;
+      refreshLastOptimizedText();
       if (result.deduped > 0) {
         statusMsg.textContent = "Optimized: " + result.deduped + " files deduplicated, " + formatBytes(result.bytes_saved) + " saved.";
       } else {

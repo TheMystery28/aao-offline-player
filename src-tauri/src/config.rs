@@ -20,6 +20,10 @@ pub struct AppConfig {
     /// Whether the one-time localStorage migration from http://localhost to aao:// has completed.
     #[serde(default)]
     pub migration_complete: bool,
+    /// Unix timestamp (seconds since epoch) of the last successful Optimize & Fix run.
+    /// None means it has never been run.
+    #[serde(default)]
+    pub last_optimized_at: Option<u64>,
 }
 
 fn default_language() -> String {
@@ -43,6 +47,7 @@ impl Default for AppConfig {
             auto_save: default_auto_save(),
             blur_spoilers: default_blur_spoilers(),
             migration_complete: false,
+            last_optimized_at: None,
         }
     }
 }

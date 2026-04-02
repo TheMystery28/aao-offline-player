@@ -42,6 +42,7 @@ pub fn get_storage_info(paths: State<'_, AppPaths>) -> Result<config::StorageInf
 #[tauri::command]
 pub async fn optimize_storage(
     paths: State<'_, AppPaths>,
+    config: State<'_, MutableConfig>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<serde_json::Value, AppError> {
     let data_dir = &paths.data_dir;
@@ -58,9 +59,21 @@ pub async fn optimize_storage(
         }),
     )?;
     log::info!("Optimize storage: {} files deduplicated, {} bytes saved", deduped, bytes_saved);
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    {
+        let mut cfg = config.0.lock().map_err(|e| e.to_string())?;
+        cfg.last_optimized_at = Some(ts);
+        config::save_config(data_dir, &cfg)?;
+    }
+
     Ok(serde_json::json!({
         "deduped": deduped,
-        "bytes_saved": bytes_saved
+        "bytes_saved": bytes_saved,
+        "last_optimized_at": ts
     }))
 }
 
