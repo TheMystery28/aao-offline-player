@@ -4,6 +4,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::error::AppError;
 use super::helpers::rewrite_value_recursive;
 use super::index::DedupIndex;
 use super::operations::{dedup_case_assets_with_index, list_case_dirs};
@@ -15,7 +16,7 @@ use crate::downloader::manifest::{read_manifest, write_manifest};
 pub fn optimize_all_cases(
     data_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize, &str)>,
-) -> Result<(usize, u64), String> {
+) -> Result<(usize, u64), AppError> {
     let case_dirs = list_case_dirs(data_dir)?;
     if case_dirs.is_empty() {
         return Ok((0, 0));

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use crate::config;
+use crate::error::AppError;
 
 /// Print only in debug builds.
 macro_rules! debug_log {
@@ -36,20 +37,20 @@ pub(crate) struct AppState {
 /// Convenience trait to reduce state lock boilerplate in Tauri commands.
 #[allow(dead_code)]
 pub(crate) trait AppStateLock {
-    fn data_dir(&self) -> Result<PathBuf, String>;
-    fn engine_and_data_dir(&self) -> Result<(PathBuf, PathBuf), String>;
-    fn download_config(&self) -> Result<(PathBuf, PathBuf, usize, Arc<AtomicBool>, reqwest::Client), String>;
+    fn data_dir(&self) -> Result<PathBuf, AppError>;
+    fn engine_and_data_dir(&self) -> Result<(PathBuf, PathBuf), AppError>;
+    fn download_config(&self) -> Result<(PathBuf, PathBuf, usize, Arc<AtomicBool>, reqwest::Client), AppError>;
 }
 
 impl AppStateLock for std::sync::Mutex<AppState> {
-    fn data_dir(&self) -> Result<PathBuf, String> {
+    fn data_dir(&self) -> Result<PathBuf, AppError> {
         Ok(self.lock().map_err(|e| e.to_string())?.data_dir.clone())
     }
-    fn engine_and_data_dir(&self) -> Result<(PathBuf, PathBuf), String> {
+    fn engine_and_data_dir(&self) -> Result<(PathBuf, PathBuf), AppError> {
         let s = self.lock().map_err(|e| e.to_string())?;
         Ok((s.engine_dir.clone(), s.data_dir.clone()))
     }
-    fn download_config(&self) -> Result<(PathBuf, PathBuf, usize, Arc<AtomicBool>, reqwest::Client), String> {
+    fn download_config(&self) -> Result<(PathBuf, PathBuf, usize, Arc<AtomicBool>, reqwest::Client), AppError> {
         let s = self.lock().map_err(|e| e.to_string())?;
         Ok((s.engine_dir.clone(), s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone()))
     }
@@ -61,7 +62,7 @@ impl AppStateLock for std::sync::Mutex<AppState> {
 /// This avoids Tauri's `app.fs().read()` which corrupts binary data (GIFs, fonts)
 /// when reading from APK assets on Android. The embedded data is byte-identical
 /// to the original files from the build machine.
-pub(crate) fn extract_engine_files(dest: &std::path::Path) -> Result<(), String> {
+pub(crate) fn extract_engine_files(dest: &std::path::Path) -> Result<(), crate::error::AppError> {
     debug_log!(
         "Extracting {} engine files to {}...",
         EMBEDDED_ENGINE_FILES.len(),

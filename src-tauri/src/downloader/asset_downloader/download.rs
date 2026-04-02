@@ -7,6 +7,7 @@ use futures::stream::{self, StreamExt};
 use reqwest::Client;
 use tauri::ipc::Channel;
 
+use crate::error::AppError;
 use super::log::DownloadLog;
 use super::url_encoding::encode_url;
 use super::utils::{check_skip_existing, generate_filename};
@@ -32,7 +33,7 @@ pub async fn download_assets(
     on_event: &Channel<DownloadEvent>,
     concurrency: usize,
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
-) -> Result<DownloadResult, String> {
+) -> Result<DownloadResult, AppError> {
     let total = assets.len();
     let concurrency = if concurrency == 0 { DEFAULT_CONCURRENCY } else { concurrency };
     let case_assets_dir = case_dir.join("assets");
@@ -200,11 +201,12 @@ pub async fn download_assets(
                         Ok(result)
                     }
                     Err(e) => {
+                        let err_msg = e.to_string();
                         failed.fetch_add(1, Ordering::Relaxed);
                         let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                         log.log(&format!(
                             "  FINAL_FAIL type={} url={} err={}",
-                            asset_type, url, e
+                            asset_type, url, err_msg
                         ));
                         on_event
                             .send(DownloadEvent::Progress {
@@ -219,7 +221,7 @@ pub async fn download_assets(
                             url,
                             asset_type,
                             local_path: relative_path,
-                            error: e,
+                            error: err_msg,
                         })
                     }
                 }
@@ -269,7 +271,7 @@ pub(crate) async fn download_with_retry(
     relative_path: &str,
     log: &DownloadLog,
     asset_type: &str,
-) -> Result<DownloadedAsset, String> {
+) -> Result<DownloadedAsset, AppError> {
     let mut last_err = String::new();
 
     for attempt in 0..MAX_RETRIES {
@@ -287,7 +289,7 @@ pub(crate) async fn download_with_retry(
                 return Ok(result);
             }
             Err(e) => {
-                last_err = e;
+                last_err = e.to_string();
                 log.log(&format!(
                     "  ERR attempt={} err={} url={}",
                     attempt + 1, last_err, url
@@ -302,7 +304,7 @@ pub(crate) async fn download_with_retry(
                     || last_err.contains("closed");
 
                 if !is_retryable && attempt == 0 {
-                    return Err(last_err);
+                    return Err(last_err.into());
                 }
 
                 if attempt < MAX_RETRIES - 1 {
@@ -314,7 +316,7 @@ pub(crate) async fn download_with_retry(
         }
     }
 
-    Err(last_err)
+    Err(last_err.into())
 }
 
 pub(crate) async fn download_single_asset(
@@ -324,7 +326,7 @@ pub(crate) async fn download_single_asset(
     relative_path: &str,
     log: &DownloadLog,
     asset_type: &str,
-) -> Result<DownloadedAsset, String> {
+) -> Result<DownloadedAsset, AppError> {
     let encoded_url = encode_url(url);
     if encoded_url != url {
         log.log(&format!("  URL_ENCODED: {} → {}", url, encoded_url));
@@ -360,9 +362,9 @@ pub(crate) async fn download_single_asset(
 
     if !status.is_success() {
         if status.is_redirection() {
-            return Err(format!("HTTP {} redirect to: {} (reqwest did not follow)", status_code, location));
+            return Err(format!("HTTP {} redirect to: {} (reqwest did not follow)", status_code, location).into());
         }
-        return Err(format!("HTTP {}", status_code));
+        return Err(format!("HTTP {}", status_code).into());
     }
 
     // Content-type validation: reject HTML error pages for media assets
@@ -370,7 +372,7 @@ pub(crate) async fn download_single_asset(
         let media_types = ["sprite", "background", "evidence", "music", "sound", "voice", "popup", "lock", "icon", "place"];
         if media_types.iter().any(|t| asset_type.contains(t)) {
             log.log(&format!("  CONTENT_TYPE_MISMATCH: expected media, got text/html for {}", url));
-            return Err(format!("Received HTML instead of {} asset (likely a CDN error page)", asset_type));
+            return Err(format!("Received HTML instead of {} asset (likely a CDN error page)", asset_type).into());
         }
     }
 
@@ -384,7 +386,7 @@ pub(crate) async fn download_single_asset(
 
     if bytes.is_empty() {
         log.log(&format!("  EMPTY response body for {}", url));
-        return Err("Empty response body".to_string());
+        return Err("Empty response body".to_string().into());
     }
 
     // Content-Length verification: detect truncated downloads
@@ -394,7 +396,7 @@ pub(crate) async fn download_single_asset(
                 "  TRUNCATED: expected {} bytes, got {} for {}",
                 expected, bytes.len(), url
             ));
-            return Err(format!("Truncated download: expected {} bytes, got {}", expected, bytes.len()));
+            return Err(format!("Truncated download: expected {} bytes, got {}", expected, bytes.len()).into());
         }
     }
 
@@ -404,7 +406,7 @@ pub(crate) async fn download_single_asset(
     const IMGUR_REMOVED_HASH: u64 = 0x38da9bd2e10a4bc8;
     if content_hash == IMGUR_REMOVED_HASH {
         log.log(&format!("  IMGUR_REMOVED detected for {}", url));
-        return Err("Image has been removed from imgur".to_string());
+        return Err("Image has been removed from imgur".to_string().into());
     }
 
     let file_path = base_dir.join(relative_path);
@@ -463,7 +465,7 @@ pub(crate) async fn do_request(
     request_url: &str,
     original_url: &str,
     log: &DownloadLog,
-) -> Result<reqwest::Response, String> {
+) -> Result<reqwest::Response, AppError> {
     // For external http:// URLs, try HTTPS first to avoid 30s timeout on dead port 80.
     // AAO URLs are already https://, so this only affects third-party hosts.
     if request_url.starts_with("http://") {
@@ -494,12 +496,12 @@ pub(crate) async fn do_request(
                             "  MANUAL_REDIRECT (from HTTPS): {} → {}",
                             https_url, encoded_loc
                         ));
-                        return client
+                        return Ok(client
                             .get(&encoded_loc)
                             .header("User-Agent", "AAO-Offline-Player/0.1")
                             .send()
                             .await
-                            .map_err(|e| format!("Failed to follow redirect to {}: {}", encoded_loc, e));
+                            .map_err(|e| format!("Failed to follow redirect to {}: {}", encoded_loc, e))?);
                     }
                 }
                 // Redirect but no Location — return as-is, caller handles error

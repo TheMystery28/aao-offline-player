@@ -7,10 +7,11 @@ use tauri::State;
 use crate::app_state::{AppState, AppStateLock};
 use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
+use crate::error::AppError;
 
 /// Cancel the current in-progress download.
 #[tauri::command]
-pub fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+pub fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), AppError> {
     let s = state.lock().map_err(|e| e.to_string())?;
     s.cancel_flag.store(true, Ordering::Relaxed);
     debug_log!("Download cancellation requested");
@@ -22,7 +23,7 @@ pub fn cancel_download(state: State<'_, Mutex<AppState>>) -> Result<(), String> 
 pub async fn fetch_case_info(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
-) -> Result<downloader::CaseInfo, String> {
+) -> Result<downloader::CaseInfo, AppError> {
     let client = {
         let s = state.lock().map_err(|e| e.to_string())?;
         s.http_client.clone()
@@ -41,7 +42,7 @@ pub async fn download_sequence(
     state: State<'_, Mutex<AppState>>,
     case_ids: Vec<u32>,
     on_event: Channel<DownloadEvent>,
-) -> Result<Vec<downloader::manifest::CaseManifest>, String> {
+) -> Result<Vec<downloader::manifest::CaseManifest>, AppError> {
     let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
     cancel_flag.store(false, Ordering::Relaxed);
 
@@ -119,17 +120,17 @@ pub async fn download_case(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
     on_event: Channel<DownloadEvent>,
-) -> Result<downloader::manifest::CaseManifest, String> {
+) -> Result<downloader::manifest::CaseManifest, AppError> {
     let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
     let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
 
-    downloader::pipeline::download_single_case(
+    Ok(downloader::pipeline::download_single_case(
         case_id, &client, &site_paths, &engine_dir, &data_dir,
         dedup_index.as_ref(), &on_event, concurrency, cancel_flag,
-    ).await
+    ).await?)
 }
 
 /// Retry downloading failed assets for a case.
@@ -139,7 +140,7 @@ pub async fn retry_failed_assets(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
     on_event: Channel<DownloadEvent>,
-) -> Result<downloader::manifest::CaseManifest, String> {
+) -> Result<downloader::manifest::CaseManifest, AppError> {
     let (data_dir, concurrency, cancel_flag, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.data_dir.clone(), s.config.concurrent_downloads, s.cancel_flag.clone(), s.http_client.clone())
@@ -148,7 +149,7 @@ pub async fn retry_failed_assets(
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
-        return Err(format!("Case {} not found", case_id));
+        return Err(format!("Case {} not found", case_id).into());
     }
 
     let mut manifest = downloader::manifest::read_manifest(&case_dir)?;
@@ -184,7 +185,7 @@ pub async fn retry_failed_assets(
         let skipped = before - assets_to_retry.len();
         debug_log!("aaonline.fr is unreachable — skipped {} aaonline assets", skipped);
         if assets_to_retry.is_empty() {
-            return Err("aaonline.fr is currently unreachable. Please try again later.".to_string());
+            return Err("aaonline.fr is currently unreachable. Please try again later.".to_string().into());
         }
     }
 
@@ -256,13 +257,13 @@ pub async fn update_case(
     case_id: u32,
     redownload_assets: bool,
     on_event: Channel<DownloadEvent>,
-) -> Result<downloader::manifest::CaseManifest, String> {
+) -> Result<downloader::manifest::CaseManifest, AppError> {
     let (engine_dir, data_dir, concurrency, cancel_flag, client) = state.download_config()?;
     cancel_flag.store(false, Ordering::Relaxed);
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
-        return Err(format!("Case {} not found", case_id));
+        return Err(format!("Case {} not found", case_id).into());
     }
 
     // Read old manifest to know what we already have

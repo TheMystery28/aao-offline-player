@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::downloader::manifest::CaseManifest;
 use crate::downloader::paths::normalize_path;
+use crate::error::AppError;
 
 /// Scan defaults/ for VFS pointers whose targets are in the given set.
 /// Adds the pointer paths to the set so they get exported as real files.
@@ -47,15 +48,15 @@ pub fn export_aaocase(
     on_progress: Option<&dyn Fn(usize, usize)>,
     saves: Option<&Value>,
     include_plugins: bool,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     let case_dir = engine_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
-        return Err(format!("Case {} not found", case_id));
+        return Err(format!("Case {} not found", case_id).into());
     }
 
     let manifest_path = case_dir.join("manifest.json");
     if !manifest_path.exists() {
-        return Err(format!("Case {} has no manifest.json", case_id));
+        return Err(format!("Case {} has no manifest.json", case_id).into());
     }
 
     let file = fs::File::create(dest_path)
@@ -188,7 +189,7 @@ pub fn export_aaocase(
                     dir: &Path,
                     prefix: &str,
                     options: zip::write::SimpleFileOptions,
-                ) -> Result<(), String> {
+                ) -> Result<(), AppError> {
                     for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read {}: {}", prefix, e))? {
                         let entry = entry.map_err(|e| format!("Dir entry error: {}", e))?;
                         let path = entry.path();
@@ -335,7 +336,7 @@ pub fn export_collection(
     on_progress: Option<&dyn Fn(usize, usize)>,
     saves: Option<&Value>,
     include_plugins: bool,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     // Gather ALL case IDs from collection items (both standalone cases and sequence members).
     // For sequence items, scan the case/ directory to find cases whose manifest has a matching
     // sequence title.
@@ -417,7 +418,7 @@ pub fn export_collection(
     for &case_id in &case_ids {
         let case_dir = engine_dir.join("case").join(case_id.to_string());
         if !case_dir.exists() {
-            return Err(format!("Case {} not found", case_id));
+            return Err(format!("Case {} not found", case_id).into());
         }
 
         let prefix = format!("{}/", case_id);
@@ -601,7 +602,7 @@ pub fn export_sequence(
     on_progress: Option<&dyn Fn(usize, usize)>,
     saves: Option<&Value>,
     include_plugins: bool,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     let file = fs::File::create(dest_path)
         .map_err(|e| format!("Failed to create ZIP file: {}", e))?;
     let mut zip = zip::ZipWriter::new(file);
@@ -651,7 +652,7 @@ pub fn export_sequence(
     for &case_id in case_ids {
         let case_dir = engine_dir.join("case").join(case_id.to_string());
         if !case_dir.exists() {
-            return Err(format!("Case {} not found", case_id));
+            return Err(format!("Case {} not found", case_id).into());
         }
 
         let prefix = format!("{}/", case_id);

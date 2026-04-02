@@ -7,6 +7,7 @@ use tauri::State;
 use crate::app_state::{AppState, AppStateLock};
 use crate::collections as coll;
 use crate::downloader::asset_downloader::DownloadEvent;
+use crate::error::AppError;
 use crate::importer;
 
 /// Resolve export destination: on Android, content:// URIs need a temp file.
@@ -20,7 +21,7 @@ fn resolve_export_path(dest_path: &str, data_dir: &Path) -> (PathBuf, Option<Str
 }
 
 /// Copy a temp export file to an Android content:// URI, then clean up the temp.
-fn write_to_content_uri(app: &tauri::AppHandle, export_path: &Path, uri: &str) -> Result<(), String> {
+fn write_to_content_uri(app: &tauri::AppHandle, export_path: &Path, uri: &str) -> Result<(), AppError> {
     use tauri_plugin_fs::FsExt;
     use std::io::Write;
     let data = fs::read(export_path)
@@ -49,7 +50,7 @@ pub async fn export_case(
     saves: Option<serde_json::Value>,
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     let data_dir = state.data_dir()?;
 
     let (export_path, content_uri) = resolve_export_path(&dest_path, &data_dir);
@@ -108,7 +109,7 @@ pub async fn export_sequence(
     saves: Option<serde_json::Value>,
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     let data_dir = state.data_dir()?;
 
     let (export_path, content_uri) = resolve_export_path(&dest_path, &data_dir);
@@ -164,7 +165,7 @@ pub async fn export_collection(
     saves: Option<serde_json::Value>,
     include_plugins: Option<bool>,
     on_event: Channel<DownloadEvent>,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     let data_dir = state.data_dir()?;
 
     let coll_data = coll::load_collections(&data_dir);
@@ -206,10 +207,10 @@ pub async fn export_save(
     saves: serde_json::Value,
     include_plugins: bool,
     dest_path: String,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     let data_dir = state.data_dir()?;
     let path = PathBuf::from(&dest_path);
-    tokio::task::spawn_blocking(move || {
+    Ok(tokio::task::spawn_blocking(move || {
         importer::export_aaosave(&case_ids, &saves, include_plugins, &path, &data_dir)
-    }).await.map_err(|e| format!("Export task failed: {}", e))?
+    }).await.map_err(|e| format!("Export task failed: {}", e))??)
 }

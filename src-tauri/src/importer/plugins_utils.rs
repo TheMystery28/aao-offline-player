@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::error::AppError;
+
 // Cross-module calls (remove_plugin, migrate_global_manifest, etc.)
 use super::*;
 use super::shared::{DuplicateMatch, add_dir_to_zip_recursive};
@@ -130,22 +132,22 @@ pub fn set_global_plugin_params(
     key: &str,
     params: &serde_json::Value,
     engine_dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     migrate_global_manifest(engine_dir)?;
     with_global_manifest(engine_dir, |val| {
         let plugins = val.get_mut("plugins")
             .and_then(|p| p.as_object_mut())
-            .ok_or_else(|| "No plugins config".to_string())?;
+            .ok_or_else(|| AppError::Other("No plugins config".to_string()))?;
         let entry = plugins.entry(filename.to_string())
             .or_insert(serde_json::json!({ "scope": { "all": false }, "params": {} }));
         if entry.get("params").and_then(|p| p.as_object()).is_none() {
             entry.as_object_mut()
-                .ok_or_else(|| "Plugin entry is not an object".to_string())?
+                .ok_or_else(|| AppError::Other("Plugin entry is not an object".to_string()))?
                 .insert("params".to_string(), serde_json::json!({}));
         }
         let entry_params = entry.get_mut("params")
             .and_then(|p| p.as_object_mut())
-            .ok_or_else(|| "Plugin params is not an object".to_string())?;
+            .ok_or_else(|| AppError::Other("Plugin params is not an object".to_string()))?;
 
         if level == "default" {
             entry_params.insert("default".to_string(), params.clone());
@@ -153,7 +155,7 @@ pub fn set_global_plugin_params(
             let level_obj = entry_params.entry(level.to_string())
                 .or_insert(serde_json::json!({}));
             level_obj.as_object_mut()
-                .ok_or_else(|| "Params level is not an object".to_string())?
+                .ok_or_else(|| AppError::Other("Params level is not an object".to_string()))?
                 .insert(key.to_string(), params.clone());
         }
         Ok(())
@@ -162,15 +164,15 @@ pub fn set_global_plugin_params(
 
 /// Export a case's active plugins as a .aaoplug ZIP file.
 /// Reads from the global plugins/ folder, filtered to plugins active for this case.
-pub fn export_case_plugins(_case_id: u32, dest_path: &Path, data_dir: &Path) -> Result<u64, String> {
+pub fn export_case_plugins(_case_id: u32, dest_path: &Path, data_dir: &Path) -> Result<u64, AppError> {
     let plugins_dir = data_dir.join("plugins");
     if !plugins_dir.is_dir() {
-        return Err("No plugins installed".to_string());
+        return Err("No plugins installed".to_string().into());
     }
 
     let active = super::saves::get_active_plugin_scripts_for_case(_case_id, data_dir);
     if active.is_empty() {
-        return Err("No active plugins for this case".to_string());
+        return Err("No active plugins for this case".to_string().into());
     }
 
     let file = fs::File::create(dest_path)

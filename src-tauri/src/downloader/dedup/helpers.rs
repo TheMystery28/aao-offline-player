@@ -4,8 +4,10 @@ use std::path::Path;
 use serde_json::Value;
 use xxhash_rust::xxh3::xxh3_64;
 
+use crate::error::AppError;
+
 /// Compute xxh3_64 hash of a file's contents.
-pub fn hash_file(path: &Path) -> Result<u64, String> {
+pub fn hash_file(path: &Path) -> Result<u64, AppError> {
     let bytes =
         fs::read(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
     Ok(xxh3_64(&bytes))

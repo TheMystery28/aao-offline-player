@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::AppError;
 use super::CaseInfo;
 use super::asset_downloader::DownloadedAsset;
 
@@ -92,7 +93,7 @@ pub fn build_manifest(
 }
 
 /// Write manifest to disk.
-pub fn write_manifest(manifest: &CaseManifest, case_dir: &Path) -> Result<(), String> {
+pub fn write_manifest(manifest: &CaseManifest, case_dir: &Path) -> Result<(), AppError> {
     let json = serde_json::to_string_pretty(manifest)
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
     std::fs::write(case_dir.join("manifest.json"), json)
@@ -132,10 +133,11 @@ pub fn rewrite_trial_data_from_manifest(
 }
 
 /// Read manifest from disk.
-pub fn read_manifest(case_dir: &Path) -> Result<CaseManifest, String> {
+pub fn read_manifest(case_dir: &Path) -> Result<CaseManifest, AppError> {
     let data = std::fs::read_to_string(case_dir.join("manifest.json"))
         .map_err(|e| format!("Failed to read manifest.json: {}", e))?;
-    serde_json::from_str(&data).map_err(|e| format!("Failed to parse manifest.json: {}", e))
+    Ok(serde_json::from_str(&data)
+        .map_err(|e| format!("Failed to parse manifest.json: {}", e))?)
 }
 
 use crate::utils::format_timestamp;

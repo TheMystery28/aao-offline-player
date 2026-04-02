@@ -4,6 +4,7 @@ use std::path::Path;
 use regex::Regex;
 use serde_json::Value;
 
+use crate::error::AppError;
 use super::shared::ImportedCaseInfo;
 
 /// Check if a destination asset file truly exists — follows VFS pointers.
@@ -286,13 +287,13 @@ pub(super) fn copy_place_assets(mappings: &[PlaceAssetMapping], source_dir: &Pat
 
 /// Read a text file from inside a ZIP archive.
 /// Extract `var trial_information = {...};` from the HTML.
-pub(super) fn extract_trial_information(html: &str) -> Result<ImportedCaseInfo, String> {
+pub(super) fn extract_trial_information(html: &str) -> Result<ImportedCaseInfo, AppError> {
     let re = Regex::new(r"var\s+trial_information\s*=\s*(\{[^;]*\})\s*;")
         .map_err(|e| format!("Regex error: {}", e))?;
 
     let caps = re
         .captures(html)
-        .ok_or("Could not find 'var trial_information = {...}' in index.html. Is this an aaoffline download?")?;
+        .ok_or_else(|| AppError::Other("Could not find 'var trial_information = {...}' in index.html. Is this an aaoffline download?".to_string()))?;
 
     let json_str = caps.get(1).unwrap().as_str();
     let value: Value = serde_json::from_str(json_str)
@@ -300,7 +301,7 @@ pub(super) fn extract_trial_information(html: &str) -> Result<ImportedCaseInfo, 
 
     let id = value["id"]
         .as_u64()
-        .ok_or("trial_information missing 'id' field")? as u32;
+        .ok_or_else(|| AppError::Other("trial_information missing 'id' field".to_string()))? as u32;
     let title = value["title"]
         .as_str()
         .unwrap_or("Unknown Title")
@@ -335,11 +336,11 @@ pub(super) fn extract_trial_information(html: &str) -> Result<ImportedCaseInfo, 
 ///
 /// The trial_data JSON can be very large (several MB) and may contain nested
 /// braces, so we use a brace-counting approach instead of a simple regex.
-pub(super) fn extract_trial_data(html: &str) -> Result<Value, String> {
+pub(super) fn extract_trial_data(html: &str) -> Result<Value, AppError> {
     let marker = "var initial_trial_data = ";
     let start = html
         .find(marker)
-        .ok_or("Could not find 'var initial_trial_data = ' in index.html.")?;
+        .ok_or_else(|| AppError::Other("Could not find 'var initial_trial_data = ' in index.html.".to_string()))?;
 
     let json_start = start + marker.len();
     let bytes = html.as_bytes();
@@ -377,12 +378,12 @@ pub(super) fn extract_trial_data(html: &str) -> Result<Value, String> {
     }
 
     if depth != 0 {
-        return Err("Malformed initial_trial_data: unbalanced braces.".to_string());
+        return Err("Malformed initial_trial_data: unbalanced braces.".to_string().into());
     }
 
     let json_str = &html[json_start..end_pos];
     serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse initial_trial_data JSON: {}", e))
+        .map_err(|e| AppError::Other(format!("Failed to parse initial_trial_data JSON: {}", e)))
 }
 
 /// Sanitize a filename for safe use in URLs and on disk.

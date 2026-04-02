@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::error::AppError;
 use super::helpers::{hash_file, rewrite_value_recursive};
 use super::index::DedupIndex;
 use crate::downloader::DownloaderError;
@@ -45,7 +46,7 @@ pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), 
     if !assets_dir.is_dir() {
         return Ok((0, 0));
     }
-    let index = DedupIndex::open(data_dir).map_err(DownloaderError::Other)?;
+    let index = DedupIndex::open(data_dir).map_err(|e| DownloaderError::Other(e.to_string()))?;
     // Scan both defaults and case assets so cross-case lookups work
     index.scan_and_register(data_dir, "defaults")?;
     index.scan_and_register_cases(data_dir)?;
@@ -134,9 +135,11 @@ pub fn dedup_case_assets_with_index(
             if !source.is_file() {
                 continue;
             }
-            let shared_path = promote_to_shared(data_dir, &source, content_hash, index)?;
+            let shared_path = promote_to_shared(data_dir, &source, content_hash, index)
+                .map_err(|e| DownloaderError::Other(e.to_string()))?;
             // Rewrite the other case to point to the shared copy
-            rewrite_other_case(data_dir, &match_path, &shared_path, index)?;
+            rewrite_other_case(data_dir, &match_path, &shared_path, index)
+                .map_err(|e| DownloaderError::Other(e.to_string()))?;
             shared_path
         };
 
@@ -177,7 +180,8 @@ pub fn dedup_case_assets_with_index(
     if deduped_count > 0 {
         // Save updated manifest
         manifest.assets.total_downloaded = manifest.asset_map.len();
-        write_manifest(&manifest, &case_dir)?;
+        write_manifest(&manifest, &case_dir)
+            .map_err(|e| DownloaderError::Other(e.to_string()))?;
 
         // Save updated trial_data
         if trial_data_modified {
@@ -237,7 +241,7 @@ pub(crate) fn promote_to_shared(
     source_path: &Path,
     content_hash: u64,
     index: &DedupIndex,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let ext = source_path.extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
@@ -269,7 +273,7 @@ pub(crate) fn rewrite_other_case(
     old_case_relative: &str,  // "case/{id}/assets/{filename}"
     new_shared_path: &str,    // "defaults/shared/a1b2/a1b2c3d4.png"
     index: &DedupIndex,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     // Parse case ID from the path
     let parts: Vec<&str> = old_case_relative.splitn(4, '/').collect();
     if parts.len() < 4 || parts[0] != "case" {
@@ -329,7 +333,7 @@ pub(crate) fn rewrite_other_case(
 /// Clear default assets that are not referenced by any case manifest.
 /// Scans all manifests to build a set of used defaults/ paths, then deletes the rest.
 /// Returns (files_deleted, bytes_freed).
-pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), String> {
+pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), AppError> {
     // Collect all defaults/ paths referenced by any case manifest
     let mut used_defaults: std::collections::HashSet<String> = std::collections::HashSet::new();
     let cases_dir = data_dir.join("case");

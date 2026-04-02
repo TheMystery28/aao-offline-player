@@ -1,8 +1,9 @@
 use super::*;
 use std::io;
+use crate::error::AppError;
 
 /// Sync wrapper for attach_plugin_code with origin "global".
-fn attach_global_plugin_code_sync(code: &str, filename: &str, engine_dir: &std::path::Path) -> Result<(), String> {
+fn attach_global_plugin_code_sync(code: &str, filename: &str, engine_dir: &std::path::Path) -> Result<(), AppError> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let client = reqwest::Client::new();
     rt.block_on(attach_plugin_code(code, filename, &[], engine_dir, &client, "global"))?;
@@ -10,14 +11,14 @@ fn attach_global_plugin_code_sync(code: &str, filename: &str, engine_dir: &std::
 }
 
 /// Sync wrapper for import_aaoplug with origin "global".
-fn import_aaoplug_global_sync(zip_path: &std::path::Path, engine_dir: &std::path::Path) -> Result<Vec<u32>, String> {
+fn import_aaoplug_global_sync(zip_path: &std::path::Path, engine_dir: &std::path::Path) -> Result<Vec<u32>, AppError> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let client = reqwest::Client::new();
     rt.block_on(import_aaoplug(zip_path, &[], engine_dir, &client, "global"))
 }
 
 /// Wrapper for remove_global_plugin (removes all scopes + deletes file).
-fn remove_global_plugin_test(filename: &str, engine_dir: &std::path::Path) -> Result<(), String> {
+fn remove_global_plugin_test(filename: &str, engine_dir: &std::path::Path) -> Result<(), AppError> {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if manifest_path.exists() {
         let text = std::fs::read_to_string(&manifest_path).unwrap_or_default();
@@ -38,7 +39,7 @@ fn remove_global_plugin_test(filename: &str, engine_dir: &std::path::Path) -> Re
 }
 
 /// Wrapper for toggle_global_plugin (sets scope.all).
-fn toggle_global_plugin_test(filename: &str, enabled: bool, engine_dir: &std::path::Path) -> Result<(), String> {
+fn toggle_global_plugin_test(filename: &str, enabled: bool, engine_dir: &std::path::Path) -> Result<(), AppError> {
     toggle_plugin_for_scope(filename, "global", "", enabled, engine_dir)
 }
 

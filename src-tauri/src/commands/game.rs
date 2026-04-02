@@ -2,6 +2,7 @@ use std::sync::Mutex;
 use tauri::State;
 
 use crate::app_state::AppState;
+use crate::error::AppError;
 use crate::importer;
 
 /// Protocol base URL — platform-dependent.
@@ -32,7 +33,7 @@ pub(crate) fn build_server_url() -> String {
 
 /// Returns the protocol URL for playing a specific case, including language preference.
 #[tauri::command]
-pub fn open_game(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<String, String> {
+pub fn open_game(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<String, AppError> {
     let state = state.lock().map_err(|e| e.to_string())?;
     // Resolve which global plugins apply to this case (writes resolved_plugins.json)
     let _ = importer::resolve_plugins_for_case(case_id, &state.data_dir);
@@ -41,7 +42,7 @@ pub fn open_game(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<Stri
 
 /// Returns the asset server's base URL (custom protocol).
 #[tauri::command]
-pub fn get_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
+pub fn get_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, AppError> {
     let _state = state.lock().map_err(|e| e.to_string())?;
     Ok(build_server_url())
 }
@@ -50,7 +51,7 @@ pub fn get_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, Strin
 /// This is the http://localhost:{port} URL that holds the user's old saves.
 /// Will be removed in a future release when tiny_http is fully deleted.
 #[tauri::command]
-pub fn get_migration_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
+pub fn get_migration_server_url(state: State<'_, Mutex<AppState>>) -> Result<String, AppError> {
     let state = state.lock().map_err(|e| e.to_string())?;
     Ok(format!("http://localhost:{}", state.server_port))
 }
@@ -61,7 +62,7 @@ pub fn get_migration_server_url(state: State<'_, Mutex<AppState>>) -> Result<Str
 pub fn debug_check_file(
     state: State<'_, Mutex<AppState>>,
     relative_path: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     if !cfg!(debug_assertions) {
         return Ok("debug_check_file is only available in debug builds".to_string());
     }

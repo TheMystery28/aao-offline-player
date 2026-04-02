@@ -46,7 +46,7 @@ fn test_export_aaocase_missing_case() {
     let export_path = engine.path().join("missing.aaocase");
     let result = export_aaocase(99999, engine.path(), &export_path, None, None, true);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("not found"));
+    assert!(result.unwrap_err().to_string().contains("not found"));
 }
 
 /// Test multi-case sequence export creates valid ZIP structure.
@@ -163,7 +163,7 @@ fn test_export_sequence_missing_case_returns_error() {
     );
     assert!(result.is_err(), "Should fail when a case in the sequence doesn't exist");
     assert!(
-        result.unwrap_err().contains("not found"),
+        result.unwrap_err().to_string().contains("not found"),
         "Error should mention case not found"
     );
 }

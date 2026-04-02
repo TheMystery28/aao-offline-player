@@ -1,7 +1,9 @@
+use crate::error::AppError;
+
 /// Open a native folder picker dialog. Returns the selected path or null if cancelled.
 /// On Android, folder picking is not supported — returns an error.
 #[tauri::command]
-pub async fn pick_folder(_app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn pick_folder(_app: tauri::AppHandle) -> Result<Option<String>, AppError> {
     #[cfg(not(target_os = "android"))]
     {
         use tauri_plugin_dialog::DialogExt;
@@ -22,7 +24,7 @@ pub async fn pick_folder(_app: tauri::AppHandle) -> Result<Option<String>, Strin
     }
     #[cfg(target_os = "android")]
     {
-        Err("Folder picking is not supported on Android. Use file import instead.".to_string())
+        Err("Folder picking is not supported on Android. Use file import instead.".to_string().into())
     }
 }
 
@@ -31,7 +33,7 @@ pub async fn pick_folder(_app: tauri::AppHandle) -> Result<Option<String>, Strin
 /// On Android, the dialog returns `content://` URIs instead of filesystem paths.
 /// The import_case command handles both formats.
 #[tauri::command]
-pub async fn pick_import_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn pick_import_file(app: tauri::AppHandle) -> Result<Option<String>, AppError> {
     use tauri_plugin_dialog::DialogExt;
     let mut builder = app
         .dialog()
@@ -64,7 +66,7 @@ pub async fn pick_import_file(app: tauri::AppHandle) -> Result<Option<String>, S
 }
 
 /// Shared helper for "Save As" dialogs. Handles Android (no extension filters) and desktop.
-fn pick_save_file(app: &tauri::AppHandle, title: &str, filter_name: &str, ext: &str, default_name: &str) -> Result<Option<String>, String> {
+fn pick_save_file(app: &tauri::AppHandle, title: &str, filter_name: &str, ext: &str, default_name: &str) -> Result<Option<String>, AppError> {
     use tauri_plugin_dialog::DialogExt;
     let mut builder = app.dialog().file()
         .set_title(title)
@@ -85,16 +87,16 @@ fn pick_save_file(app: &tauri::AppHandle, title: &str, filter_name: &str, ext: &
 }
 
 #[tauri::command]
-pub async fn pick_export_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, String> {
+pub async fn pick_export_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, AppError> {
     pick_save_file(&app, "Export case as .aaocase", "AAO Case", "aaocase", &default_name)
 }
 
 #[tauri::command]
-pub async fn pick_export_plugin_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, String> {
+pub async fn pick_export_plugin_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, AppError> {
     pick_save_file(&app, "Export plugins as .aaoplug", "AAO Plugin", "aaoplug", &default_name)
 }
 
 #[tauri::command]
-pub async fn pick_export_save_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, String> {
+pub async fn pick_export_save_file(app: tauri::AppHandle, default_name: String) -> Result<Option<String>, AppError> {
     pick_save_file(&app, "Export saves as .aaosave", "AAO Save", "aaosave", &default_name)
 }

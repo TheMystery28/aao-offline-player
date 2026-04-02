@@ -283,7 +283,7 @@ pub struct ServerConfig {
 
 /// Start the HTTP server in a background thread.
 /// Returns the port number the server is listening on.
-pub fn start_server(config: ServerConfig) -> Result<u16, String> {
+pub fn start_server(config: ServerConfig) -> Result<u16, crate::error::AppError> {
     let port = portpicker::pick_unused_port()
         .ok_or_else(|| "No available port found for asset server".to_string())?;
     let config = Arc::new(config);

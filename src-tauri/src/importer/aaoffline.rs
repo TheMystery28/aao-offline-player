@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::downloader::dedup::{DedupIndex, check_and_promote, hash_file};
 use crate::downloader::manifest::{AssetSummary, CaseManifest, write_manifest};
+use crate::error::AppError;
 use crate::utils::format_timestamp;
 use super::shared::*;
 use super::aaoffline_helpers::*;
@@ -16,13 +17,13 @@ pub fn import_aaoffline(
     source_dir: &Path,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<super::shared::ImportOutput, String> {
+) -> Result<super::shared::ImportOutput, AppError> {
     let index_path = source_dir.join("index.html");
     if !index_path.exists() {
         return Err(format!(
             "No index.html found in {}. Expected an aaoffline download folder.",
             source_dir.display()
-        ));
+        ).into());
     }
 
     // Read index.html
@@ -43,7 +44,7 @@ pub fn import_aaoffline(
         return Err(format!(
             "Case {} already exists in your library. Delete it first if you want to reimport.",
             case_id
-        ));
+        ).into());
     }
 
     fs::create_dir_all(&case_dir)
@@ -270,7 +271,7 @@ pub fn import_aaoffline_batch(
     engine_dir: &Path,
     on_case_progress: Option<&dyn Fn(usize, usize, &str)>,
     on_asset_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<ImportResult, String> {
+) -> Result<ImportResult, AppError> {
     let has_root_case = parent_dir.join("index.html").exists();
     let sub_dirs = find_aaoffline_subfolders(parent_dir);
 
@@ -279,7 +280,7 @@ pub fn import_aaoffline_batch(
             "No index.html found in {} and no subfolders with index.html found either. \
              Expected an aaoffline download folder or a parent folder containing case subfolders.",
             parent_dir.display()
-        ));
+        ).into());
     }
 
     // Build ordered list: root case first (if present), then subfolders
@@ -312,10 +313,11 @@ pub fn import_aaoffline_batch(
             }
             Err(e) => {
                 // "already exists" for a duplicate root/subfolder case is expected, not an error
-                if e.contains("already exists") {
+                let msg = e.to_string();
+                if msg.contains("already exists") {
                     // Silently skip duplicates within the same batch
                 } else {
-                    batch_errors.push(format!("{}: {}", folder_name, e));
+                    batch_errors.push(format!("{}: {}", folder_name, msg));
                 }
             }
         }
@@ -326,7 +328,7 @@ pub fn import_aaoffline_batch(
             "All {} cases failed to import: {}",
             total_cases,
             batch_errors.join("; ")
-        ));
+        ).into());
     }
 
     // After all cases are imported, extract default sprite mappings from ALL index.html

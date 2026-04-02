@@ -62,7 +62,7 @@ pub fn load_collections(data_dir: &Path) -> CollectionsData {
 }
 
 /// Persist collections to disk as pretty-printed JSON.
-pub fn save_collections(data_dir: &Path, data: &CollectionsData) -> Result<(), String> {
+pub fn save_collections(data_dir: &Path, data: &CollectionsData) -> Result<(), crate::error::AppError> {
     let json = serde_json::to_string_pretty(data)
         .map_err(|e| format!("Failed to serialize collections: {}", e))?;
     fs::write(collections_path(data_dir), json)

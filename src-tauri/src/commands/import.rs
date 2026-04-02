@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::app_state::{AppState, AppStateLock};
 use crate::downloader::asset_downloader::DownloadEvent;
+use crate::error::AppError;
 use crate::importer;
 
 /// Import a case from an existing aaoffline download directory or a .aaocase ZIP file.
@@ -21,7 +22,7 @@ pub async fn import_case(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
     on_event: Channel<DownloadEvent>,
-) -> Result<importer::ImportResult, String> {
+) -> Result<importer::ImportResult, AppError> {
     let data_dir = state.data_dir()?;
 
     // On Android, the file picker returns content:// URIs which aren't regular filesystem paths.
@@ -52,7 +53,7 @@ pub async fn import_case(
     } else {
         let p = PathBuf::from(&source_path);
         if !p.exists() {
-            return Err(format!("Path not found: {}", source_path));
+            return Err(format!("Path not found: {}", source_path).into());
         }
         (p, None)
     };
@@ -88,13 +89,13 @@ pub async fn import_case(
             return Err(format!(
                 "No index.html found in {} and no subfolders with cases found either.",
                 path.display()
-            ));
+            ).into());
         }
     } else if path.is_file() {
         let _ = on_event.send(DownloadEvent::Started { total: 0 });
         importer::import_aaocase_zip(&path, &data_dir, Some(&progress_cb))?
     } else {
-        return Err(format!("Not a file or directory: {}", source_path));
+        return Err(format!("Not a file or directory: {}", source_path).into());
     };
 
     // Clean up temp file if we created one
@@ -150,10 +151,10 @@ pub async fn import_case(
 pub async fn import_save(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
-) -> Result<importer::ImportSaveResult, String> {
+) -> Result<importer::ImportSaveResult, AppError> {
     let data_dir = state.data_dir()?;
     let path = std::path::PathBuf::from(&source_path);
-    tokio::task::spawn_blocking(move || {
+    Ok(tokio::task::spawn_blocking(move || {
         importer::import_aaosave(&path, &data_dir)
-    }).await.map_err(|e| format!("Import task failed: {}", e))?
+    }).await.map_err(|e| format!("Import task failed: {}", e))??)
 }

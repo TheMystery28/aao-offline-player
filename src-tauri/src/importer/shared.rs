@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
 use crate::downloader::manifest::CaseManifest;
+use crate::error::AppError;
 
 /// Result of importing a .aaocase ZIP file.
 /// Contains the manifest and optionally any game saves that were included.
@@ -68,12 +69,12 @@ pub struct ImportSaveResult {
 /// Read, modify, and write the global plugin manifest in one step.
 /// The closure receives a mutable reference to the parsed JSON.
 /// The manifest is written back after the closure returns Ok(()).
-pub(super) fn with_global_manifest<F>(engine_dir: &Path, f: F) -> Result<(), String>
-where F: FnOnce(&mut serde_json::Value) -> Result<(), String>
+pub(super) fn with_global_manifest<F>(engine_dir: &Path, f: F) -> Result<(), AppError>
+where F: FnOnce(&mut serde_json::Value) -> Result<(), AppError>
 {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
-        return Err("No global plugin manifest".to_string());
+        return Err("No global plugin manifest".to_string().into());
     }
     let text = fs::read_to_string(&manifest_path)
         .map_err(|e| format!("Failed to read manifest: {}", e))?;
@@ -88,7 +89,7 @@ where F: FnOnce(&mut serde_json::Value) -> Result<(), String>
 }
 
 /// Read a text file from a ZIP archive.
-pub(super) fn read_zip_text(archive: &mut zip::ZipArchive<fs::File>, name: &str) -> Result<String, String> {
+pub(super) fn read_zip_text(archive: &mut zip::ZipArchive<fs::File>, name: &str) -> Result<String, AppError> {
     let mut entry = archive.by_name(name)
         .map_err(|_| format!("ZIP does not contain '{}'. Is this a valid .aaocase file?", name))?;
     let mut contents = String::new();
@@ -103,7 +104,7 @@ pub(super) fn add_dir_to_zip_recursive(
     dir: &Path,
     prefix: &str,
     options: zip::write::SimpleFileOptions,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read {}: {}", prefix, e))? {
         let entry = entry.map_err(|e| format!("Dir entry error: {}", e))?;
         let path = entry.path();

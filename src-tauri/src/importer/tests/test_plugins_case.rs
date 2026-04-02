@@ -1,11 +1,12 @@
 use super::*;
+use crate::error::AppError;
 
 fn test_client() -> reqwest::Client {
     reqwest::Client::new()
 }
 
 /// Sync wrapper for attach_plugin_code (stores globally now).
-fn attach_plugin_code_sync(code: &str, filename: &str, case_ids: &[u32], engine_dir: &std::path::Path) -> Result<Vec<u32>, String> {
+fn attach_plugin_code_sync(code: &str, filename: &str, case_ids: &[u32], engine_dir: &std::path::Path) -> Result<Vec<u32>, AppError> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(attach_plugin_code(code, filename, case_ids, engine_dir, &test_client(), "case"))
 }

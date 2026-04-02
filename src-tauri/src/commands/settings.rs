@@ -6,10 +6,11 @@ use crate::app_state::{AppState, AppStateLock};
 use crate::config;
 use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
+use crate::error::AppError;
 
 /// Return current user settings.
 #[tauri::command]
-pub fn get_settings(state: State<'_, Mutex<AppState>>) -> Result<config::AppConfig, String> {
+pub fn get_settings(state: State<'_, Mutex<AppState>>) -> Result<config::AppConfig, AppError> {
     let s = state.lock().map_err(|e| e.to_string())?;
     Ok(s.config.clone())
 }
@@ -19,7 +20,7 @@ pub fn get_settings(state: State<'_, Mutex<AppState>>) -> Result<config::AppConf
 pub fn save_settings(
     state: State<'_, Mutex<AppState>>,
     settings: config::AppConfig,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
     let mut validated = settings;
     config::validate(&mut validated);
@@ -30,7 +31,7 @@ pub fn save_settings(
 
 /// Return storage usage statistics.
 #[tauri::command]
-pub fn get_storage_info(state: State<'_, Mutex<AppState>>) -> Result<config::StorageInfo, String> {
+pub fn get_storage_info(state: State<'_, Mutex<AppState>>) -> Result<config::StorageInfo, AppError> {
     let data_dir = state.data_dir()?;
     Ok(config::compute_storage_info(&data_dir))
 }
@@ -38,7 +39,7 @@ pub fn get_storage_info(state: State<'_, Mutex<AppState>>) -> Result<config::Sto
 /// Clear default asset cache files that are NOT referenced by any downloaded case.
 /// Scans all manifests to build a set of used defaults/ paths, then deletes the rest.
 #[tauri::command]
-pub async fn clear_unused_defaults(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
+pub async fn clear_unused_defaults(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, AppError> {
     let data_dir = state.data_dir()?;
     let (deleted, bytes_freed) = downloader::dedup::clear_unused_defaults(&data_dir)?;
     debug_log!(
@@ -57,7 +58,7 @@ pub async fn clear_unused_defaults(state: State<'_, Mutex<AppState>>) -> Result<
 pub async fn optimize_storage(
     state: State<'_, Mutex<AppState>>,
     on_event: Channel<DownloadEvent>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let data_dir = state.data_dir()?;
     let (deduped, bytes_saved) = downloader::dedup::optimize_all_cases(
         &data_dir,
@@ -80,7 +81,7 @@ pub async fn optimize_storage(
 
 /// Open the data directory in the system file explorer.
 #[tauri::command]
-pub fn open_data_dir(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+pub fn open_data_dir(state: State<'_, Mutex<AppState>>) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
     let path_str = data_dir.to_string_lossy().to_string();
     #[cfg(target_os = "windows")]

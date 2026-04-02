@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use tauri::State;
 
 use crate::app_state::{AppState, AppStateLock};
+use crate::error::AppError;
 
 /// Back up game saves to a file in the data directory.
 /// Called from JS after reading saves from localStorage via the bridge.
@@ -10,7 +11,7 @@ use crate::app_state::{AppState, AppStateLock};
 pub fn backup_saves(
     state: State<'_, Mutex<AppState>>,
     saves: serde_json::Value,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
     let path = data_dir.join("saves_backup.json");
     let json = serde_json::to_string(&saves)
@@ -25,7 +26,7 @@ pub fn backup_saves(
 #[tauri::command]
 pub fn load_saves_backup(
     state: State<'_, Mutex<AppState>>,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, AppError> {
     let data_dir = state.data_dir()?;
     let path = data_dir.join("saves_backup.json");
     if !path.exists() {
@@ -44,7 +45,7 @@ pub fn load_saves_backup(
 pub fn read_saves_for_export(
     state: State<'_, Mutex<AppState>>,
     case_ids: Vec<u32>,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, AppError> {
     let data_dir = state.data_dir()?;
     let path = data_dir.join("saves_backup.json");
     if !path.exists() {
@@ -74,7 +75,7 @@ pub fn read_saves_for_export(
 pub fn find_latest_save(
     state: State<'_, Mutex<AppState>>,
     case_ids: Vec<u32>,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, AppError> {
     let data_dir = state.data_dir()?;
     let path = data_dir.join("saves_backup.json");
     if !path.exists() {

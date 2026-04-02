@@ -41,7 +41,7 @@ fn test_import_aaocase_zip_duplicate_rejected() {
     // Second import should fail
     let result = import_aaocase_zip(&zip_path, engine.path(), None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("already exists"));
+    assert!(result.unwrap_err().to_string().contains("already exists"));
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn test_import_aaocase_zip_invalid_file() {
 
     let result = import_aaocase_zip(&bad_path, engine.path(), None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid ZIP file"));
+    assert!(result.unwrap_err().to_string().contains("Invalid ZIP file"));
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn test_import_aaocase_zip_missing_manifest() {
 
     let result = import_aaocase_zip(&zip_path, engine.path(), None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("manifest.json"));
+    assert!(result.unwrap_err().to_string().contains("manifest.json"));
 }
 
 /// Regression: single-case ZIP import still works after multi-case support was added.
@@ -328,7 +328,7 @@ fn test_import_multi_case_empty_sequence_list() {
     let result = import_aaocase_zip(&zip_path, engine.path(), None);
     assert!(result.is_err(), "Should fail with empty sequence list");
     assert!(
-        result.unwrap_err().contains("empty list"),
+        result.unwrap_err().to_string().contains("empty list"),
         "Error should mention empty list"
     );
 }

@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use tauri::State;
 
 use crate::app_state::{AppState, AppStateLock};
+use crate::error::AppError;
 use crate::importer;
 
 /// Import a .aaoplug plugin file with scoped activation.
@@ -12,14 +13,14 @@ pub async fn import_plugin(
     source_path: String,
     target_case_ids: Vec<u32>,
     origin: Option<String>,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<u32>, AppError> {
     let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.data_dir.clone(), s.http_client.clone())
     };
     let path = std::path::PathBuf::from(&source_path);
     let origin = origin.unwrap_or_else(|| "case".to_string());
-    importer::import_aaoplug(&path, &target_case_ids, &data_dir, &client, &origin).await
+    Ok(importer::import_aaoplug(&path, &target_case_ids, &data_dir, &client, &origin).await?)
 }
 
 /// Import a .aaoplug ZIP as a global plugin (backward compat — delegates to import_plugin).
@@ -27,13 +28,13 @@ pub async fn import_plugin(
 pub async fn import_aaoplug_global(
     state: State<'_, Mutex<AppState>>,
     source_path: String,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<u32>, AppError> {
     let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.data_dir.clone(), s.http_client.clone())
     };
     let path = std::path::PathBuf::from(&source_path);
-    importer::import_aaoplug(&path, &[], &data_dir, &client, "global").await
+    Ok(importer::import_aaoplug(&path, &[], &data_dir, &client, "global").await?)
 }
 
 /// Attach raw plugin JS code with scoped activation.
@@ -44,13 +45,13 @@ pub async fn attach_plugin_code(
     filename: String,
     target_case_ids: Vec<u32>,
     origin: Option<String>,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<u32>, AppError> {
     let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.data_dir.clone(), s.http_client.clone())
     };
     let origin = origin.unwrap_or_else(|| if target_case_ids.is_empty() { "global".to_string() } else { "case".to_string() });
-    importer::attach_plugin_code(&code, &filename, &target_case_ids, &data_dir, &client, &origin).await
+    Ok(importer::attach_plugin_code(&code, &filename, &target_case_ids, &data_dir, &client, &origin).await?)
 }
 
 /// Attach raw plugin code as a global plugin (backward compat — delegates to attach_plugin_code).
@@ -59,12 +60,12 @@ pub async fn attach_global_plugin_code(
     state: State<'_, Mutex<AppState>>,
     code: String,
     filename: String,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<u32>, AppError> {
     let (data_dir, client) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.data_dir.clone(), s.http_client.clone())
     };
-    importer::attach_plugin_code(&code, &filename, &[], &data_dir, &client, "global").await
+    Ok(importer::attach_plugin_code(&code, &filename, &[], &data_dir, &client, "global").await?)
 }
 
 /// List plugins active for a given case.
@@ -72,9 +73,9 @@ pub async fn attach_global_plugin_code(
 pub fn list_plugins(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let data_dir = state.data_dir()?;
-    importer::list_plugins(case_id, &data_dir)
+    Ok(importer::list_plugins(case_id, &data_dir)?)
 }
 
 /// Remove a plugin's scope for a case. If no scopes remain, deletes the plugin.
@@ -83,9 +84,9 @@ pub fn remove_plugin(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
     filename: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
-    importer::remove_plugin(case_id, &filename, &data_dir)
+    Ok(importer::remove_plugin(case_id, &filename, &data_dir)?)
 }
 
 /// Toggle a plugin for a case (backward compat — delegates to toggle_plugin_for_scope).
@@ -95,18 +96,18 @@ pub fn toggle_plugin(
     case_id: u32,
     filename: String,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
-    importer::toggle_plugin(case_id, &filename, enabled, &data_dir)
+    Ok(importer::toggle_plugin(case_id, &filename, enabled, &data_dir)?)
 }
 
 /// List all plugins (global manifest).
 #[tauri::command]
 pub fn list_global_plugins(
     state: State<'_, Mutex<AppState>>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let data_dir = state.data_dir()?;
-    importer::list_global_plugins(&data_dir)
+    Ok(importer::list_global_plugins(&data_dir)?)
 }
 
 /// Remove a global plugin entirely (removes all scopes + deletes file).
@@ -114,7 +115,7 @@ pub fn list_global_plugins(
 pub fn remove_global_plugin(
     state: State<'_, Mutex<AppState>>,
     filename: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
     importer::remove_global_plugin_from_manifest(&filename, &data_dir)?;
     let plugins_dir = data_dir.join("plugins");
@@ -129,9 +130,9 @@ pub fn toggle_global_plugin(
     state: State<'_, Mutex<AppState>>,
     filename: String,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
-    importer::toggle_plugin_for_scope(&filename, "global", "", enabled, &data_dir)
+    Ok(importer::toggle_plugin_for_scope(&filename, "global", "", enabled, &data_dir)?)
 }
 
 /// Toggle a plugin for a specific scope.
@@ -142,9 +143,9 @@ pub fn toggle_plugin_for_scope(
     scope_type: String,
     scope_key: String,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
-    importer::toggle_plugin_for_scope(&filename, &scope_type, &scope_key, enabled, &data_dir)
+    Ok(importer::toggle_plugin_for_scope(&filename, &scope_type, &scope_key, enabled, &data_dir)?)
 }
 
 /// Check for duplicate plugin code.
@@ -152,7 +153,7 @@ pub fn toggle_plugin_for_scope(
 pub fn check_plugin_duplicate(
     state: State<'_, Mutex<AppState>>,
     code: String,
-) -> Result<Vec<importer::DuplicateMatch>, String> {
+) -> Result<Vec<importer::DuplicateMatch>, AppError> {
     let data_dir = state.data_dir()?;
     Ok(importer::check_plugin_duplicate(&code, &data_dir))
 }
@@ -165,9 +166,9 @@ pub fn set_global_plugin_params(
     level: String,
     key: String,
     params: serde_json::Value,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
-    importer::set_global_plugin_params(&filename, &level, &key, &params, &data_dir)
+    Ok(importer::set_global_plugin_params(&filename, &level, &key, &params, &data_dir)?)
 }
 
 /// Get all param overrides for a plugin.
@@ -175,7 +176,7 @@ pub fn set_global_plugin_params(
 pub fn get_plugin_params(
     state: State<'_, Mutex<AppState>>,
     filename: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let data_dir = state.data_dir()?;
     let manifest_path = data_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
@@ -197,7 +198,7 @@ pub fn get_plugin_params(
 pub fn get_plugin_descriptors(
     state: State<'_, Mutex<AppState>>,
     filename: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let data_dir = state.data_dir()?;
     let manifest_path = data_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
@@ -220,10 +221,10 @@ pub async fn export_case_plugins(
     state: State<'_, Mutex<AppState>>,
     case_id: u32,
     dest_path: String,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     let data_dir = state.data_dir()?;
     let path = std::path::PathBuf::from(&dest_path);
-    tokio::task::spawn_blocking(move || {
+    Ok(tokio::task::spawn_blocking(move || {
         importer::export_case_plugins(case_id, &path, &data_dir)
-    }).await.map_err(|e| format!("Export task failed: {}", e))?
+    }).await.map_err(|e| format!("Export task failed: {}", e))??)
 }

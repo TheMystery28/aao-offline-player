@@ -80,7 +80,7 @@ pub fn load_config(data_dir: &Path) -> AppConfig {
 }
 
 /// Persist config to disk.
-pub fn save_config(data_dir: &Path, config: &AppConfig) -> Result<(), String> {
+pub fn save_config(data_dir: &Path, config: &AppConfig) -> Result<(), crate::error::AppError> {
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
     std::fs::write(config_path(data_dir), json)

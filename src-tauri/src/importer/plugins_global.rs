@@ -2,12 +2,13 @@ use std::fs;
 use std::path::Path;
 
 use crate::downloader::manifest::read_manifest;
+use crate::error::AppError;
 
 // Cross-module calls (extract_plugin_descriptors, etc.)
 use super::*;
 
 /// List all plugins from {data_dir}/plugins/manifest.json.
-pub fn list_global_plugins(engine_dir: &Path) -> Result<serde_json::Value, String> {
+pub fn list_global_plugins(engine_dir: &Path) -> Result<serde_json::Value, AppError> {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
         return Ok(serde_json::json!({ "scripts": [], "plugins": {} }));
@@ -15,7 +16,7 @@ pub fn list_global_plugins(engine_dir: &Path) -> Result<serde_json::Value, Strin
     let text = fs::read_to_string(&manifest_path)
         .map_err(|e| format!("Failed to read global plugin manifest: {}", e))?;
     serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse global plugin manifest: {}", e))
+        .map_err(|e| AppError::Other(format!("Failed to parse global plugin manifest: {}", e)))
 }
 
 /// Toggle a plugin's enabled/disabled state for a specific scope.
@@ -29,11 +30,11 @@ pub fn toggle_plugin_for_scope(
     scope_key: &str,
     enabled: bool,
     engine_dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     super::shared::with_global_manifest(engine_dir, |val| {
         let plugins = val.get_mut("plugins")
             .and_then(|p| p.as_object_mut())
-            .ok_or_else(|| "No plugins in manifest".to_string())?;
+            .ok_or_else(|| AppError::Other("No plugins in manifest".to_string()))?;
 
         let entry = plugins.entry(filename.to_string())
             .or_insert(serde_json::json!({
@@ -44,7 +45,7 @@ pub fn toggle_plugin_for_scope(
 
         let scope = entry.get_mut("scope")
             .and_then(|s| s.as_object_mut())
-            .ok_or_else(|| "No scope in plugin entry".to_string())?;
+            .ok_or_else(|| AppError::Other("No scope in plugin entry".to_string()))?;
 
         match scope_type {
             "global" => {
@@ -55,7 +56,7 @@ pub fn toggle_plugin_for_scope(
                 let anti_field = if enabled { "disabled_for" } else { "enabled_for" };
                 let case_val: serde_json::Value = match scope_key.parse::<u64>() {
                     Ok(id) => serde_json::json!(id),
-                    Err(_) => return Err(format!("Invalid case ID: {}", scope_key)),
+                    Err(_) => return Err(format!("Invalid case ID: {}", scope_key).into()),
                 };
 
                 // Add to the target field
@@ -98,7 +99,7 @@ pub fn toggle_plugin_for_scope(
                     }
                 }
             }
-            _ => return Err(format!("Invalid scope_type: {}", scope_type)),
+            _ => return Err(format!("Invalid scope_type: {}", scope_type).into()),
         }
 
         Ok(())
@@ -115,7 +116,7 @@ pub fn toggle_plugin_for_scope(
 /// Migrate a global plugin manifest from old format to new unified format.
 /// Old: { "scripts": [...], "disabled": [...] }
 /// New: { "scripts": [...], "plugins": { "file.js": { "scope": {...}, "params": {...}, "origin": "global" } } }
-pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), String> {
+pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), AppError> {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
         return Ok(());
@@ -209,7 +210,7 @@ pub fn migrate_global_manifest(engine_dir: &Path) -> Result<(), String> {
 /// Idempotent: does nothing if no case-local plugins exist.
 /// Error-tolerant: logs and skips individual failures.
 /// Returns the count of migrated plugin scripts.
-pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, String> {
+pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, AppError> {
     let cases_dir = data_dir.join("case");
     if !cases_dir.is_dir() {
         return Ok(0);
@@ -341,7 +342,7 @@ pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, String> 
 
 /// Remove a plugin from the global manifest (scripts array + plugins object).
 /// Does NOT delete the JS file or assets — the caller handles that.
-pub fn remove_global_plugin_from_manifest(filename: &str, engine_dir: &Path) -> Result<(), String> {
+pub fn remove_global_plugin_from_manifest(filename: &str, engine_dir: &Path) -> Result<(), AppError> {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
         return Ok(()); // Nothing to remove
@@ -357,7 +358,7 @@ pub fn remove_global_plugin_from_manifest(filename: &str, engine_dir: &Path) -> 
     })
 }
 
-pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_json::Value, String> {
+pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_json::Value, AppError> {
     let global_manifest_path = data_dir.join("plugins").join("manifest.json");
 
     // Migrate case-local plugins to global on first resolve

@@ -89,7 +89,7 @@ fn test_import_aaoffline_missing_index() {
     let dir = tempfile::tempdir().unwrap();
     let result = import_aaoffline(dir.path(), dir.path(), None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("No index.html found"));
+    assert!(result.unwrap_err().to_string().contains("No index.html found"));
 }
 
 #[test]
@@ -212,7 +212,7 @@ var initial_trial_data = {"frames":[0]};
     // Second import should fail (duplicate)
     let result = import_aaoffline(source.path(), engine.path(), None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("already exists"));
+    assert!(result.unwrap_err().to_string().contains("already exists"));
 }
 
 /// Regression: filenames with URL-unsafe characters (like +, #, &) must be
@@ -433,7 +433,7 @@ fn test_import_aaoffline_batch_empty_folder() {
 
     let result = import_aaoffline_batch(source.path(), engine.path(), None, None);
     assert!(result.is_err(), "Empty folder should return error");
-    assert!(result.unwrap_err().contains("No index.html found"));
+    assert!(result.unwrap_err().to_string().contains("No index.html found"));
 }
 
 // --- Test collection data validation ---

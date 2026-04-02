@@ -1,3 +1,5 @@
+use crate::error::AppError;
+
 /// Debug-only log writer.
 pub(crate) struct DownloadLog {
     #[cfg(debug_assertions)]
@@ -5,7 +7,7 @@ pub(crate) struct DownloadLog {
 }
 
 impl DownloadLog {
-    pub(crate) fn new(path: &std::path::Path) -> Result<Self, String> {
+    pub(crate) fn new(path: &std::path::Path) -> Result<Self, AppError> {
         // Rotate log if > 1MB
         if path.exists() {
             if let Ok(meta) = std::fs::metadata(path) {

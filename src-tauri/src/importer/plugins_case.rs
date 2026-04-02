@@ -3,6 +3,7 @@ use std::io;
 use std::path::Path;
 
 use crate::downloader::manifest::{read_manifest, write_manifest};
+use crate::error::AppError;
 
 // Cross-module calls
 use super::*;
@@ -63,7 +64,7 @@ pub async fn import_aaoplug(
     engine_dir: &Path,
     client: &reqwest::Client,
     origin: &str,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<u32>, AppError> {
     let file = fs::File::open(zip_path)
         .map_err(|e| format!("Failed to open .aaoplug file: {}", e))?;
     let mut archive = zip::ZipArchive::new(file)
@@ -71,7 +72,7 @@ pub async fn import_aaoplug(
 
     // Validate: manifest.json must exist
     let manifest_text = read_zip_text(&mut archive, "manifest.json")
-        .map_err(|_| "Invalid .aaoplug: missing manifest.json".to_string())?;
+        .map_err(|_| AppError::Other("Invalid .aaoplug: missing manifest.json".to_string()))?;
 
     // Parse manifest for external assets
     let plugin_manifest: serde_json::Value = serde_json::from_str(&manifest_text)
@@ -199,7 +200,7 @@ pub async fn attach_plugin_code(
     engine_dir: &Path,
     client: &reqwest::Client,
     origin: &str,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<u32>, AppError> {
     let plugins_dir = engine_dir.join("plugins");
     fs::create_dir_all(&plugins_dir)
         .map_err(|e| format!("Failed to create plugins dir: {}", e))?;
@@ -230,7 +231,7 @@ pub async fn attach_plugin_code(
 
 /// List plugins active for a given case by reading the global manifest.
 /// Returns plugins whose scope includes this case_id.
-pub fn list_plugins(case_id: u32, engine_dir: &Path) -> Result<serde_json::Value, String> {
+pub fn list_plugins(case_id: u32, engine_dir: &Path) -> Result<serde_json::Value, AppError> {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
         return Ok(serde_json::json!({ "scripts": [], "disabled": [] }));
@@ -263,7 +264,7 @@ pub fn list_plugins(case_id: u32, engine_dir: &Path) -> Result<serde_json::Value
 }
 
 /// Remove a plugin's scope for a given case. If no scopes remain, delete the plugin entirely.
-pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<(), String> {
+pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<(), AppError> {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
         return Ok(());
@@ -342,11 +343,11 @@ pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<
 }
 
 /// Toggle a plugin for a specific case (update enabled_for in global manifest).
-pub fn toggle_plugin(case_id: u32, filename: &str, enabled: bool, engine_dir: &Path) -> Result<(), String> {
+pub fn toggle_plugin(case_id: u32, filename: &str, enabled: bool, engine_dir: &Path) -> Result<(), AppError> {
     super::shared::with_global_manifest(engine_dir, |val| {
         let plugins = val.get_mut("plugins")
             .and_then(|p| p.as_object_mut())
-            .ok_or_else(|| "No plugins in manifest".to_string())?;
+            .ok_or_else(|| AppError::Other("No plugins in manifest".to_string()))?;
 
         let entry = plugins.entry(filename.to_string())
             .or_insert(serde_json::json!({
@@ -357,7 +358,7 @@ pub fn toggle_plugin(case_id: u32, filename: &str, enabled: bool, engine_dir: &P
 
         let scope = entry.get_mut("scope")
             .and_then(|s| s.as_object_mut())
-            .ok_or_else(|| "No scope in plugin entry".to_string())?;
+            .ok_or_else(|| AppError::Other("No scope in plugin entry".to_string()))?;
 
         // Ensure enabled_for array exists
         if scope.get("enabled_for").is_none() {
@@ -365,7 +366,7 @@ pub fn toggle_plugin(case_id: u32, filename: &str, enabled: bool, engine_dir: &P
         }
 
         let enabled_for = scope.get_mut("enabled_for").unwrap().as_array_mut()
-            .ok_or_else(|| "enabled_for is not an array".to_string())?;
+            .ok_or_else(|| AppError::Other("enabled_for is not an array".to_string()))?;
 
         let case_val = serde_json::json!(case_id);
         if enabled {
@@ -396,7 +397,7 @@ pub(super) fn upsert_plugin_manifest(
     origin: &str,
     target_case_ids: &[u32],
     descriptors: Option<serde_json::Value>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let plugins_dir = engine_dir.join("plugins");
     fs::create_dir_all(&plugins_dir).ok();
     let manifest_path = plugins_dir.join("manifest.json");

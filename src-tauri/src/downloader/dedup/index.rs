@@ -3,6 +3,7 @@ use std::path::Path;
 
 use redb::{Database, MultimapTableDefinition, ReadableDatabase, TableDefinition};
 
+use crate::error::AppError;
 use super::helpers::{hash_file, normalize_ext};
 use crate::downloader::DownloaderError;
 use crate::downloader::paths::normalize_path;
@@ -26,7 +27,7 @@ pub struct DedupIndex {
 impl DedupIndex {
     /// Open or create the index database at `data_dir/dedup_index.redb`.
     /// If the db file is corrupt, deletes and recreates it.
-    pub fn open(data_dir: &Path) -> Result<Self, String> {
+    pub fn open(data_dir: &Path) -> Result<Self, AppError> {
         let db_path = data_dir.join("dedup_index.redb");
         match Database::create(&db_path) {
             Ok(db) => Ok(DedupIndex { db }),
@@ -42,7 +43,7 @@ impl DedupIndex {
 
     /// Register a file in the index.
     /// Inserts into both hash_by_path and paths_by_hash in one transaction.
-    pub fn register(&self, relative_path: &str, size: u64, hash: u64) -> Result<(), String> {
+    pub fn register(&self, relative_path: &str, size: u64, hash: u64) -> Result<(), AppError> {
         let relative_path = normalize_path(relative_path);
         let hash_key = format!("{}", hash);
 
@@ -310,7 +311,7 @@ impl DedupIndex {
 
     /// Remove all entries whose path starts with the given prefix.
     /// Uses B-tree sorted range scan. Returns count of removed entries.
-    pub fn unregister_prefix(&self, prefix: &str) -> Result<usize, String> {
+    pub fn unregister_prefix(&self, prefix: &str) -> Result<usize, AppError> {
         // Collect entries to remove (read transaction).
         // Wrapped in catch_unwind: redb may panic on corrupt data.
         let prefix_owned = prefix.to_string();

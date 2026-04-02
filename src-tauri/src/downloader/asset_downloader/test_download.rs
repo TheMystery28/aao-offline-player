@@ -259,7 +259,7 @@ async fn test_mock_no_retry_on_404() {
         &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
     ).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("404"));
+    assert!(result.unwrap_err().to_string().contains("404"));
 }
 
 #[tokio::test]
@@ -279,7 +279,7 @@ async fn test_mock_retry_exhausted_returns_error() {
         &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
     ).await;
     assert!(result.is_err(), "Should fail after all retries");
-    assert!(result.unwrap_err().contains("503"));
+    assert!(result.unwrap_err().to_string().contains("503"));
 }
 
 // --- Content validation ---
@@ -304,7 +304,7 @@ async fn test_mock_html_rejected_for_sprite() {
         &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
     ).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("HTML"));
+    assert!(result.unwrap_err().to_string().contains("HTML"));
 }
 
 #[tokio::test]
@@ -345,7 +345,7 @@ async fn test_mock_empty_body_rejected() {
         &client, &url, &dir.path().to_path_buf(), "test.png", &log, "sprite"
     ).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Empty"));
+    assert!(result.unwrap_err().to_string().contains("Empty"));
 }
 
 // --- Concurrent downloads ---

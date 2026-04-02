@@ -1,8 +1,9 @@
 use super::*;
 use std::io;
+use crate::error::AppError;
 
 /// Sync wrapper for attach_plugin_code in tests.
-fn attach_plugin_code_sync(code: &str, filename: &str, case_ids: &[u32], engine_dir: &std::path::Path) -> Result<Vec<u32>, String> {
+fn attach_plugin_code_sync(code: &str, filename: &str, case_ids: &[u32], engine_dir: &std::path::Path) -> Result<Vec<u32>, AppError> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let client = reqwest::Client::new();
     rt.block_on(attach_plugin_code(code, filename, case_ids, engine_dir, &client, "case"))
@@ -135,7 +136,7 @@ fn test_import_aaosave_missing_saves() {
 
     let result = import_aaosave(&dest, dir.path());
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("saves.json"));
+    assert!(result.unwrap_err().to_string().contains("saves.json"));
 }
 
 #[test]

@@ -3,6 +3,7 @@ use std::io;
 use std::path::Path;
 
 use crate::downloader::manifest::{read_manifest, write_manifest};
+use crate::error::AppError;
 use crate::utils::format_timestamp;
 
 use super::shared::*;
@@ -41,7 +42,7 @@ pub fn export_aaosave(
     include_plugins: bool,
     dest_path: &Path,
     engine_dir: &Path,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     let file = fs::File::create(dest_path)
         .map_err(|e| format!("Failed to create .aaosave file: {}", e))?;
     let mut zip = zip::ZipWriter::new(file);
@@ -159,7 +160,7 @@ pub fn export_aaosave(
 pub fn import_aaosave(
     zip_path: &Path,
     engine_dir: &Path,
-) -> Result<ImportSaveResult, String> {
+) -> Result<ImportSaveResult, AppError> {
     let file = fs::File::open(zip_path)
         .map_err(|e| format!("Failed to open .aaosave file: {}", e))?;
     let mut archive = zip::ZipArchive::new(file)
@@ -167,13 +168,13 @@ pub fn import_aaosave(
 
     // Read saves.json (required)
     let saves_text = read_zip_text(&mut archive, "saves.json")
-        .map_err(|_| "Invalid .aaosave: missing saves.json".to_string())?;
+        .map_err(|_| AppError::Other("Invalid .aaosave: missing saves.json".to_string()))?;
     let saves: serde_json::Value = serde_json::from_str(&saves_text)
         .map_err(|e| format!("Failed to parse saves.json: {}", e))?;
 
     // Read metadata.json (required)
     let metadata_text = read_zip_text(&mut archive, "metadata.json")
-        .map_err(|_| "Invalid .aaosave: missing metadata.json".to_string())?;
+        .map_err(|_| AppError::Other("Invalid .aaosave: missing metadata.json".to_string()))?;
     let metadata: serde_json::Value = serde_json::from_str(&metadata_text)
         .map_err(|e| format!("Failed to parse metadata.json: {}", e))?;
 

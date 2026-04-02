@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::downloader::manifest::{CaseManifest, read_manifest, write_manifest};
 use crate::downloader::dedup::DedupIndex;
+use crate::error::AppError;
 
 // Cross-module calls (merge_plugin_param_overrides, etc.)
 use super::*;
@@ -75,7 +76,7 @@ fn extract_and_dedup(
 /// - **Collection**: `collection.json` + `{case_id}/manifest.json`, `{case_id}/...` per case
 ///
 /// Returns an `ImportResult` containing the manifest and optionally any game saves.
-pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, on_progress: Option<&dyn Fn(usize, usize)>) -> Result<ImportResult, String> {
+pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, on_progress: Option<&dyn Fn(usize, usize)>) -> Result<ImportResult, AppError> {
     let file = fs::File::open(zip_path)
         .map_err(|e| format!("Failed to open ZIP file: {}", e))?;
     let mut archive = zip::ZipArchive::new(file)
@@ -143,13 +144,13 @@ fn import_multi_case_zip(
     seq_json: &str,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<super::shared::ImportOutput, String> {
+) -> Result<super::shared::ImportOutput, AppError> {
     let seq_value: Value = serde_json::from_str(seq_json)
         .map_err(|e| format!("Failed to parse sequence.json: {}", e))?;
 
     let case_list = seq_value["list"]
         .as_array()
-        .ok_or("sequence.json missing 'list' array")?;
+        .ok_or_else(|| AppError::Other("sequence.json missing 'list' array".to_string()))?;
 
     let case_ids: Vec<u32> = case_list
         .iter()
@@ -157,7 +158,7 @@ fn import_multi_case_zip(
         .collect();
 
     if case_ids.is_empty() {
-        return Err("sequence.json has empty list".to_string());
+        return Err("sequence.json has empty list".to_string().into());
     }
 
     let mut first_manifest: Option<CaseManifest> = None;
@@ -339,7 +340,7 @@ fn import_multi_case_zip(
         }
     }
 
-    let manifest = first_manifest.ok_or_else(|| "No cases were imported from the multi-case ZIP".to_string())?;
+    let manifest = first_manifest.ok_or_else(|| AppError::Other("No cases were imported from the multi-case ZIP".to_string()))?;
     Ok(super::shared::ImportOutput { manifest, collection: None, dedup_saved_bytes })
 }
 
@@ -350,7 +351,7 @@ fn import_collection_zip(
     coll_json: &str,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<super::shared::ImportOutput, String> {
+) -> Result<super::shared::ImportOutput, AppError> {
     let coll_value: Value = serde_json::from_str(coll_json)
         .map_err(|e| format!("Failed to parse collection.json: {}", e))?;
 
@@ -381,7 +382,7 @@ fn import_collection_zip(
     }
 
     if case_ids.is_empty() {
-        return Err("Collection ZIP contains no case data".to_string());
+        return Err("Collection ZIP contains no case data".to_string().into());
     }
 
     let mut first_manifest: Option<CaseManifest> = None;
@@ -565,7 +566,7 @@ fn import_collection_zip(
     }
 
     let manifest = first_manifest
-        .ok_or_else(|| "No cases were imported from the collection ZIP".to_string())?;
+        .ok_or_else(|| AppError::Other("No cases were imported from the collection ZIP".to_string()))?;
 
     // Build the Collection object
     let collection = crate::collections::Collection {
@@ -584,7 +585,7 @@ fn import_single_case_zip(
     archive: &mut zip::ZipArchive<fs::File>,
     engine_dir: &Path,
     on_progress: Option<&dyn Fn(usize, usize)>,
-) -> Result<super::shared::ImportOutput, String> {
+) -> Result<super::shared::ImportOutput, AppError> {
     // 1. Read manifest.json from ZIP to get case_id
     let manifest_json = read_zip_text(archive, "manifest.json")?;
     let zip_manifest: CaseManifest = serde_json::from_str(&manifest_json)
@@ -597,7 +598,7 @@ fn import_single_case_zip(
         return Err(format!(
             "Case {} already exists in your library. Delete it first if you want to reimport.",
             case_id
-        ));
+        ).into());
     }
 
     fs::create_dir_all(&case_dir)

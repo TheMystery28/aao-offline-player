@@ -6,6 +6,8 @@ use std::sync::atomic::AtomicBool;
 
 use tauri::ipc::Channel;
 
+use crate::error::AppError;
+
 use super::{AssetRef, SitePaths, AAONLINE_BASE};
 use super::asset_downloader::DownloadEvent;
 use super::manifest::CaseManifest;
@@ -95,7 +97,7 @@ pub fn extract_and_prepare_assets(
 }
 
 /// Save trial_info.json to a case directory.
-pub fn save_trial_info(case_dir: &Path, info_json: &str) -> Result<(), String> {
+pub fn save_trial_info(case_dir: &Path, info_json: &str) -> Result<(), AppError> {
     let info_pretty: serde_json::Value = serde_json::from_str(info_json)
         .map_err(|e| format!("Failed to reparse info JSON: {}", e))?;
     fs::write(
@@ -103,7 +105,8 @@ pub fn save_trial_info(case_dir: &Path, info_json: &str) -> Result<(), String> {
         serde_json::to_string_pretty(&info_pretty)
             .map_err(|e| format!("Failed to serialize trial_info: {}", e))?,
     )
-    .map_err(|e| format!("Failed to write trial_info.json: {}", e))
+    .map_err(|e| format!("Failed to write trial_info.json: {}", e))?;
+    Ok(())
 }
 
 /// Full single-case download pipeline: fetch → extract → download → rewrite → manifest.
@@ -118,7 +121,7 @@ pub(crate) async fn download_single_case(
     on_event: &Channel<DownloadEvent>,
     concurrency: usize,
     cancel_flag: Arc<AtomicBool>,
-) -> Result<CaseManifest, String> {
+) -> Result<CaseManifest, AppError> {
     // 1. Fetch case data
     let (case_info, trial_data, info_json, data_json) =
         super::case_fetcher::fetch_case(client, case_id).await?;

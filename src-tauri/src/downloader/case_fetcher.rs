@@ -2,6 +2,7 @@ use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
 
+use crate::error::AppError;
 use super::{CaseInfo, DownloaderError, SitePaths, AAONLINE_BASE};
 
 /// Quick check if aaonline.fr is reachable (HEAD with short timeout).
@@ -145,7 +146,7 @@ pub(crate) fn parse_bridge_js_response(text: &str) -> Result<SitePaths, Download
 }
 
 /// Fetch site paths (cfg) from bridge.js.php on aaonline.fr.
-pub async fn fetch_site_paths(client: &Client) -> Result<SitePaths, String> {
+pub async fn fetch_site_paths(client: &Client) -> Result<SitePaths, AppError> {
     let url = format!("{}/bridge.js.php", AAONLINE_BASE);
     let text = client
         .get(&url)
@@ -202,7 +203,7 @@ pub(crate) fn parse_trial_js_response(text: &str, fallback_id: u32) -> Result<(C
 pub async fn fetch_case(
     client: &Client,
     case_id: u32,
-) -> Result<(CaseInfo, Value, String, String), String> {
+) -> Result<(CaseInfo, Value, String, String), AppError> {
     let url = format!("{}/trial.js.php?trial_id={}", AAONLINE_BASE, case_id);
     let text = client
         .get(&url)

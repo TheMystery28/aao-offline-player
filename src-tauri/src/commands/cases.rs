@@ -4,12 +4,13 @@ use tauri::State;
 
 use crate::app_state::{AppState, AppStateLock};
 use crate::downloader;
+use crate::error::AppError;
 
 /// List all downloaded cases by scanning the case directory for manifests.
 #[tauri::command]
 pub fn list_cases(
     state: State<'_, Mutex<AppState>>,
-) -> Result<Vec<downloader::manifest::CaseManifest>, String> {
+) -> Result<Vec<downloader::manifest::CaseManifest>, AppError> {
     let data_dir = state.data_dir()?;
 
     let cases_dir = data_dir.join("case");
@@ -48,12 +49,12 @@ pub fn list_cases(
 
 /// Delete a downloaded case and all its files.
 #[tauri::command]
-pub fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<(), String> {
+pub fn delete_case(state: State<'_, Mutex<AppState>>, case_id: u32) -> Result<(), AppError> {
     let data_dir = state.data_dir()?;
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
-        return Err(format!("Case {} not found", case_id));
+        return Err(format!("Case {} not found", case_id).into());
     }
 
     // Remove case entries from the persistent hash index before deleting files
