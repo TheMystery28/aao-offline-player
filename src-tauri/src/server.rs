@@ -61,138 +61,144 @@ pub(crate) fn serve_file(
     method: &str,
     range_header: Option<&str>,
 ) -> ServeResult {
-    // OPTIONS preflight — return immediately with CORS headers
     if method.eq_ignore_ascii_case("OPTIONS") {
-        return ServeResult {
-            status: 204,
-            headers: vec![
-                ("Access-Control-Allow-Origin".into(), "*".into()),
-                ("Access-Control-Allow-Methods".into(), "GET, OPTIONS".into()),
-                ("Access-Control-Allow-Headers".into(), "Range, Content-Type".into()),
-                ("Access-Control-Expose-Headers".into(), "Content-Range, Content-Length".into()),
-            ],
-            data: Vec::new(),
-        };
+        return handle_options_preflight();
     }
 
-    // Strip query string
+    // Normalize URL path
     let clean_path = url_path.split('?').next().unwrap_or(url_path);
-    // URL-decode
     let decoded = url_decode(clean_path);
-    // Trim leading slash
     let relative = decoded.trim_start_matches('/');
-    // Sanitize illegal characters
     let relative = sanitize_path(relative);
 
     // Resolve to filesystem path
     let file_path = match resolve_path(config, &relative) {
         Some(p) if p.is_file() => p,
-        _ => {
-            return ServeResult {
-                status: 404,
-                headers: vec![
-                    ("Access-Control-Allow-Origin".into(), "*".into()),
-                ],
-                data: b"404 Not Found".to_vec(),
-            };
-        }
+        _ => return ServeResult {
+            status: 404,
+            headers: vec![("Access-Control-Allow-Origin".into(), "*".into())],
+            data: b"404 Not Found".to_vec(),
+        },
     };
 
-    // Get file size from metadata (no full read yet)
+    // File metadata
     let file_size = match fs::metadata(&file_path) {
         Ok(m) => m.len() as usize,
-        Err(_) => {
-            return ServeResult {
-                status: 500,
-                headers: vec![],
-                data: b"500 Internal Server Error".to_vec(),
-            };
-        }
+        Err(_) => return ServeResult {
+            status: 500,
+            headers: vec![],
+            data: b"500 Internal Server Error".to_vec(),
+        },
     };
 
+    // MIME, cache strategy, base headers
     let mime = mime_type(&file_path);
-
-    // Determine caching strategy
     let cache_value = if relative.starts_with("case/") || relative.starts_with("defaults/") {
         "public, max-age=31536000, immutable"
     } else {
         "no-cache"
     };
-
-    // Check if this is a media type that supports Range requests
     let is_media = mime.starts_with("audio/") || mime.starts_with("video/") || mime.starts_with("image/");
-
-    // Build base headers
     let mut headers = vec![
         ("Content-Type".into(), mime.to_string()),
         ("Access-Control-Allow-Origin".into(), "*".into()),
         ("Cache-Control".into(), cache_value.into()),
     ];
-
     if is_media {
         headers.push(("Accept-Ranges".into(), "bytes".into()));
     }
 
-    // Handle Range request — only read the requested byte range
+    // Dispatch to range or full-file handler
     if let Some(range_str) = range_header {
-        if let Some((start, end)) = parse_range(range_str, file_size) {
-            use std::io::{Read, Seek, SeekFrom};
-            let slice = match std::fs::File::open(&file_path) {
-                Ok(mut f) => {
-                    let len = end - start + 1;
-                    let mut buf = vec![0u8; len];
-                    if f.seek(SeekFrom::Start(start as u64)).is_err() {
-                        return ServeResult { status: 500, headers: vec![], data: b"Seek failed".to_vec() };
-                    }
-                    if f.read_exact(&mut buf).is_err() {
-                        return ServeResult { status: 500, headers: vec![], data: b"Read failed".to_vec() };
-                    }
-                    buf
-                }
-                Err(_) => {
-                    return ServeResult { status: 500, headers: vec![], data: b"500 Internal Server Error".to_vec() };
-                }
-            };
-            headers.push((
-                "Content-Range".into(),
-                format!("bytes {}-{}/{}", start, end, file_size),
-            ));
-            headers.push(("Content-Length".into(), slice.len().to_string()));
-            return ServeResult {
-                status: 206,
-                headers,
-                data: slice,
-            };
-        } else {
-            // 416 Range Not Satisfiable
-            return ServeResult {
-                status: 416,
-                headers: vec![
-                    ("Content-Range".into(), format!("bytes */{}", file_size)),
-                    ("Access-Control-Allow-Origin".into(), "*".into()),
-                ],
-                data: Vec::new(),
-            };
-        }
+        return handle_range_request(&file_path, file_size, headers, range_str);
     }
+    handle_full_response(&file_path, file_size, headers)
+}
 
-    // Full 200 response — read entire file
-    let data = match fs::read(&file_path) {
-        Ok(d) => d,
-        Err(_) => {
-            return ServeResult {
-                status: 500,
-                headers: vec![],
-                data: b"500 Internal Server Error".to_vec(),
-            };
-        }
+/// Return a 204 CORS preflight response for OPTIONS requests.
+fn handle_options_preflight() -> ServeResult {
+    ServeResult {
+        status: 204,
+        headers: vec![
+            ("Access-Control-Allow-Origin".into(), "*".into()),
+            ("Access-Control-Allow-Methods".into(), "GET, OPTIONS".into()),
+            ("Access-Control-Allow-Headers".into(), "Range, Content-Type".into()),
+            ("Access-Control-Expose-Headers".into(), "Content-Range, Content-Length".into()),
+        ],
+        data: Vec::new(),
+    }
+}
+
+/// Serve a byte-range slice of a file (HTTP Range request).
+///
+/// Returns 206 Partial Content with the requested slice,
+/// 416 Range Not Satisfiable if the range is invalid,
+/// or 500 if the file cannot be opened/read.
+///
+/// `headers` must already contain Content-Type, CORS, Cache-Control, and
+/// Accept-Ranges — this function appends Content-Range and Content-Length.
+fn handle_range_request(
+    file_path: &Path,
+    file_size: usize,
+    mut headers: Vec<(String, String)>,
+    range_str: &str,
+) -> ServeResult {
+    let Some((start, end)) = parse_range(range_str, file_size) else {
+        return ServeResult {
+            status: 416,
+            headers: vec![
+                ("Content-Range".into(), format!("bytes */{}", file_size)),
+                ("Access-Control-Allow-Origin".into(), "*".into()),
+            ],
+            data: Vec::new(),
+        };
     };
 
-    headers.push(("Content-Length".into(), file_size.to_string()));
-    ServeResult {
-        status: 200,
-        headers,
-        data,
+    use std::io::{Read, Seek, SeekFrom};
+    let slice = match std::fs::File::open(file_path) {
+        Ok(mut f) => {
+            let len = end - start + 1;
+            let mut buf = vec![0u8; len];
+            if f.seek(SeekFrom::Start(start as u64)).is_err() {
+                return ServeResult { status: 500, headers: vec![], data: b"Seek failed".to_vec() };
+            }
+            if f.read_exact(&mut buf).is_err() {
+                return ServeResult { status: 500, headers: vec![], data: b"Read failed".to_vec() };
+            }
+            buf
+        }
+        Err(_) => return ServeResult {
+            status: 500,
+            headers: vec![],
+            data: b"500 Internal Server Error".to_vec(),
+        },
+    };
+
+    headers.push(("Content-Range".into(), format!("bytes {}-{}/{}", start, end, file_size)));
+    headers.push(("Content-Length".into(), slice.len().to_string()));
+    ServeResult { status: 206, headers, data: slice }
+}
+
+/// Serve the complete contents of a file (HTTP 200 OK).
+///
+/// Returns 500 if the file cannot be read.
+/// `headers` must already contain Content-Type, CORS, and Cache-Control —
+/// this function appends Content-Length.
+fn handle_full_response(
+    file_path: &Path,
+    file_size: usize,
+    mut headers: Vec<(String, String)>,
+) -> ServeResult {
+    match fs::read(file_path) {
+        Ok(data) => {
+            headers.push(("Content-Length".into(), file_size.to_string()));
+            ServeResult { status: 200, headers, data }
+        }
+        Err(_) => ServeResult {
+            status: 500,
+            headers: vec![],
+            data: b"500 Internal Server Error".to_vec(),
+        },
     }
 }
 
