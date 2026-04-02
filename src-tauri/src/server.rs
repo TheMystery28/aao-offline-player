@@ -16,6 +16,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tiny_http::{Header, Response, Server};
 
 /// Result of serving a file request. Pure data — no tiny_http dependency.
@@ -287,26 +288,79 @@ pub struct ServerConfig {
     pub data_dir: PathBuf,
 }
 
-/// Start the HTTP server in a background thread.
-/// Returns the port number the server is listening on.
-pub fn start_server(config: ServerConfig) -> Result<u16, crate::error::AppError> {
+/// Handle for the migration HTTP server.
+///
+/// Holds the shutdown flag so the server thread can be signalled to stop.
+/// Implements `Drop` so the thread is stopped automatically when this handle
+/// is dropped (e.g. when Tauri drops managed `AppPaths` state on exit).
+pub struct MigrationServer {
+    port: u16,
+    shutdown: Arc<AtomicBool>,
+}
+
+impl MigrationServer {
+    /// Return the port the migration server is listening on.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// Signal the server thread to stop and unblock it immediately.
+    ///
+    /// After this call the server thread will exit within one poll cycle
+    /// (≤ 200 ms without the dummy connection, immediately with it).
+    pub fn stop(&self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        // Make a dummy TCP connection to wake the server out of recv_timeout()
+        // immediately rather than waiting up to 200 ms for the poll to timeout.
+        let _ = std::net::TcpStream::connect(format!("127.0.0.1:{}", self.port));
+    }
+}
+
+impl Drop for MigrationServer {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// Start the migration HTTP server in a named background thread.
+///
+/// Returns a `MigrationServer` handle whose `Drop` impl stops the thread.
+/// The server only serves `/localstorage_migrate.html` — all other paths 404.
+pub fn start_server(config: ServerConfig) -> Result<MigrationServer, crate::error::AppError> {
     let port = portpicker::pick_unused_port()
-        .ok_or_else(|| "No available port found for asset server".to_string())?;
+        .ok_or_else(|| "No available port found for migration server".to_string())?;
+
+    // Explicit 127.0.0.1 avoids the localhost → [::1] resolution on some systems.
+    let server = Server::http(format!("127.0.0.1:{}", port))
+        .map_err(|e| format!("Failed to start migration server on port {}: {}", port, e))?;
+
     let config = Arc::new(config);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_clone = Arc::clone(&shutdown);
 
-    let server = Server::http(format!("localhost:{}", port))
-        .map_err(|e| format!("Failed to start asset server on port {}: {}", port, e))?;
+    std::thread::Builder::new()
+        .name("migration-server".into())
+        .spawn(move || {
+            loop {
+                if shutdown_clone.load(Ordering::Relaxed) {
+                    break;
+                }
+                match server.recv_timeout(std::time::Duration::from_millis(200)) {
+                    Ok(Some(request)) => {
+                        // Handle inline — only one path to serve, it's cheap.
+                        handle_request(request, &config);
+                    }
+                    Ok(None) => {
+                        // Poll timeout — loop back and check shutdown flag.
+                    }
+                    Err(_) => break, // Server closed or I/O error.
+                }
+            }
+            log::debug!("Migration server stopped");
+        })
+        .map_err(|e| format!("Failed to spawn migration server thread: {}", e))?;
 
-    std::thread::spawn(move || {
-        for request in server.incoming_requests() {
-            let config = Arc::clone(&config);
-            std::thread::spawn(move || {
-                handle_request(request, &config);
-            });
-        }
-    });
-
-    Ok(port)
+    Ok(MigrationServer { port, shutdown })
 }
 
 /// Migration-only HTTP request handler.
@@ -766,7 +820,9 @@ mod tests {
     }
 
     /// Create a migration-only test server. Only localstorage_migrate.html exists.
-    fn setup_migration_server() -> (u16, tempfile::TempDir) {
+    /// Returns `(port, TempDir, MigrationServer)` — keep all three alive for the test
+    /// duration. Dropping `MigrationServer` stops the server thread cleanly.
+    fn setup_migration_server() -> (u16, tempfile::TempDir, MigrationServer) {
         let dir = tempfile::tempdir().unwrap();
         // Only the migration bridge page should be served
         std::fs::write(
@@ -780,9 +836,10 @@ mod tests {
         std::fs::write(js_dir.join("test.js"), "// js").unwrap();
 
         let config = test_config(dir.path());
-        let port = start_server(config).expect("test: failed to start server");
+        let ms = start_server(config).expect("test: failed to start server");
         std::thread::sleep(std::time::Duration::from_millis(50));
-        (port, dir)
+        let port = ms.port();
+        (port, dir, ms)
     }
 
     // =================================================================
@@ -791,7 +848,7 @@ mod tests {
 
     #[test]
     fn test_migration_server_serves_migrate_html() {
-        let (port, _dir) = setup_migration_server();
+        let (port, _dir, _ms) = setup_migration_server();
         let (status, headers, body) = http_get(port, "/localstorage_migrate.html");
         assert_eq!(status, 200);
         assert!(String::from_utf8_lossy(&body).contains("migration"));
@@ -801,7 +858,7 @@ mod tests {
 
     #[test]
     fn test_migration_server_strips_query_string() {
-        let (port, _dir) = setup_migration_server();
+        let (port, _dir, _ms) = setup_migration_server();
         let (status, _, body) = http_get(port, "/localstorage_migrate.html?id=abc123");
         assert_eq!(status, 200);
         assert!(String::from_utf8_lossy(&body).contains("migration"));
@@ -809,37 +866,97 @@ mod tests {
 
     #[test]
     fn test_migration_server_rejects_player_html() {
-        let (port, _dir) = setup_migration_server();
+        let (port, _dir, _ms) = setup_migration_server();
         let (status, _, _) = http_get(port, "/player.html");
         assert_eq!(status, 404);
     }
 
     #[test]
     fn test_migration_server_rejects_root() {
-        let (port, _dir) = setup_migration_server();
+        let (port, _dir, _ms) = setup_migration_server();
         let (status, _, _) = http_get(port, "/");
         assert_eq!(status, 404);
     }
 
     #[test]
     fn test_migration_server_rejects_js() {
-        let (port, _dir) = setup_migration_server();
+        let (port, _dir, _ms) = setup_migration_server();
         let (status, _, _) = http_get(port, "/Javascript/test.js");
         assert_eq!(status, 404);
     }
 
     #[test]
     fn test_migration_server_rejects_case_assets() {
-        let (port, _dir) = setup_migration_server();
+        let (port, _dir, _ms) = setup_migration_server();
         let (status, _, _) = http_get(port, "/case/123/trial_data.json");
         assert_eq!(status, 404);
     }
 
     #[test]
     fn test_migration_server_rejects_defaults() {
-        let (port, _dir) = setup_migration_server();
+        let (port, _dir, _ms) = setup_migration_server();
         let (status, _, _) = http_get(port, "/defaults/images/chars/Apollo/1.gif");
         assert_eq!(status, 404);
+    }
+
+    /// Regression: MigrationServer::port() returns the port it is listening on.
+    #[test]
+    fn test_migration_server_port_matches() {
+        let (port, _dir, ms) = setup_migration_server();
+        assert_eq!(ms.port(), port);
+        assert!(port > 0);
+    }
+
+    /// Regression: stop() causes the server to stop accepting new connections.
+    ///
+    /// After stop(), a fresh TCP connect to the server port must fail (connection
+    /// refused), verifying the thread has exited and the port is released.
+    #[test]
+    fn test_migration_server_stop_releases_port() {
+        let (port, _dir, ms) = setup_migration_server();
+        // Sanity-check: server is accepting before stop()
+        let (status, _, _) = http_get(port, "/localstorage_migrate.html");
+        assert_eq!(status, 200, "Server must be reachable before stop()");
+
+        ms.stop();
+        // Give the thread up to 500 ms to exit
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        let mut stopped = false;
+        while std::time::Instant::now() < deadline {
+            if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
+                stopped = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(stopped, "Server must stop accepting connections after stop()");
+    }
+
+    /// Regression: Drop calls stop() — no thread leak when MigrationServer is dropped.
+    ///
+    /// Verify the port is released after the handle goes out of scope.
+    #[test]
+    fn test_migration_server_drop_stops_server() {
+        let (port, _dir) = {
+            let (port, dir, ms) = setup_migration_server();
+            // Sanity-check: server is reachable inside scope
+            let (status, _, _) = http_get(port, "/localstorage_migrate.html");
+            assert_eq!(status, 200, "Server must be reachable before drop");
+            let _ = ms; // explicit binding to make drop point clear
+            (port, dir)
+            // ms is dropped here → Drop calls stop()
+        };
+        // Give the thread up to 500 ms to exit
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        let mut stopped = false;
+        while std::time::Instant::now() < deadline {
+            if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
+                stopped = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(stopped, "Server must stop when MigrationServer is dropped");
     }
 
     /// Test with the REAL engine directory to detect path issues.

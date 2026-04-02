@@ -13,7 +13,12 @@ include!(concat!(env!("OUT_DIR"), "/engine_embed.rs"));
 /// Immutable app state — set once during setup, never changes.
 /// No lock needed. Tauri wraps managed state in Arc automatically.
 pub(crate) struct AppPaths {
+    /// Port the migration server is listening on, or 0 if it was not started
+    /// (migration already complete). Used by `get_migration_server_url`.
     pub(crate) server_port: u16,
+    /// Migration server handle. `None` when `migration_complete = true`.
+    /// Dropping this field (on app exit) calls `MigrationServer::stop()` automatically.
+    pub(crate) migration_server: Option<crate::server::MigrationServer>,
     /// Static engine files (JS, CSS, HTML, img, Languages). Read-only on mobile.
     pub(crate) engine_dir: PathBuf,
     /// Writable data directory (case/, defaults/, config.json).

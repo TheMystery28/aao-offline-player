@@ -51,21 +51,53 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .register_asynchronous_uri_scheme_protocol("aao", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
-            std::thread::spawn(move || {
+            // Extract owned strings before the async move — spawn_blocking requires 'static.
+            let url_path = request.uri().path().to_owned();
+            let method = request.method().as_str().to_owned();
+            let range = request
+                .headers()
+                .get("range")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_owned());
+
+            tauri::async_runtime::spawn(async move {
                 let paths = app.state::<AppPaths>();
                 let config = server::ServerConfig {
                     engine_dir: paths.engine_dir.clone(),
                     data_dir: paths.data_dir.clone(),
                 };
 
-                let method = request.method().as_str();
-                let url_path = request.uri().path();
-                let range = request
-                    .headers()
-                    .get("range")
-                    .and_then(|v| v.to_str().ok());
+                let url_path_log = url_path.clone();
 
-                let result = server::serve_file(&config, url_path, method, range);
+                // serve_file does blocking disk I/O — delegate to the blocking thread pool.
+                let timeout_result = tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    tokio::task::spawn_blocking(move || {
+                        server::serve_file(&config, &url_path, &method, range.as_deref())
+                    }),
+                )
+                .await;
+
+                let result = match timeout_result {
+                    Ok(Ok(serve_res)) => serve_res,
+                    Ok(Err(e)) => {
+                        log::error!("File serving task panicked: {:?}", e);
+                        server::ServeResult {
+                            status: 500,
+                            headers: vec![],
+                            data: b"Internal server error".to_vec(),
+                        }
+                    }
+                    Err(_elapsed) => {
+                        log::warn!("File serving request timed out for path: {}", url_path_log);
+                        server::ServeResult {
+                            status: 504,
+                            headers: vec![],
+                            data: b"Request timeout".to_vec(),
+                        }
+                    }
+                };
+
                 responder.respond(server::serve_result_to_response(result));
             });
         })
@@ -137,19 +169,34 @@ pub fn run() {
             let app_config = config::load_config(&data_dir);
             log::info!("Loaded config: {:?}", app_config);
 
-            // Start the custom asset server
-            let port = server::start_server(server::ServerConfig {
-                engine_dir: engine_dir.clone(),
-                data_dir: data_dir.clone(),
-            }).map_err(|e| format!("Asset server failed: {}", e))?;
+            // Start the migration server only when needed.
+            // Once migration_complete = true the server is pure overhead — skip it.
+            let migration_server = if app_config.migration_complete {
+                log::debug!("Migration already complete — skipping tiny_http server startup");
+                None
+            } else {
+                match server::start_server(server::ServerConfig {
+                    engine_dir: engine_dir.clone(),
+                    data_dir: data_dir.clone(),
+                }) {
+                    Ok(ms) => {
+                        log::info!("Migration server started on port {}", ms.port());
+                        // Write port file so the JS migration script can find the server URL.
+                        let port_file = data_dir.join(".server_port");
+                        let _ = fs::write(&port_file, ms.port().to_string());
+                        Some(ms)
+                    }
+                    Err(e) => {
+                        log::warn!("Migration server failed to start: {} — migration will be skipped", e);
+                        None
+                    }
+                }
+            };
 
-            log::info!("Asset server started on port {}", port);
+            let server_port = migration_server.as_ref().map_or(0, |ms| ms.port());
+
             log::info!("Engine directory: {}", engine_dir.display());
             log::info!("Data directory: {}", data_dir.display());
-
-            // Write port file so external scripts (e.g. test runner) can find the server
-            let port_file = data_dir.join(".server_port");
-            let _ = fs::write(&port_file, port.to_string());
 
             // Shared HTTP client — reuses connection pool across all download commands
             let http_client = reqwest::Client::builder()
@@ -160,7 +207,8 @@ pub fn run() {
 
             // Store immutable paths (no lock needed — Tauri wraps in Arc)
             app.manage(AppPaths {
-                server_port: port,
+                server_port,
+                migration_server,
                 engine_dir,
                 data_dir,
                 cancel_flag: Arc::new(AtomicBool::new(false)),
