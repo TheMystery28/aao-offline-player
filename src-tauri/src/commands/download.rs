@@ -12,7 +12,7 @@ use crate::error::AppError;
 #[tauri::command]
 pub fn cancel_download(paths: State<'_, AppPaths>) -> Result<(), AppError> {
     paths.cancel_flag.store(true, Ordering::Relaxed);
-    debug_log!("Download cancellation requested");
+    log::debug!("Download cancellation requested");
     Ok(())
 }
 
@@ -60,7 +60,7 @@ pub async fn download_sequence(
         // Check if already downloaded
         let case_dir = data_dir.join("case").join(case_id.to_string());
         if case_dir.join("manifest.json").exists() {
-            debug_log!("Sequence: part {}/{} (case {}) already downloaded, skipping", idx + 1, total_parts, case_id);
+            log::debug!("Sequence: part {}/{} (case {}) already downloaded, skipping", idx + 1, total_parts, case_id);
             match downloader::manifest::read_manifest(&case_dir) {
                 Ok(manifest) => {
                     let _ = on_event.send(DownloadEvent::SequenceProgress {
@@ -164,7 +164,7 @@ pub async fn retry_failed_assets(
         return Ok(manifest);
     }
 
-    debug_log!("Retrying {} failed assets for case {}", manifest.failed_assets.len(), case_id);
+    log::info!("Retrying {} failed assets for case {}", manifest.failed_assets.len(), case_id);
 
     // Convert failed assets back to AssetRef for re-download
     let assets_to_retry: Vec<downloader::AssetRef> = manifest
@@ -189,7 +189,7 @@ pub async fn retry_failed_assets(
         let before = assets_to_retry.len();
         assets_to_retry.retain(|a| !a.url.starts_with(downloader::AAONLINE_BASE));
         let skipped = before - assets_to_retry.len();
-        debug_log!("aaonline.fr is unreachable — skipped {} aaonline assets", skipped);
+        log::warn!("aaonline.fr is unreachable — skipped {} aaonline assets", skipped);
         if assets_to_retry.is_empty() {
             return Err("aaonline.fr is currently unreachable. Please try again later.".to_string().into());
         }
@@ -245,7 +245,7 @@ pub async fn retry_failed_assets(
     // Save updated manifest
     downloader::manifest::write_manifest(&manifest, &case_dir)?;
 
-    debug_log!(
+    log::info!(
         "Retry complete: {} newly downloaded, {} still failed",
         result.downloaded.len(),
         manifest.failed_assets.len()
@@ -281,11 +281,11 @@ pub async fn update_case(
     let old_manifest = downloader::manifest::read_manifest(&case_dir)?;
 
     // 1. Fetch site paths
-    debug_log!("Update: fetching site paths...");
+    log::debug!("Update: fetching site paths...");
     let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
 
     // 2. Fetch case data
-    debug_log!("Update: fetching case {} data...", case_id);
+    log::debug!("Update: fetching case {} data...", case_id);
     let (case_info, trial_data, info_json, data_json) =
         downloader::case_fetcher::fetch_case(&client, case_id).await?;
 
@@ -334,7 +334,7 @@ pub async fn update_case(
         new_assets
     };
 
-    debug_log!(
+    log::debug!(
         "Update (redownload_assets={}): {} total extracted, downloading {}",
         redownload_assets,
         total_assets,
@@ -417,7 +417,7 @@ pub async fn update_case(
     };
     downloader::manifest::write_manifest(&manifest, &case_dir)?;
 
-    debug_log!(
+    log::info!(
         "Update complete: {} new downloads, {} failed",
         result.downloaded.len(),
         manifest.failed_assets.len()

@@ -84,7 +84,7 @@ pub async fn export_case(
         dedup_saved_bytes: 0,
     });
 
-    debug_log!(
+    log::info!(
         "Exported case {} to {} ({} bytes)",
         case_id,
         dest_path,

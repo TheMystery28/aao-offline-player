@@ -5,15 +5,6 @@ use std::sync::atomic::AtomicBool;
 
 use crate::config;
 
-/// Print only in debug builds.
-macro_rules! debug_log {
-    ($($arg:tt)*) => {
-        if cfg!(debug_assertions) {
-            println!($($arg)*);
-        }
-    };
-}
-
 // Engine files embedded at compile time by build.rs via include_bytes!.
 // Used on Android to extract engine files to the writable filesystem.
 // This bypasses Tauri's fs plugin which corrupts binary data on Android.
@@ -45,7 +36,7 @@ pub(crate) struct MutableConfig(pub(crate) Mutex<config::AppConfig>);
 /// when reading from APK assets on Android. The embedded data is byte-identical
 /// to the original files from the build machine.
 pub(crate) fn extract_engine_files(dest: &std::path::Path) -> Result<(), crate::error::AppError> {
-    debug_log!(
+    log::info!(
         "Extracting {} engine files to {}...",
         EMBEDDED_ENGINE_FILES.len(),
         dest.display()
@@ -61,6 +52,6 @@ pub(crate) fn extract_engine_files(dest: &std::path::Path) -> Result<(), crate::
             .map_err(|e| format!("Failed to write '{}': {}", name, e))?;
     }
 
-    debug_log!("Engine files extracted successfully");
+    log::info!("Engine files extracted successfully");
     Ok(())
 }

@@ -35,7 +35,7 @@ pub fn list_cases(
             match downloader::manifest::read_manifest(&path) {
                 Ok(manifest) => cases.push(manifest),
                 Err(e) => {
-                    debug_log!("Warning: skipping {}: {}", path.display(), e);
+                    log::warn!("Skipping {}: {}", path.display(), e);
                 }
             }
         }
@@ -64,7 +64,7 @@ pub fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(), AppEr
     fs::remove_dir_all(&case_dir)
         .map_err(|e| format!("Failed to delete case {}: {}", case_id, e))?;
 
-    debug_log!("Deleted case {} at {}", case_id, case_dir.display());
+    log::info!("Deleted case {} at {}", case_id, case_dir.display());
 
     // Auto-clean unused shared defaults
     let _ = downloader::dedup::clear_unused_defaults(data_dir);

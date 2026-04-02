@@ -28,7 +28,7 @@ pub async fn import_case(
     // Copy the file to a temp location using Tauri's fs plugin (handles content URIs).
     let (path, _temp_file) = if source_path.starts_with("content://") {
         use tauri_plugin_fs::FsExt;
-        debug_log!("Android content URI detected: {}", source_path);
+        log::debug!("Android content URI detected: {}", source_path);
 
         let _ = on_event.send(DownloadEvent::Started { total: 1 });
         let _ = on_event.send(DownloadEvent::Progress {
@@ -47,7 +47,7 @@ pub async fn import_case(
         fs::write(&temp_path, &content)
             .map_err(|e| format!("Failed to write temp import file: {}", e))?;
 
-        debug_log!("Copied {} bytes from content URI to {}", content.len(), temp_path.display());
+        log::debug!("Copied {} bytes from content URI to {}", content.len(), temp_path.display());
         (temp_path.clone(), Some(temp_path)) // _temp_file keeps the path for cleanup
     } else {
         let p = PathBuf::from(&source_path);
@@ -133,7 +133,7 @@ pub async fn import_case(
         dedup_saved_bytes: import_result.dedup_saved_bytes,
     });
 
-    debug_log!(
+    log::info!(
         "Imported case {} \"{}\" ({} assets, {} bytes{})",
         import_result.manifest.case_id,
         import_result.manifest.title,

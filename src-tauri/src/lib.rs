@@ -21,6 +21,29 @@ use app_state::{AppPaths, MutableConfig};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin({
+            let builder = tauri_plugin_log::Builder::new();
+            #[cfg(debug_assertions)]
+            let builder = builder
+                .level(log::LevelFilter::Debug)
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ));
+            #[cfg(not(debug_assertions))]
+            let builder = builder
+                .level(log::LevelFilter::Info)
+                .level_for("reqwest", log::LevelFilter::Warn)
+                .level_for("tauri", log::LevelFilter::Warn)
+                .level_for("tao", log::LevelFilter::Warn)
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("aao-offline-player".to_string()),
+                    },
+                ))
+                .max_file_size(5 * 1024 * 1024)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne);
+            builder.build()
+        })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_fs::init())
@@ -112,7 +135,7 @@ pub fn run() {
 
             // Load user config from writable data dir
             let app_config = config::load_config(&data_dir);
-            debug_log!("Loaded config: {:?}", app_config);
+            log::info!("Loaded config: {:?}", app_config);
 
             // Start the custom asset server
             let port = server::start_server(server::ServerConfig {
@@ -120,9 +143,9 @@ pub fn run() {
                 data_dir: data_dir.clone(),
             }).map_err(|e| format!("Asset server failed: {}", e))?;
 
-            debug_log!("Asset server started on http://localhost:{}", port);
-            debug_log!("Engine directory: {}", engine_dir.display());
-            debug_log!("Data directory: {}", data_dir.display());
+            log::info!("Asset server started on port {}", port);
+            log::info!("Engine directory: {}", engine_dir.display());
+            log::info!("Data directory: {}", data_dir.display());
 
             // Write port file so external scripts (e.g. test runner) can find the server
             let port_file = data_dir.join(".server_port");

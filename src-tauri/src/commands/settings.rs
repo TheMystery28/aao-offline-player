@@ -42,7 +42,7 @@ pub fn get_storage_info(paths: State<'_, AppPaths>) -> Result<config::StorageInf
 pub async fn clear_unused_defaults(paths: State<'_, AppPaths>) -> Result<serde_json::Value, AppError> {
     let data_dir = &paths.data_dir;
     let (deleted, bytes_freed) = downloader::dedup::clear_unused_defaults(data_dir)?;
-    debug_log!(
+    log::info!(
         "Cleared {} unused default assets ({} bytes freed)",
         deleted, bytes_freed
     );
@@ -72,7 +72,7 @@ pub async fn optimize_storage(
             });
         }),
     )?;
-    debug_log!("Optimize storage: {} files deduplicated, {} bytes saved", deduped, bytes_saved);
+    log::info!("Optimize storage: {} files deduplicated, {} bytes saved", deduped, bytes_saved);
     Ok(serde_json::json!({
         "deduped": deduped,
         "bytes_saved": bytes_saved
@@ -109,7 +109,7 @@ pub fn open_data_dir(paths: State<'_, AppPaths>) -> Result<(), AppError> {
     {
         // Android has no system file explorer for app-internal storage.
         // Return the path so the frontend can display it to the user.
-        debug_log!("Data directory (Android): {}", path_str);
+        log::debug!("Data directory (Android): {}", path_str);
     }
     Ok(())
 }
