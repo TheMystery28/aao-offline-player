@@ -1,7 +1,38 @@
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 use crate::error::AppError;
+
+static PARAMS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"params\s*:\s*\{").expect("PARAMS_RE pattern is valid")
+});
+
+static COMMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"//[^\n]*").expect("COMMENT_RE pattern is valid")
+});
+
+static BLOCK_COMMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)/\*.*?\*/").expect("BLOCK_COMMENT_RE pattern is valid")
+});
+
+static SINGLE_QUOTE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"'([^']*)'").expect("SINGLE_QUOTE_RE pattern is valid")
+});
+
+static FUNC_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"function\s*\([^)]*\)\s*\{[^}]*\}").expect("FUNC_RE pattern is valid")
+});
+
+static KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?m)([{,]\s*)"?(\w+)"?\s*:"#).expect("KEY_RE pattern is valid")
+});
+
+static TRAILING_COMMA_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r",\s*([}\]])").expect("TRAILING_COMMA_RE pattern is valid")
+});
 
 // Cross-module calls (remove_plugin, migrate_global_manifest, etc.)
 use super::*;
@@ -13,8 +44,7 @@ use super::shared::{DuplicateMatch, add_dir_to_zip_recursive};
 /// Returns None if parsing fails (graceful fallback).
 pub fn extract_plugin_descriptors(code: &str) -> Option<serde_json::Value> {
     // Find the params section inside EnginePlugins.register({...})
-    let params_re = regex::Regex::new(r"params\s*:\s*\{").ok()?;
-    let params_match = params_re.find(code)?;
+    let params_match = PARAMS_RE.find(code)?;
     let start = params_match.end() - 1; // position of the opening {
 
     // Extract the balanced brace content
@@ -40,29 +70,23 @@ pub fn extract_plugin_descriptors(code: &str) -> Option<serde_json::Value> {
 
     // Convert JS object literal to valid JSON:
     // 1. Remove single-line comments
-    let comment_re = regex::Regex::new(r"//[^\n]*").ok()?;
-    let no_line_comments = comment_re.replace_all(raw_js, "");
+    let no_line_comments = COMMENT_RE.replace_all(raw_js, "");
 
     // 2. Remove block comments (/* ... */)
-    let block_comment_re = regex::Regex::new(r"(?s)/\*.*?\*/").ok()?;
-    let no_comments = block_comment_re.replace_all(&no_line_comments, "");
+    let no_comments = BLOCK_COMMENT_RE.replace_all(&no_line_comments, "");
 
     // 3. Convert single-quoted strings to double-quoted
-    let single_re = regex::Regex::new(r"'([^']*)'").ok()?;
-    let double_quoted = single_re.replace_all(&no_comments, r#""$1""#);
+    let double_quoted = SINGLE_QUOTE_RE.replace_all(&no_comments, r#""$1""#);
 
     // 4. Strip function(...){...} values (replace with null)
-    let func_re = regex::Regex::new(r"function\s*\([^)]*\)\s*\{[^}]*\}").ok()?;
-    let no_funcs = func_re.replace_all(&double_quoted, "null");
+    let no_funcs = FUNC_RE.replace_all(&double_quoted, "null");
 
     // 5. Quote unquoted keys (skip already-quoted keys)
     // Rust regex doesn't support lookahead, so we match all keys and check manually
-    let key_re = regex::Regex::new(r#"(?m)([{,]\s*)"?(\w+)"?\s*:"#).ok()?;
-    let quoted = key_re.replace_all(&no_funcs, r#"$1"$2":"#);
+    let quoted = KEY_RE.replace_all(&no_funcs, r#"$1"$2":"#);
 
     // 6. Remove trailing commas before } or ]
-    let trailing_re = regex::Regex::new(r",\s*([}\]])").ok()?;
-    let cleaned = trailing_re.replace_all(&quoted, "$1");
+    let cleaned = TRAILING_COMMA_RE.replace_all(&quoted, "$1");
 
     // Try to parse
     serde_json::from_str(&cleaned).ok()

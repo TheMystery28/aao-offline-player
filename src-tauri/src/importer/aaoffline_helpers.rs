@@ -1,11 +1,34 @@
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use regex::Regex;
 use serde_json::Value;
 
 use crate::error::AppError;
 use super::shared::ImportedCaseInfo;
+
+static SPRITE_MAPPING_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"if\s*\(base\s*===\s*'([^']+)'\s*&&\s*sprite_id\s*===\s*(\d+)\s*&&\s*status\s*===\s*'([^']+)'\)\s*return\s*'([^']+)'"
+    ).expect("SPRITE_MAPPING_RE pattern is valid")
+});
+
+static VOICE_MAPPING_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"if\s*\(-voice_id\s*===\s*(\d+)\s*&&\s*ext\s*===\s*'([^']+)'\)\s*return\s*'([^']+)'"
+    ).expect("VOICE_MAPPING_RE pattern is valid")
+});
+
+static PLACE_IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""image"\s*:\s*"(assets/([^"]+))"#)
+        .expect("PLACE_IMAGE_RE pattern is valid")
+});
+
+static TRIAL_INFO_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"var\s+trial_information\s*=\s*(\{[^;]*\})\s*;")
+        .expect("TRIAL_INFO_RE pattern is valid")
+});
 
 /// Check if a destination asset file truly exists — follows VFS pointers.
 /// Returns true if the file is a real asset or a VFS pointer with a valid target.
@@ -37,11 +60,7 @@ pub(super) struct DefaultSpriteMapping {
 /// if (base === 'Phoenix' && sprite_id === 1 && status === 'talking') return 'assets/1-xxx.gif';
 /// ```
 pub(super) fn extract_default_sprite_mappings(html: &str) -> Vec<DefaultSpriteMapping> {
-    let re = Regex::new(
-        r"if\s*\(base\s*===\s*'([^']+)'\s*&&\s*sprite_id\s*===\s*(\d+)\s*&&\s*status\s*===\s*'([^']+)'\)\s*return\s*'([^']+)'"
-    ).unwrap();
-
-    re.captures_iter(html)
+    SPRITE_MAPPING_RE.captures_iter(html)
         .map(|cap| DefaultSpriteMapping {
             base: cap[1].to_string(),
             sprite_id: cap[2].parse().unwrap_or(0),
@@ -166,11 +185,7 @@ pub(super) struct VoiceMapping {
 /// Parse the overridden `getVoiceUrl` from an aaoffline index.html.
 /// Format: `if (-voice_id === 1 && ext === 'opus') return 'assets/voice_singleblip_1-xxx.opus';`
 pub(super) fn extract_voice_mappings(html: &str) -> Vec<VoiceMapping> {
-    let re = Regex::new(
-        r"if\s*\(-voice_id\s*===\s*(\d+)\s*&&\s*ext\s*===\s*'([^']+)'\)\s*return\s*'([^']+)'"
-    ).unwrap();
-
-    re.captures_iter(html)
+    VOICE_MAPPING_RE.captures_iter(html)
         .map(|cap| VoiceMapping {
             voice_id: cap[1].parse().unwrap_or(0),
             ext: cap[2].to_string(),
@@ -214,12 +229,7 @@ pub(super) struct PlaceAssetMapping {
 pub(super) fn extract_default_place_mappings(html: &str) -> Vec<PlaceAssetMapping> {
     let mut mappings = Vec::new();
 
-    // Find all "image":"assets/..." references in the default_places JSON
-    let re = Regex::new(
-        r#""image"\s*:\s*"(assets/([^"]+))"#
-    ).unwrap();
-
-    for cap in re.captures_iter(html) {
+    for cap in PLACE_IMAGE_RE.captures_iter(html) {
         let asset_path = cap[1].to_string(); // "assets/aj_courtroom-123.jpg"
         let filename_with_hash = &cap[2];     // "aj_courtroom-123.jpg"
 
@@ -288,10 +298,7 @@ pub(super) fn copy_place_assets(mappings: &[PlaceAssetMapping], source_dir: &Pat
 /// Read a text file from inside a ZIP archive.
 /// Extract `var trial_information = {...};` from the HTML.
 pub(super) fn extract_trial_information(html: &str) -> Result<ImportedCaseInfo, AppError> {
-    let re = Regex::new(r"var\s+trial_information\s*=\s*(\{[^;]*\})\s*;")
-        .map_err(|e| format!("Regex error: {}", e))?;
-
-    let caps = re
+    let caps = TRIAL_INFO_RE
         .captures(html)
         .ok_or_else(|| AppError::Other("Could not find 'var trial_information = {...}' in index.html. Is this an aaoffline download?".to_string()))?;
 

@@ -1,6 +1,9 @@
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::LazyLock;
+
+use regex::Regex;
+use serde_json::Value;
 
 use super::super::{AssetRef, SitePaths};
 use super::helpers::*;
@@ -133,6 +136,12 @@ pub fn extract_default_sprite_assets(
     assets
 }
 
+/// Pre-compiled regex for default place asset paths in default_data.js.
+static DEFAULT_PLACES_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"defaults/images/defaultplaces/(backgrounds|foreground_objects)/([^"]+)"#)
+        .expect("DEFAULT_PLACES_PATH_RE pattern is valid")
+});
+
 /// Extract default place assets (backgrounds and foreground objects) from `default_data.js`.
 ///
 /// Default places (courtrooms, lobbies, detention centers, etc.) are built-in to the player
@@ -155,14 +164,10 @@ pub fn extract_default_place_assets(
     // Extract all image paths from the default_places variable.
     // Paths look like: defaults/images/defaultplaces/backgrounds/pw_courtroom.jpg
     //             or:  defaults/images/defaultplaces/foreground_objects/pw_courtroom_benches.gif
-    let re = regex::Regex::new(
-        r#"defaults/images/defaultplaces/(backgrounds|foreground_objects)/([^"]+)"#,
-    ).unwrap();
-
     let dp_server_bg = format!("{}backgrounds/", site_paths.defaultplaces_path());
     let dp_server_fg = format!("{}foreground_objects/", site_paths.defaultplaces_path());
 
-    for cap in re.captures_iter(&content) {
+    for cap in DEFAULT_PLACES_PATH_RE.captures_iter(&content) {
         let category = &cap[1]; // "backgrounds" or "foreground_objects"
         let filename = &cap[2]; // e.g., "pw_courtroom.jpg"
 

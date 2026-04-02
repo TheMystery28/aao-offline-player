@@ -325,6 +325,67 @@ return 'data:image/gif;base64,'
 }
 
 #[test]
+fn test_extract_voice_mappings() {
+    let html = r#"
+function getVoiceUrl(voice_id, ext) {
+if (-voice_id === 1 && ext === 'opus') return 'assets/voice_singleblip_1-abc123.opus';
+if (-voice_id === 2 && ext === 'wav') return 'assets/voice_singleblip_2-def456.wav';
+if (-voice_id === 3 && ext === 'mp3') return 'assets/voice_singleblip_3-ghi789.mp3';
+return null;
+}
+"#;
+    let mappings = extract_voice_mappings(html);
+    assert_eq!(mappings.len(), 3);
+
+    assert_eq!(mappings[0].voice_id, 1);
+    assert_eq!(mappings[0].ext, "opus");
+    assert_eq!(mappings[0].asset_path, "assets/voice_singleblip_1-abc123.opus");
+
+    assert_eq!(mappings[1].voice_id, 2);
+    assert_eq!(mappings[1].ext, "wav");
+    assert_eq!(mappings[1].asset_path, "assets/voice_singleblip_2-def456.wav");
+
+    assert_eq!(mappings[2].voice_id, 3);
+    assert_eq!(mappings[2].ext, "mp3");
+}
+
+#[test]
+fn test_extract_voice_mappings_empty() {
+    let mappings = extract_voice_mappings("no matching patterns here");
+    assert!(mappings.is_empty());
+}
+
+#[test]
+fn test_extract_default_place_mappings() {
+    let html = r#"
+var default_places = [
+  { "id": -1, "image": "assets/aj_courtroom-16637394819900123171.jpg" },
+  { "id": -2, "image": "assets/aj_courtroom_benches-98765432101234567.gif" },
+  { "id": -3, "image": "Ressources/Images/default.jpg" }
+];
+"#;
+    let mappings = extract_default_place_mappings(html);
+    // Only assets/ paths are extracted, not Ressources/ paths
+    assert_eq!(mappings.len(), 2);
+
+    // Background (no _benches/_glass/_bench-/detention_center gif)
+    assert_eq!(mappings[0].asset_path, "assets/aj_courtroom-16637394819900123171.jpg");
+    assert!(mappings[0].dest_path.contains("backgrounds"));
+    assert!(mappings[0].dest_path.contains("aj_courtroom.jpg"));
+
+    // Foreground (_benches suffix)
+    assert_eq!(mappings[1].asset_path, "assets/aj_courtroom_benches-98765432101234567.gif");
+    assert!(mappings[1].dest_path.contains("foreground_objects"));
+    assert!(mappings[1].dest_path.contains("aj_courtroom_benches.gif"));
+}
+
+#[test]
+fn test_extract_default_place_mappings_empty() {
+    let mappings = extract_default_place_mappings("no image paths here");
+    assert!(mappings.is_empty());
+}
+
+#[test]
 fn test_copy_default_sprites() {
     let source = tempfile::tempdir().unwrap();
     let engine = tempfile::tempdir().unwrap();

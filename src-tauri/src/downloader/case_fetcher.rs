@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
@@ -87,13 +89,15 @@ fn extract_json_parse_arg(text: &str, var_name: &str) -> Option<String> {
     Some(unescape_js_string(raw))
 }
 
+/// Pre-compiled regex for parsing the `var cfg = {...}` block in bridge.js.php.
+static CFG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)var cfg = (\{.+?\});").expect("CFG_REGEX pattern is valid")
+});
+
 /// Parse bridge.js.php response text into SitePaths.
 /// Extracted for testability — the HTTP fetch is separate.
 pub(crate) fn parse_bridge_js_response(text: &str) -> Result<SitePaths, DownloaderError> {
-    let re = Regex::new(r"(?s)var cfg = (\{.+?\});")
-        .map_err(|e| DownloaderError::Other(format!("Regex error: {}", e)))?;
-
-    let captures = re
+    let captures = CFG_REGEX
         .captures(text)
         .ok_or_else(|| DownloaderError::Other("Could not find cfg variable in bridge.js.php".to_string()))?;
 

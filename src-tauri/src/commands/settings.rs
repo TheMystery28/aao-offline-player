@@ -1,5 +1,6 @@
 use tauri::ipc::Channel;
 use tauri::State;
+use tauri_plugin_opener::OpenerExt;
 
 use crate::app_state::{AppPaths, MutableConfig};
 use crate::config;
@@ -81,35 +82,16 @@ pub async fn optimize_storage(
 
 /// Open the data directory in the system file explorer.
 #[tauri::command]
-pub fn open_data_dir(paths: State<'_, AppPaths>) -> Result<(), AppError> {
-    let data_dir = &paths.data_dir;
-    let path_str = data_dir.to_string_lossy().to_string();
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(&path_str)
-            .spawn()
-            .map_err(|e| format!("Failed to open directory: {}", e))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&path_str)
-            .spawn()
-            .map_err(|e| format!("Failed to open directory: {}", e))?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&path_str)
-            .spawn()
-            .map_err(|e| format!("Failed to open directory: {}", e))?;
-    }
+pub fn open_data_dir(
+    paths: State<'_, AppPaths>,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    let path_str = paths.data_dir.to_string_lossy();
+    #[cfg(not(target_os = "android"))]
+    app.opener()
+        .open_path(&*path_str, None::<&str>)
+        .map_err(|e| format!("Failed to open directory: {}", e))?;
     #[cfg(target_os = "android")]
-    {
-        // Android has no system file explorer for app-internal storage.
-        // Return the path so the frontend can display it to the user.
-        log::debug!("Data directory (Android): {}", path_str);
-    }
+    log::debug!("Data directory (Android): {}", path_str);
     Ok(())
 }
