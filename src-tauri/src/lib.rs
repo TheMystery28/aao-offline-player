@@ -203,7 +203,6 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::save_settings,
             commands::settings::get_storage_info,
-            commands::settings::clear_unused_defaults,
             commands::settings::optimize_storage,
             commands::settings::open_data_dir,
             // dialogs

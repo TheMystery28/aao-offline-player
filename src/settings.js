@@ -16,7 +16,6 @@ export function initSettings(invoke, Channel, statusMsg) {
   const openDataDirBtn = document.getElementById("open-data-dir-btn");
   const storageText = document.getElementById("storage-text");
   const optimizeStorageBtn = document.getElementById("optimize-storage-btn");
-  const clearUnusedBtn = document.getElementById("clear-unused-defaults-btn");
   const progressContainer = document.getElementById("progress-container");
   const progressPhase = document.getElementById("progress-phase");
   const progressBarInner = document.getElementById("progress-bar-inner");
@@ -175,7 +174,7 @@ export function initSettings(invoke, Channel, statusMsg) {
     };
 
     invoke("optimize_storage", { onEvent: onEvent }).then(function (result) {
-      optimizeStorageBtn.textContent = "Optimize Storage";
+      optimizeStorageBtn.textContent = "Optimize & Fix";
       optimizeStorageBtn.disabled = false;
       removeSpoilerBlur(progressText);
       progressContainer.classList.add("hidden");
@@ -186,38 +185,12 @@ export function initSettings(invoke, Channel, statusMsg) {
       }
       loadStorageInfo();
     }).catch(function (e) {
-      optimizeStorageBtn.textContent = "Optimize Storage";
+      optimizeStorageBtn.textContent = "Optimize & Fix";
       optimizeStorageBtn.disabled = false;
       progressContainer.classList.add("hidden");
       console.error("[SETTINGS] Failed to optimize storage:", e);
       statusMsg.textContent = "Error optimizing storage: " + e;
     });
-  });
-
-  clearUnusedBtn.addEventListener("click", function () {
-    showConfirmModal(
-      "Remove cached default assets not used by any downloaded case?\n\nThis frees disk space safely. The assets will be re-downloaded if needed later.",
-      "Clear Unused",
-      function () {
-        clearUnusedBtn.disabled = true;
-        clearUnusedBtn.textContent = "Clearing...";
-        invoke("clear_unused_defaults").then(function (result) {
-          clearUnusedBtn.textContent = "Clear Unused";
-          clearUnusedBtn.disabled = false;
-          if (result.deleted > 0) {
-            statusMsg.textContent = "Cleared " + result.deleted + " unused files (" + formatBytes(result.bytes_freed) + " freed).";
-          } else {
-            statusMsg.textContent = "No unused default assets found.";
-          }
-          loadStorageInfo();
-        }).catch(function (e) {
-          clearUnusedBtn.textContent = "Clear Unused";
-          clearUnusedBtn.disabled = false;
-          console.error("[SETTINGS] Failed to clear unused defaults:", e);
-          statusMsg.textContent = "Error clearing unused defaults: " + e;
-        });
-      }
-    );
   });
 
   return {
