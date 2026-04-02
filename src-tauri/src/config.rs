@@ -154,29 +154,6 @@ pub fn compute_storage_info(engine_dir: &Path) -> StorageInfo {
         let shared_dir = defaults_dir.join("shared");
         if shared_dir.exists() {
             shared = dir_size(&shared_dir);
-            // Break down shared by file type
-            fn classify_shared(dir: &std::path::Path, count: &mut usize, images: &mut u64, audio: &mut u64, other: &mut u64) {
-                if let Ok(entries) = std::fs::read_dir(dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.is_dir() {
-                            classify_shared(&path, count, images, audio, other);
-                        } else if path.is_file() {
-                            let size = path.metadata().map(|m| m.len()).unwrap_or(0);
-                            *count += 1;
-                            let ext = path.extension()
-                                .and_then(|e| e.to_str())
-                                .unwrap_or("")
-                                .to_lowercase();
-                            match ext.as_str() {
-                                "gif" | "png" | "jpg" | "jpeg" | "webp" | "bmp" | "svg" => *images += size,
-                                "mp3" | "ogg" | "opus" | "wav" | "m4a" | "flac" | "aac" => *audio += size,
-                                _ => *other += size,
-                            }
-                        }
-                    }
-                }
-            }
             classify_shared(&shared_dir, &mut shared_count, &mut shared_images, &mut shared_audio, &mut shared_other_sub);
         }
         let known = sprites + music + sounds + voices + shared;
@@ -205,6 +182,38 @@ pub fn compute_storage_info(engine_dir: &Path) -> StorageInfo {
         defaults_shared_other_bytes: shared_other_sub,
         defaults_other_bytes: other,
         total_size_bytes: cases_size + defaults_size,
+    }
+}
+
+/// Recursively classify files under `dir` into images, audio, or other size buckets.
+/// Used by [`compute_storage_info`] to break down the shared defaults directory.
+fn classify_shared(
+    dir: &Path,
+    count: &mut usize,
+    images: &mut u64,
+    audio: &mut u64,
+    other: &mut u64,
+) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                classify_shared(&path, count, images, audio, other);
+            } else if path.is_file() {
+                let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+                *count += 1;
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                match ext.as_str() {
+                    "gif" | "png" | "jpg" | "jpeg" | "webp" | "bmp" | "svg" => *images += size,
+                    "mp3" | "ogg" | "opus" | "wav" | "m4a" | "flac" | "aac" => *audio += size,
+                    _ => *other += size,
+                }
+            }
+        }
     }
 }
 
@@ -382,5 +391,138 @@ mod tests {
         save_config(dir.path(), &config).unwrap();
         let loaded = load_config(dir.path());
         assert!(loaded.migration_complete);
+    }
+
+    // --- classify_shared regression tests ---
+    // classify_shared runs only when defaults/shared/ exists.
+    // None of the existing tests create that directory, so these tests
+    // are the first to exercise every branch of the function.
+    // They all go through compute_storage_info so they remain valid
+    // regardless of whether classify_shared is nested or module-level.
+
+    #[test]
+    fn test_classify_shared_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("defaults/shared")).unwrap();
+        let info = compute_storage_info(dir.path());
+        assert_eq!(info.defaults_shared_count, 0);
+        assert_eq!(info.defaults_shared_images_bytes, 0);
+        assert_eq!(info.defaults_shared_audio_bytes, 0);
+        assert_eq!(info.defaults_shared_other_bytes, 0);
+        assert_eq!(info.defaults_shared_bytes, 0);
+    }
+
+    #[test]
+    fn test_classify_shared_images() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("defaults/shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("a.png"), vec![0u8; 100]).unwrap();
+        std::fs::write(shared.join("b.gif"), vec![0u8; 200]).unwrap();
+        std::fs::write(shared.join("c.jpg"), vec![0u8; 300]).unwrap();
+        let info = compute_storage_info(dir.path());
+        assert_eq!(info.defaults_shared_count, 3);
+        assert_eq!(info.defaults_shared_images_bytes, 600);
+        assert_eq!(info.defaults_shared_audio_bytes, 0);
+        assert_eq!(info.defaults_shared_other_bytes, 0);
+    }
+
+    #[test]
+    fn test_classify_shared_audio() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("defaults/shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("track.mp3"), vec![0u8; 400]).unwrap();
+        std::fs::write(shared.join("sound.ogg"), vec![0u8; 500]).unwrap();
+        let info = compute_storage_info(dir.path());
+        assert_eq!(info.defaults_shared_count, 2);
+        assert_eq!(info.defaults_shared_images_bytes, 0);
+        assert_eq!(info.defaults_shared_audio_bytes, 900);
+        assert_eq!(info.defaults_shared_other_bytes, 0);
+    }
+
+    #[test]
+    fn test_classify_shared_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("defaults/shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("data.json"), vec![0u8; 150]).unwrap();
+        let info = compute_storage_info(dir.path());
+        assert_eq!(info.defaults_shared_count, 1);
+        assert_eq!(info.defaults_shared_images_bytes, 0);
+        assert_eq!(info.defaults_shared_audio_bytes, 0);
+        assert_eq!(info.defaults_shared_other_bytes, 150);
+    }
+
+    #[test]
+    fn test_classify_shared_recursive_subdirs() {
+        // classify_shared must recurse into subdirectories and count all files.
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("defaults/shared");
+        let sub = shared.join("chars");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(shared.join("root.png"), vec![0u8; 100]).unwrap();
+        std::fs::write(sub.join("char1.png"), vec![0u8; 200]).unwrap();
+        std::fs::write(sub.join("char2.gif"), vec![0u8; 300]).unwrap();
+        let info = compute_storage_info(dir.path());
+        assert_eq!(info.defaults_shared_count, 3);
+        assert_eq!(info.defaults_shared_images_bytes, 600);
+        assert_eq!(info.defaults_shared_audio_bytes, 0);
+        assert_eq!(info.defaults_shared_other_bytes, 0);
+    }
+
+    #[test]
+    fn test_classify_shared_mixed_types() {
+        // All three categories present at once; totals must match dir_size.
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("defaults/shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("img.png"), vec![0u8; 100]).unwrap();
+        std::fs::write(shared.join("aud.mp3"), vec![0u8; 200]).unwrap();
+        std::fs::write(shared.join("misc.dat"), vec![0u8; 50]).unwrap();
+        let info = compute_storage_info(dir.path());
+        assert_eq!(info.defaults_shared_count, 3);
+        assert_eq!(info.defaults_shared_images_bytes, 100);
+        assert_eq!(info.defaults_shared_audio_bytes, 200);
+        assert_eq!(info.defaults_shared_other_bytes, 50);
+        // The three buckets must sum to the total shared byte count.
+        assert_eq!(
+            info.defaults_shared_bytes,
+            info.defaults_shared_images_bytes
+                + info.defaults_shared_audio_bytes
+                + info.defaults_shared_other_bytes,
+        );
+    }
+
+    #[test]
+    fn test_classify_shared_all_image_extensions() {
+        // Every image extension in the match arm must be classified correctly.
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("defaults/shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        for ext in &["png", "gif", "jpg", "jpeg", "webp", "bmp", "svg"] {
+            std::fs::write(shared.join(format!("f.{ext}")), vec![1u8; 10]).unwrap();
+        }
+        let info = compute_storage_info(dir.path());
+        assert_eq!(info.defaults_shared_count, 7);
+        assert_eq!(info.defaults_shared_images_bytes, 70);
+        assert_eq!(info.defaults_shared_audio_bytes, 0);
+        assert_eq!(info.defaults_shared_other_bytes, 0);
+    }
+
+    #[test]
+    fn test_classify_shared_all_audio_extensions() {
+        // Every audio extension in the match arm must be classified correctly.
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("defaults/shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        for ext in &["mp3", "ogg", "opus", "wav", "m4a", "flac", "aac"] {
+            std::fs::write(shared.join(format!("f.{ext}")), vec![1u8; 10]).unwrap();
+        }
+        let info = compute_storage_info(dir.path());
+        assert_eq!(info.defaults_shared_count, 7);
+        assert_eq!(info.defaults_shared_images_bytes, 0);
+        assert_eq!(info.defaults_shared_audio_bytes, 70);
+        assert_eq!(info.defaults_shared_other_bytes, 0);
     }
 }
