@@ -1,3 +1,9 @@
+//! Logic for fetching case data and site configuration from the AAO website.
+//!
+//! This module handles communicating with the AAO PHP endpoints to retrieve
+//! the `cfg` object (asset paths) and the `trial_information` and
+//! `initial_trial_data` for a specific case.
+
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -202,8 +208,20 @@ pub(crate) fn parse_trial_js_response(text: &str, fallback_id: u32) -> Result<(C
     Ok((case_info, trial_data, info_json, data_json))
 }
 
-/// Fetch case data from trial.js.php on aaonline.fr.
-/// Returns (CaseInfo, trial_data as JSON Value, raw trial_information JSON, raw trial_data JSON).
+/// Fetch case data from `trial.js.php` on `aaonline.fr`.
+///
+/// # Arguments
+///
+/// * `client` - The shared HTTP client.
+/// * `case_id` - The AAO case ID to fetch.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// 1. `CaseInfo`: High-level metadata (title, author, sequence).
+/// 2. `Value`: The full `trial_data` as a JSON object.
+/// 3. `String`: The raw `trial_information` JSON string.
+/// 4. `String`: The raw `trial_data` JSON string.
 pub async fn fetch_case(
     client: &Client,
     case_id: u32,

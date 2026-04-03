@@ -1,7 +1,20 @@
+//! Commands for showing native system dialogs (file/folder pickers).
+//!
+//! These commands wrap `tauri-plugin-dialog` to provide a consistent
+//! interface for picking files and folders across different platforms.
+
 use crate::error::AppError;
 
-/// Open a native folder picker dialog. Returns the selected path or null if cancelled.
-/// On Android, folder picking is not supported — returns an error.
+/// Open a native folder picker dialog.
+///
+/// # Returns
+///
+/// The selected directory path as a string, or `None` if the user cancelled.
+///
+/// # Errors
+///
+/// Returns an error on Android, as folder picking via the SAF is not
+/// currently implemented for this command.
 #[tauri::command]
 pub async fn pick_folder(_app: tauri::AppHandle) -> Result<Option<String>, AppError> {
     #[cfg(not(target_os = "android"))]
@@ -28,10 +41,13 @@ pub async fn pick_folder(_app: tauri::AppHandle) -> Result<Option<String>, AppEr
     }
 }
 
-/// Open a native file picker dialog for .aaocase/.zip files. Returns the selected path or null.
+/// Open a native file picker dialog for AAO-specific files.
 ///
-/// On Android, the dialog returns `content://` URIs instead of filesystem paths.
-/// The import_case command handles both formats.
+/// Filters for `.aaocase`, `.aaoplug`, `.aaosave`, and `.zip` files.
+///
+/// # Returns
+///
+/// The selected file path or content URI (on Android) as a string.
 #[tauri::command]
 pub async fn pick_import_file(app: tauri::AppHandle) -> Result<Option<String>, AppError> {
     use tauri_plugin_dialog::DialogExt;

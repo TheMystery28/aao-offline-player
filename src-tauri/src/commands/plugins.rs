@@ -1,3 +1,8 @@
+//! Commands for managing AAO player plugins.
+//!
+//! Plugins are custom JavaScript files that extend the engine's functionality.
+//! They can be scoped to specific cases, collections, or applied globally.
+
 use std::fs;
 use tauri::State;
 
@@ -5,7 +10,13 @@ use crate::app_state::AppPaths;
 use crate::error::AppError;
 use crate::importer;
 
-/// Import a .aaoplug plugin file with scoped activation.
+/// Import a `.aaoplug` plugin file and associate it with specific cases.
+///
+/// # Arguments
+///
+/// * `source_path` - Path to the `.aaoplug` file.
+/// * `target_case_ids` - List of case IDs this plugin should be active for.
+/// * `origin` - The source of the plugin (e.g., "case", "global").
 #[tauri::command]
 pub async fn import_plugin(
     paths: State<'_, AppPaths>,
@@ -59,7 +70,10 @@ pub async fn attach_global_plugin_code(
     Ok(importer::attach_plugin_code(&code, &filename, &[], &data_dir, &client, "global").await?)
 }
 
-/// List plugins active for a given case.
+/// List all plugins currently active for a specific case.
+///
+/// This includes both case-specific plugins and global plugins that apply
+/// to the given case.
 #[tauri::command]
 pub fn list_plugins(
     paths: State<'_, AppPaths>,
@@ -69,7 +83,10 @@ pub fn list_plugins(
     Ok(importer::list_plugins(case_id, data_dir)?)
 }
 
-/// Remove a plugin's scope for a case. If no scopes remain, deletes the plugin.
+/// Remove a plugin's association with a case.
+///
+/// If no other cases or global scopes use this plugin, the plugin file
+/// and its assets are deleted from disk.
 #[tauri::command]
 pub fn remove_plugin(
     paths: State<'_, AppPaths>,
@@ -92,7 +109,7 @@ pub fn toggle_plugin(
     Ok(importer::toggle_plugin(case_id, &filename, enabled, data_dir)?)
 }
 
-/// List all plugins (global manifest).
+/// List all plugins registered in the global plugin manifest.
 #[tauri::command]
 pub fn list_global_plugins(
     paths: State<'_, AppPaths>,
@@ -101,7 +118,10 @@ pub fn list_global_plugins(
     Ok(importer::list_global_plugins(data_dir)?)
 }
 
-/// Remove a global plugin entirely (removes all scopes + deletes file).
+/// Remove a global plugin and all its associations from the app.
+///
+/// This deletes the plugin file, its assets, and removes it from the
+/// global manifest.
 #[tauri::command]
 pub fn remove_global_plugin(
     paths: State<'_, AppPaths>,

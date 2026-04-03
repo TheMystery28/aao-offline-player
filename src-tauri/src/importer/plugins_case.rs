@@ -1,3 +1,9 @@
+//! Logic for managing AAO player plugins at the case and scope level.
+//!
+//! This module handles importing `.aaoplug` files, attaching raw plugin code,
+//! and managing the activation state (scope) of plugins across cases, 
+//! sequences, and collections.
+
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -48,16 +54,22 @@ pub async fn download_plugin_assets(
     count
 }
 
-/// Import a plugin from a .aaoplug ZIP file.
-/// Extracts to the global `plugins/` folder and sets scope based on origin.
+/// Import a plugin from a `.aaoplug` ZIP file.
 ///
-/// The .aaoplug format:
-/// ```text
-/// manifest.json        Plugin metadata + optional external asset URLs
-/// *.js                 Plugin code files
-/// assets/              Pre-bundled assets (flat folder)
-/// case_config.json     Optional config overrides
-/// ```
+/// Extracts the plugin to the global `plugins/` folder and assigns it
+/// an initial scope based on the provided target case IDs and origin.
+///
+/// # Arguments
+///
+/// * `zip_path` - Path to the `.aaoplug` file.
+/// * `target_case_ids` - Initial cases to enable this plugin for.
+/// * `engine_dir` - App's data directory.
+/// * `client` - Shared HTTP client for downloading external assets.
+/// * `origin` - Source of the plugin (e.g., "case", "global").
+///
+/// # Returns
+///
+/// A list of case IDs where the plugin was successfully enabled.
 pub async fn import_aaoplug(
     zip_path: &Path,
     target_case_ids: &[u32],

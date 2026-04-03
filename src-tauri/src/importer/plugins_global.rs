@@ -1,3 +1,9 @@
+//! Logic for managing AAO player plugins at the global level.
+//!
+//! This module handles the global plugin manifest, migrations from older
+//! plugin systems, and the resolution of which plugins and parameters
+//! apply to a specific case based on cascading overrides.
+
 use std::fs;
 use std::path::Path;
 
@@ -7,7 +13,11 @@ use crate::error::AppError;
 // Cross-module calls (extract_plugin_descriptors, etc.)
 use super::*;
 
-/// List all plugins from {data_dir}/plugins/manifest.json.
+/// Retrieve all globally registered plugins from `manifest.json`.
+///
+/// # Returns
+///
+/// A JSON object containing the `scripts` list and `plugins` configuration.
 pub fn list_global_plugins(engine_dir: &Path) -> Result<serde_json::Value, AppError> {
     let manifest_path = engine_dir.join("plugins").join("manifest.json");
     if !manifest_path.exists() {
@@ -19,11 +29,14 @@ pub fn list_global_plugins(engine_dir: &Path) -> Result<serde_json::Value, AppEr
         .map_err(|e| AppError::Other(format!("Failed to parse global plugin manifest: {}", e)))
 }
 
-/// Toggle a plugin's enabled/disabled state for a specific scope.
+/// Toggle a plugin's activation state for a specific scope.
 ///
-/// scope_type: "case", "sequence", "collection", or "global"
-/// For "global": sets scope.all = enabled
-/// For others: adds/removes from enabled_for, enabled_for_sequences, or enabled_for_collections
+/// # Arguments
+///
+/// * `filename` - The plugin's JS filename.
+/// * `scope_type` - One of "case", "sequence", "collection", or "global".
+/// * `scope_key` - Identifier for the scope (e.g., case ID or sequence title).
+/// * `enabled` - The new state.
 pub fn toggle_plugin_for_scope(
     filename: &str,
     scope_type: &str,
@@ -358,6 +371,13 @@ pub fn remove_global_plugin_from_manifest(filename: &str, engine_dir: &Path) -> 
     })
 }
 
+/// Determines which plugins and parameters should load for a given case.
+///
+/// This function:
+/// 1. Migrates old plugin formats if necessary.
+/// 2. Scans the global manifest for matching scopes.
+/// 3. Resolves cascading parameter overrides (default → collection → sequence → case).
+/// 4. Writes the result to `case/{id}/resolved_plugins.json` for the engine.
 pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_json::Value, AppError> {
     let global_manifest_path = data_dir.join("plugins").join("manifest.json");
 

@@ -1,3 +1,8 @@
+//! Commands for importing cases and sequences from external files.
+//!
+//! This module handles importing cases from `.aaocase` ZIP files, 
+//! `aaoffline` download directories, and game saves from `.aaosave` files.
+
 use std::fs;
 use std::path::PathBuf;
 use tauri::ipc::Channel;
@@ -8,13 +13,21 @@ use crate::downloader::asset_downloader::DownloadEvent;
 use crate::error::AppError;
 use crate::importer;
 
-/// Import a case from an existing aaoffline download directory or a .aaocase ZIP file.
+/// Import a case or sequence from a file or directory.
 ///
-/// - If `source_path` is a directory: expects `index.html` + optional `assets/` (aaoffline format)
-/// - If `source_path` is a file: expects a .aaocase or .zip file
-/// - If `source_path` is a content:// URI (Android): copies to temp file first via Tauri fs plugin
+/// Supported formats:
+/// - `.aaocase` ZIP file: Contains case data, assets, and optionally saves.
+/// - `aaoffline` directory: A directory containing `index.html` and assets.
+/// - Batch import: A directory containing multiple `aaoffline` case subfolders.
 ///
-/// Returns `ImportResult` containing the manifest and optionally any game saves.
+/// # Arguments
+///
+/// * `source_path` - Path to the source file or directory.
+/// * `on_event` - Progress channel for the UI.
+///
+/// # Returns
+///
+/// An `ImportResult` containing metadata about the imported case(s).
 #[tauri::command]
 pub async fn import_case(
     app: tauri::AppHandle,
@@ -145,7 +158,7 @@ pub async fn import_case(
     Ok(import_result)
 }
 
-/// Import saves from a .aaosave file.
+/// Import game saves from a `.aaosave` file.
 #[tauri::command]
 pub async fn import_save(
     paths: State<'_, AppPaths>,

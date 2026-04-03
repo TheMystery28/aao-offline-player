@@ -1,3 +1,8 @@
+//! Logic for exporting and importing game saves as `.aaosave` files.
+//!
+//! These files allow users to share their progress or back up their saves
+//! independently of the full case data.
+
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -27,15 +32,15 @@ pub(super) fn get_active_plugin_scripts_for_case(case_id: u32, engine_dir: &Path
     active
 }
 
-/// Export saves as a .aaosave ZIP file.
+/// Export game saves for multiple cases as a `.aaosave` ZIP file.
 ///
-/// ZIP format:
-/// ```text
-/// saves.json           Save data (required)
-/// metadata.json        Export metadata (required)
-/// plugins/{case_id}/   Per-case plugins (optional)
-/// case_config/{id}.json Per-case config (optional)
-/// ```
+/// # Arguments
+///
+/// * `case_ids` - List of case IDs whose saves should be included.
+/// * `saves` - The full saves JSON object from `localStorage`.
+/// * `include_plugins` - Whether to also export active plugins for these cases.
+/// * `dest_path` - Output path for the `.aaosave` file.
+/// * `engine_dir` - App's data directory.
 pub fn export_aaosave(
     case_ids: &[u32],
     saves: &serde_json::Value,
@@ -156,7 +161,12 @@ pub fn export_aaosave(
     Ok(meta.len())
 }
 
-/// Import saves from a .aaosave ZIP file.
+/// Import game saves from a `.aaosave` ZIP file.
+///
+/// # Returns
+///
+/// An `ImportSaveResult` containing the extracted saves and metadata about
+/// any plugins that were also installed.
 pub fn import_aaosave(
     zip_path: &Path,
     engine_dir: &Path,

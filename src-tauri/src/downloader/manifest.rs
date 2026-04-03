@@ -1,3 +1,8 @@
+//! Logic for creating and reading case manifests (`manifest.json`).
+//!
+//! The manifest is the single source of truth for a downloaded case,
+//! containing metadata, asset mappings, and failure logs.
+
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -17,7 +22,7 @@ pub struct FailedAsset {
     pub error: String,
 }
 
-/// Case manifest stored as manifest.json in each case directory.
+/// Case metadata and asset mappings, persisted as `manifest.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaseManifest {
     pub case_id: u32,
@@ -92,7 +97,11 @@ pub fn build_manifest(
     }
 }
 
-/// Write manifest to disk.
+/// Persist a manifest to disk as pretty-printed JSON.
+///
+/// # Errors
+///
+/// Returns an `AppError` if serialization or file writing fails.
 pub fn write_manifest(manifest: &CaseManifest, case_dir: &Path) -> Result<(), AppError> {
     let json = serde_json::to_string_pretty(manifest)
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
@@ -132,7 +141,11 @@ pub fn rewrite_trial_data_from_manifest(
     }
 }
 
-/// Read manifest from disk.
+/// Load a manifest from the given case directory.
+///
+/// # Errors
+///
+/// Returns an `AppError` if the file is missing or contains invalid JSON.
 pub fn read_manifest(case_dir: &Path) -> Result<CaseManifest, AppError> {
     let data = std::fs::read_to_string(case_dir.join("manifest.json"))
         .map_err(|e| format!("Failed to read manifest.json: {}", e))?;

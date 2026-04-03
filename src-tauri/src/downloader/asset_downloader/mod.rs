@@ -1,3 +1,8 @@
+//! Parallel asset downloading logic.
+//!
+//! This module handles the actual HTTP downloads of assets, including
+//! retry logic, progress reporting via channels, and filename generation.
+
 mod download;
 mod log;
 mod url_encoding;
@@ -17,6 +22,7 @@ use serde::Serialize;
 
 use super::manifest::FailedAsset;
 
+/// Represents a download progress update sent to the frontend.
 #[derive(Clone, Serialize)]
 #[serde(tag = "event", content = "data")]
 pub enum DownloadEvent {
@@ -49,6 +55,7 @@ pub enum DownloadEvent {
     },
 }
 
+/// Metadata for an asset that has been successfully downloaded.
 #[derive(Debug, Clone)]
 pub struct DownloadedAsset {
     pub original_url: String,

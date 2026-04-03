@@ -1,10 +1,18 @@
+//! Commands for creating and managing custom case collections.
+//!
+//! Collections allow users to group downloaded cases into logical units,
+//! like "Fan-made Turnabouts" or "Justice For All Alternate Universe".
+//! Collections are stored in a separate JSON file in the app data directory.
+
 use tauri::State;
 
 use crate::app_state::AppPaths;
 use crate::collections as coll;
 use crate::error::AppError;
 
-/// List all collections.
+/// List all defined collections.
+///
+/// Loads the collections configuration and returns the list of all collections.
 #[tauri::command]
 pub fn list_collections(paths: State<'_, AppPaths>) -> Result<Vec<coll::Collection>, AppError> {
     let data_dir = &paths.data_dir;
@@ -12,7 +20,16 @@ pub fn list_collections(paths: State<'_, AppPaths>) -> Result<Vec<coll::Collecti
     Ok(data.collections)
 }
 
-/// Create a new collection with the given title and initial items.
+/// Create a new collection.
+///
+/// # Arguments
+///
+/// * `title` - The display title for the new collection.
+/// * `items` - Initial list of case items to include in the collection.
+///
+/// # Returns
+///
+/// The newly created `Collection` object with a generated unique ID.
 #[tauri::command]
 pub fn create_collection(
     paths: State<'_, AppPaths>,
@@ -32,7 +49,19 @@ pub fn create_collection(
     Ok(collection)
 }
 
-/// Update a collection's title and/or items. Only provided fields are changed.
+/// Update an existing collection's properties.
+///
+/// Only the provided optional fields will be modified.
+///
+/// # Arguments
+///
+/// * `id` - Unique identifier of the collection to update.
+/// * `title` - (Optional) New title for the collection.
+/// * `items` - (Optional) Entirely replaces the collection's items list.
+///
+/// # Returns
+///
+/// The updated `Collection` object.
 #[tauri::command]
 pub fn update_collection(
     paths: State<'_, AppPaths>,
@@ -58,7 +87,14 @@ pub fn update_collection(
     Ok(result)
 }
 
-/// Delete a collection by ID. Does not delete the underlying cases.
+/// Delete a collection permanently by its ID.
+///
+/// Note that this only deletes the collection record; it does NOT delete
+/// the actual downloaded case files from the disk.
+///
+/// # Errors
+///
+/// Returns an error if the collection with the specified ID is not found.
 #[tauri::command]
 pub fn delete_collection(
     paths: State<'_, AppPaths>,
@@ -75,7 +111,11 @@ pub fn delete_collection(
     Ok(())
 }
 
-/// Get a single collection by ID.
+/// Retrieve a single collection's data by its ID.
+///
+/// # Errors
+///
+/// Returns an error if the collection is not found.
 #[tauri::command]
 pub fn get_collection(
     paths: State<'_, AppPaths>,
@@ -89,7 +129,14 @@ pub fn get_collection(
         .ok_or_else(|| format!("Collection {} not found", id))?)
 }
 
-/// Append items to an existing collection.
+/// Append additional items to an existing collection's list.
+///
+/// Unlike `update_collection`, which replaces the entire list, this
+/// function adds new items to the end of the current list.
+///
+/// # Returns
+///
+/// The updated `Collection` object.
 #[tauri::command]
 pub fn add_to_collection(
     paths: State<'_, AppPaths>,

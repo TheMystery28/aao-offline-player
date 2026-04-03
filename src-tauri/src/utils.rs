@@ -1,4 +1,8 @@
-/// Format a Unix timestamp (seconds since epoch) as ISO 8601 UTC string.
+//! Utility functions for time formatting and date calculations.
+
+/// Format a Unix timestamp (seconds since epoch) as an ISO 8601 UTC string.
+///
+/// Output format: `YYYY-MM-DDTHH:MM:SSZ`
 pub fn format_timestamp(secs: u64) -> String {
     let days = secs / 86400;
     let time_of_day = secs % 86400;
@@ -12,7 +16,10 @@ pub fn format_timestamp(secs: u64) -> String {
     )
 }
 
-/// Convert days since Unix epoch to (year, month, day).
+/// Convert total days since the Unix epoch (1970-01-01) to year, month, and day.
+///
+/// This implementation uses a fast, branchless algorithm to calculate the
+/// Gregorian date components.
 pub fn days_to_date(days: u64) -> (u64, u64, u64) {
     let z = days + 719468;
     let era = z / 146097;

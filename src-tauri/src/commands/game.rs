@@ -1,3 +1,9 @@
+//! Commands for launching the AAO engine and managing the game state.
+//!
+//! This module handles generating the URLs used to load the AAO player
+//! in the WebView, as well as providing diagnostic information about
+//! local files used by the engine.
+
 use tauri::State;
 
 use crate::app_state::{AppPaths, MutableConfig};
@@ -30,7 +36,18 @@ pub(crate) fn build_server_url() -> String {
     protocol_base_url().to_string()
 }
 
-/// Returns the protocol URL for playing a specific case, including language preference.
+/// Returns the URL for playing a specific case, including language preference.
+///
+/// This builds a URL using the custom `aao://` (or `http://aao.localhost`)
+/// protocol that the app's internal server handles.
+///
+/// # Arguments
+///
+/// * `case_id` - The ID of the case to play.
+///
+/// # Returns
+///
+/// A string containing the full URL to load in the WebView.
 #[tauri::command]
 pub fn open_game(paths: State<'_, AppPaths>, config: State<'_, MutableConfig>, case_id: u32) -> Result<String, AppError> {
     let lang = config.0.lock().map_err(|e| e.to_string())?.language.clone();
@@ -40,6 +57,9 @@ pub fn open_game(paths: State<'_, AppPaths>, config: State<'_, MutableConfig>, c
 }
 
 /// Returns the asset server's base URL (custom protocol).
+///
+/// This is used by the frontend to construct URLs for assets not directly
+/// linked to a specific case (e.g., global UI images).
 #[tauri::command]
 pub fn get_server_url() -> Result<String, AppError> {
     Ok(build_server_url())

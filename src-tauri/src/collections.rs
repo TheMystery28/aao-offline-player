@@ -40,7 +40,10 @@ pub fn collections_path(data_dir: &Path) -> PathBuf {
     data_dir.join("collections.json")
 }
 
-/// Load collections from disk. Returns empty data if file is missing or corrupt.
+/// Load collections from disk.
+///
+/// If the `collections.json` file is missing or contains invalid JSON,
+/// an empty `CollectionsData` object is returned.
 pub fn load_collections(data_dir: &Path) -> CollectionsData {
     let path = collections_path(data_dir);
     if path.exists() {
@@ -61,7 +64,11 @@ pub fn load_collections(data_dir: &Path) -> CollectionsData {
     }
 }
 
-/// Persist collections to disk as pretty-printed JSON.
+/// Persist all collections to disk as pretty-printed JSON.
+///
+/// # Errors
+///
+/// Returns an `AppError` if serialization or file writing fails.
 pub fn save_collections(data_dir: &Path, data: &CollectionsData) -> Result<(), crate::error::AppError> {
     let json = serde_json::to_string_pretty(data)
         .map_err(|e| format!("Failed to serialize collections: {}", e))?;

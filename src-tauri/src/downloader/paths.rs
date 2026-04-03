@@ -1,12 +1,18 @@
+//! Path normalization and sanitization utilities.
+//!
+//! This module ensures that all relative paths used for assets are consistent
+//! across platforms, Unicode-normalized, and safe for use on Windows.
+
 use relative_path::RelativePath;
 use unicode_normalization::UnicodeNormalization;
 
-/// Canonical path format used throughout the app:
-/// - Unicode NFC normalized (accented chars consistent across platforms)
-/// - `.` and `..` resolved lexically via `relative-path`
-/// - Forward slashes only (no backslashes) — enforced by `RelativePath`
-/// - Windows-illegal characters replaced with `_`
-/// - Guaranteed UTF-8
+/// Normalizes a raw path string into a canonical, cross-platform format.
+///
+/// Steps taken:
+/// 1. Unicode NFC normalization (composed characters).
+/// 2. Convert backslashes to forward slashes.
+/// 3. Resolve `.` and `..` segments lexically.
+/// 4. Replace Windows-illegal characters (`:`, `*`, `?`, etc.) with `_`.
 pub fn normalize_path(raw: &str) -> String {
     // 1. Unicode NFC normalization
     let nfc: String = raw.nfc().collect();

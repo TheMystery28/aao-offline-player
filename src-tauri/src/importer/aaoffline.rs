@@ -1,3 +1,8 @@
+//! Logic for importing cases from `aaoffline` download directories.
+//!
+//! This format consists of an `index.html` file (containing the case data
+//! inlined as JavaScript) and an `assets/` subdirectory.
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -9,10 +14,21 @@ use crate::utils::format_timestamp;
 use super::shared::*;
 use super::aaoffline_helpers::*;
 
-/// Import a case from an aaoffline download directory.
+/// Import a case from a single `aaoffline` download directory.
 ///
-/// `source_dir` must contain `index.html` and optionally `assets/`.
-/// The case is installed into `engine_dir/case/{case_id}/`.
+/// This function:
+/// 1. Validates the `source_dir` contains an `index.html`.
+/// 2. Extracts trial data and metadata from the inlined JS.
+/// 3. Copies assets to the app's case directory, performing de-duplication.
+/// 4. Extracts and copies default assets (sprites, voices, places) that were
+///    overridden by the `aaoffline` downloader.
+/// 5. Generates the final manifest and trial data JSON files.
+///
+/// # Arguments
+///
+/// * `source_dir` - Path to the `aaoffline` download folder.
+/// * `engine_dir` - App's data directory.
+/// * `on_progress` - Optional callback for asset copy progress.
 pub fn import_aaoffline(
     source_dir: &Path,
     engine_dir: &Path,
@@ -256,16 +272,11 @@ pub fn find_aaoffline_subfolders(parent_dir: &Path) -> Vec<std::path::PathBuf> {
     case_dirs
 }
 
-/// Import all aaoffline cases from a directory that contains case subfolders.
+/// Import multiple `aaoffline` cases from a parent directory.
 ///
-/// Handles three layouts produced by aaoffline downloaders:
-/// 1. Subfolders only (e.g. `Max Jefht/Episode1_id/index.html`, `Max Jefht/Episode2_id/index.html`)
-/// 2. Root + subfolders (e.g. `Beyond the Shadows/index.html` + `Beyond the Shadows/Part2_id/index.html`)
-///    The root case is imported first, then subfolders; duplicates (same case ID) are skipped.
-/// 3. Root only — handled by the caller via `import_aaoffline()` directly.
-///
-/// Cases that already exist or fail are recorded in `batch_errors` but don't
-/// stop the overall import.
+/// This handles batches of cases, such as those produced by downloading an
+/// entire sequence. It intelligently finds subfolders containing `index.html`
+/// and imports them sequentially.
 pub fn import_aaoffline_batch(
     parent_dir: &Path,
     engine_dir: &Path,

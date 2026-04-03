@@ -1,3 +1,8 @@
+//! Commands for managing app settings and storage.
+//!
+//! This module handles user preferences (language, concurrency), 
+//! storage statistics, and optimization (de-duplication).
+
 use tauri::ipc::Channel;
 use tauri::State;
 use tauri_plugin_opener::OpenerExt;
@@ -8,14 +13,17 @@ use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
 use crate::error::AppError;
 
-/// Return current user settings.
+/// Retrieve the current user settings.
 #[tauri::command]
 pub fn get_settings(config: State<'_, MutableConfig>) -> Result<config::AppConfig, AppError> {
     let cfg = config.0.lock().map_err(|e| e.to_string())?;
     Ok(cfg.clone())
 }
 
-/// Save user settings (validated and clamped).
+/// Save and apply new user settings.
+///
+/// Settings are validated and clamped to safe ranges before being persisted
+/// to the `config.json` file.
 #[tauri::command]
 pub fn save_settings(
     paths: State<'_, AppPaths>,
@@ -30,7 +38,10 @@ pub fn save_settings(
     Ok(())
 }
 
-/// Return storage usage statistics.
+/// Retrieve information about disk space usage.
+///
+/// Scans the data directory to calculate the size of cases, assets, and
+/// defaults.
 #[tauri::command]
 pub fn get_storage_info(paths: State<'_, AppPaths>) -> Result<config::StorageInfo, AppError> {
     let data_dir = &paths.data_dir;

@@ -42,9 +42,13 @@ import { initCollections } from './collections/init.js';
 
 /**
  * One-time migration of localStorage data from the old http://localhost origin
- * to the new aao:// protocol origin. Opens a hidden iframe to the legacy tiny_http
- * server, reads game_saves and engine config, writes them to the current origin.
- * Completes silently if no old data exists or if migration was already done.
+ * to the new aao:// protocol origin.
+ * 
+ * Opens a hidden iframe to the legacy tiny_http server, reads game_saves and
+ * engine config, and writes them to the current origin. Completes silently
+ * if no old data exists or if migration was already done.
+ * 
+ * @returns {Promise<void>}
  */
 async function migrateLocalStorage() {
   try {

@@ -1,3 +1,13 @@
+//! High-level download pipeline for cases and sequences.
+//!
+//! This module coordinates the multi-step process of downloading a case:
+//! 1. Fetch case metadata from AAO.
+//! 2. Save metadata files locally.
+//! 3. Extract and classify all required assets.
+//! 4. Download assets in parallel (with de-duplication).
+//! 5. Rewrite asset URLs in the case data to point to local files.
+//! 6. Generate and save the case manifest.
+
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -57,9 +67,11 @@ pub fn extract_all_assets(
     assets
 }
 
-/// Extract, deduplicate, classify, and filter assets for a case.
-/// Builds on extract_all_assets, adding classify + missing/cached filtering.
-/// Shared by download_case and download_sequence.
+/// Extract, deduplicate, and classify all assets required for a case.
+///
+/// This function identifies every image, audio file, and script asset needed
+/// by the case, classifies them into case-specific or shared/defaults,
+/// and checks which ones are already present in the local cache.
 pub fn extract_and_prepare_assets(
     trial_data: &serde_json::Value,
     site_paths: &SitePaths,
@@ -109,8 +121,23 @@ pub fn save_trial_info(case_dir: &Path, info_json: &str) -> Result<(), AppError>
     Ok(())
 }
 
-/// Full single-case download pipeline: fetch → extract → download → rewrite → manifest.
-/// Shared by download_case and download_sequence.
+/// Executes the full download pipeline for a single case.
+///
+/// This is the primary function for downloading a case from scratch. It handles
+/// fetching, downloading, de-duplication, and final manifest generation.
+///
+/// # Arguments
+///
+/// * `case_id` - The AAO case ID to download.
+/// * `client` - Shared HTTP client.
+/// * `site_paths` - Site configuration (asset directory structure).
+/// * `on_event` - Channel for streaming progress updates to the UI.
+/// * `concurrency` - Number of simultaneous asset downloads allowed.
+/// * `cancel_flag` - Atomic flag for aborting the download.
+///
+/// # Returns
+///
+/// The `CaseManifest` for the successfully downloaded case.
 pub(crate) async fn download_single_case(
     case_id: u32,
     client: &reqwest::Client,

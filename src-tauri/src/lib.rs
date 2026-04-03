@@ -1,3 +1,9 @@
+//! Main entry point for the AAO Offline Player application logic.
+//!
+//! This module sets up the Tauri application builder, handles logging
+//! configuration, registers custom URI schemes, and manages the lifecycle
+//! of the internal asset server.
+
 #[macro_use]
 mod app_state;
 mod collections;
@@ -19,6 +25,30 @@ use tauri::Manager;
 use app_state::{AppPaths, MutableConfig};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Initializes and runs the Tauri application.
+///
+/// This is the primary entry point for the Rust backend. It performs the following:
+///
+/// 1.  **Logging Setup**: Configures `tauri-plugin-log` with appropriate targets
+///     (Stdout for debug, file-based for release).
+/// 2.  **Plugin Registration**: Initializes essential plugins for shell, HTTP,
+///     filesystem, and native dialogs.
+/// 3.  **Custom URI Scheme**: Registers the `aao://` protocol to serve engine
+///     files and case assets securely from the local filesystem.
+/// 4.  **App Setup**:
+///     - Determines platform-specific paths for engine files and user data.
+///     - Extracts bundled engine assets to the writable filesystem on mobile.
+///     - Loads user configuration (`config.json`).
+///     - Starts a background `tiny_http` server for one-time localStorage migration.
+///     - Initializes the shared `reqwest` HTTP client.
+/// 5.  **State Management**: Registers `AppPaths` and `MutableConfig` as managed state.
+/// 6.  **Command Registration**: Exposes all functions in the `commands` module
+///     to the frontend.
+///
+/// # Panics
+///
+/// Panics if the Tauri context cannot be generated or if the application
+/// fails to initialize its core state.
 pub fn run() {
     tauri::Builder::default()
         .plugin({

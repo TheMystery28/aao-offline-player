@@ -1,3 +1,9 @@
+//! Global application state management.
+//!
+//! This module defines the core structs used for sharing state across
+//! Tauri commands and threads. It also handles the specialized asset
+//! extraction required on mobile platforms.
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -10,18 +16,22 @@ use crate::config;
 // This bypasses Tauri's fs plugin which corrupts binary data on Android.
 include!(concat!(env!("OUT_DIR"), "/engine_embed.rs"));
 
-/// Immutable app state — set once during setup, never changes.
-/// No lock needed. Tauri wraps managed state in Arc automatically.
+/// Shared application state (immutable).
+///
+/// This struct is created once during app initialization and is available
+/// to all commands via Tauri's `State` system.
 pub(crate) struct AppPaths {
     /// Port the migration server is listening on, or 0 if it was not started
     /// (migration already complete). Used by `get_migration_server_url`.
     pub(crate) server_port: u16,
     /// Migration server handle. `None` when `migration_complete = true`.
+    ///
     /// Dropping this field (on app exit) calls `MigrationServer::stop()` automatically.
     pub(crate) migration_server: Option<crate::server::MigrationServer>,
     /// Static engine files (JS, CSS, HTML, img, Languages). Read-only on mobile.
     pub(crate) engine_dir: PathBuf,
     /// Writable data directory (case/, defaults/, config.json).
+    ///
     /// On desktop this equals engine_dir. On Android/iOS it's the app's private data dir.
     pub(crate) data_dir: PathBuf,
     /// Cancel flag for in-progress downloads. Checked per-asset in the download loop.
@@ -30,16 +40,22 @@ pub(crate) struct AppPaths {
     pub(crate) http_client: reqwest::Client,
 }
 
-/// Mutable user config — only changed by save_settings.
-/// Wrapped in Mutex for interior mutability.
+/// Shared application configuration (mutable).
+///
+/// This wraps `AppConfig` in a `Mutex` to allow safe modification from
+/// any thread or command.
 pub(crate) struct MutableConfig(pub(crate) Mutex<config::AppConfig>);
 
-/// Extract engine files from the embedded binary data to the writable filesystem.
+/// Extract engine assets from the embedded binary data to the disk.
 ///
-/// Engine files are embedded at compile time via `include_bytes!` in build.rs.
-/// This avoids Tauri's `app.fs().read()` which corrupts binary data (GIFs, fonts)
-/// when reading from APK assets on Android. The embedded data is byte-identical
-/// to the original files from the build machine.
+/// Since Android's Asset Manager can be slow and sometimes corrupts binary
+/// files when read via certain plugins, we embed the core engine assets
+/// (HTML, JS, CSS, images) directly into the executable at compile time.
+/// On the first run, these are extracted to the app's writable data directory.
+///
+/// # Errors
+///
+/// Returns an error if any file fails to write to the destination.
 pub(crate) fn extract_engine_files(dest: &std::path::Path) -> Result<(), crate::error::AppError> {
     log::info!(
         "Extracting {} engine files to {}...",

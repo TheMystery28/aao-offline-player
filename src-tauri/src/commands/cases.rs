@@ -1,3 +1,8 @@
+//! Commands for managing downloaded cases on the local file system.
+//!
+//! This module provides functions to list, query, and delete cases that
+//! have been successfully downloaded and stored in the app's data directory.
+
 use std::fs;
 use tauri::State;
 
@@ -5,7 +10,15 @@ use crate::app_state::AppPaths;
 use crate::downloader;
 use crate::error::AppError;
 
-/// List all downloaded cases by scanning the case directory for manifests.
+/// List all downloaded cases by scanning the `case/` directory for manifests.
+///
+/// This function iterates through all subdirectories in `{data_dir}/case/`,
+/// attempting to read a `manifest.json` from each.
+///
+/// # Returns
+///
+/// A `Vec<CaseManifest>` containing the metadata for all valid downloaded cases,
+/// sorted alphabetically by title.
 #[tauri::command]
 pub fn list_cases(
     paths: State<'_, AppPaths>,
@@ -46,7 +59,15 @@ pub fn list_cases(
     Ok(cases)
 }
 
-/// Delete a downloaded case and all its files.
+/// Delete a downloaded case and all its associated files from disk.
+///
+/// This also unregisters the case assets from the de-duplication index to
+/// ensure that shared assets (like defaults) can be properly cleaned up
+/// if they are no longer needed by any other case.
+///
+/// # Errors
+///
+/// Returns an error if the case directory does not exist or if deletion fails.
 #[tauri::command]
 pub fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(), AppError> {
     let data_dir = &paths.data_dir;

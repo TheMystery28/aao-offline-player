@@ -1,3 +1,8 @@
+//! Logic for exporting cases, sequences, and collections to `.aaocase` ZIP files.
+//!
+//! These ZIP files are self-contained and include all case metadata,
+//! assets, and optionally game saves and plugins.
+
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -41,6 +46,16 @@ fn collect_vfs_pointers_for_export(engine_dir: &Path, defaults: &mut std::collec
     }
 }
 
+/// Export a single case as a `.aaocase` ZIP file.
+///
+/// # Arguments
+///
+/// * `case_id` - ID of the case to export.
+/// * `engine_dir` - App's data directory.
+/// * `dest_path` - Path where the ZIP should be created.
+/// * `on_progress` - Optional progress callback.
+/// * `saves` - Optional game saves to include in the ZIP.
+/// * `include_plugins` - Whether to include associated plugins.
 pub fn export_aaocase(
     case_id: u32,
     engine_dir: &Path,
@@ -314,21 +329,10 @@ pub fn export_aaocase(
     Ok(meta.len())
 }
 
-/// Export a collection as a .aaocase ZIP file.
+/// Export a collection of cases as a single `.aaocase` ZIP file.
 ///
-/// ZIP format:
-/// ```text
-/// collection.json
-/// {case_id}/manifest.json
-/// {case_id}/trial_info.json
-/// {case_id}/trial_data.json
-/// {case_id}/assets/...
-/// defaults/...
-/// saves.json (optional)
-/// ```
-///
-/// `collection.json` contains the collection metadata (title, items, created_date).
-/// Each case referenced in the collection is included in the ZIP.
+/// The ZIP includes all cases in the collection, along with the collection
+/// metadata and shared default assets.
 pub fn export_collection(
     collection: &crate::collections::Collection,
     engine_dir: &Path,
@@ -583,16 +587,7 @@ pub fn export_collection(
 }
 
 /// Helper: recursively add a directory to a ZIP under a prefix.
-/// Export multiple cases (a sequence) as a single .aaocase ZIP file.
-///
-/// ZIP format:
-/// ```text
-/// sequence.json
-/// {case_id}/manifest.json
-/// {case_id}/trial_info.json
-/// {case_id}/trial_data.json
-/// {case_id}/assets/...
-/// ```
+/// Export a sequence of cases as a single `.aaocase` ZIP file.
 pub fn export_sequence(
     case_ids: &[u32],
     sequence_title: &str,

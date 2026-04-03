@@ -1,3 +1,9 @@
+//! Commands for exporting cases and sequences to external files.
+//!
+//! This module handles exporting downloaded cases as `.aaocase` ZIP files,
+//! which can be shared with other users or used as backups. It also
+//! supports exporting game saves as `.aaosave` files.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::ipc::Channel;
@@ -119,9 +125,15 @@ where
     }
 }
 
-/// Export a case as a .aaocase ZIP file.
-/// If `saves` is provided, includes it as saves.json in the ZIP.
-/// On Android, `dest_path` may be a content:// URI — exports to temp then copies.
+/// Export a single case as a `.aaocase` ZIP file.
+///
+/// # Arguments
+///
+/// * `case_id` - The ID of the case to export.
+/// * `dest_path` - Local file path where the ZIP should be saved.
+/// * `saves` - (Optional) Current game saves to include in the export.
+/// * `include_plugins` - Whether to include custom plugins in the ZIP.
+/// * `on_event` - Progress channel for the UI.
 #[tauri::command]
 pub async fn export_case(
     app: tauri::AppHandle,
@@ -152,9 +164,15 @@ pub async fn export_case(
     Ok(size)
 }
 
-/// Export an entire sequence as a single .aaocase ZIP file.
-/// If `saves` is provided, includes it as saves.json in the ZIP.
-/// On Android, `dest_path` may be a content:// URI — exports to temp then copies.
+/// Export a sequence of cases as a single `.aaocase` ZIP file.
+///
+/// # Arguments
+///
+/// * `case_ids` - List of case IDs to include.
+/// * `sequence_title` - Title for the exported sequence.
+/// * `sequence_list` - JSON metadata describing the sequence order.
+/// * `dest_path` - Output ZIP path.
+/// * `saves` - (Optional) Game saves to include.
 #[tauri::command]
 pub async fn export_sequence(
     app: tauri::AppHandle,
@@ -186,7 +204,7 @@ pub async fn export_sequence(
     .await
 }
 
-/// Export a collection as a .aaocase ZIP file.
+/// Export a collection of cases as a single `.aaocase` ZIP file.
 #[tauri::command]
 pub async fn export_collection(
     paths: State<'_, AppPaths>,
@@ -229,7 +247,7 @@ pub async fn export_collection(
     Ok(size)
 }
 
-/// Export saves as a .aaosave file.
+/// Export game saves for one or more cases as a `.aaosave` file.
 #[tauri::command]
 pub async fn export_save(
     paths: State<'_, AppPaths>,

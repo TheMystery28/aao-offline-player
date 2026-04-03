@@ -1,3 +1,9 @@
+//! Commands for downloading cases and assets from AAO.
+//!
+//! This module handles the high-level download pipeline, including fetching
+//! case metadata, managing download sequences, and retrying failed assets.
+//! It uses a channel-based event system to stream progress updates to the frontend.
+
 use std::fs;
 use std::sync::atomic::Ordering;
 use tauri::ipc::Channel;
@@ -8,7 +14,9 @@ use crate::downloader;
 use crate::downloader::asset_downloader::DownloadEvent;
 use crate::error::AppError;
 
-/// Cancel the current in-progress download.
+/// Cancel the current in-progress download or sequence.
+///
+/// Sets a shared atomic flag that the download pipeline checks periodically.
 #[tauri::command]
 pub fn cancel_download(paths: State<'_, AppPaths>) -> Result<(), AppError> {
     paths.cancel_flag.store(true, Ordering::Relaxed);
@@ -16,7 +24,18 @@ pub fn cancel_download(paths: State<'_, AppPaths>) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Lightweight command: fetch case metadata (including sequence info) without downloading assets.
+/// Fetch case metadata and sequence information without downloading any assets.
+///
+/// This is used by the frontend to display case details and "what's inside"
+/// before the user commits to a full download.
+///
+/// # Arguments
+///
+/// * `case_id` - The AAO case ID to fetch.
+///
+/// # Returns
+///
+/// A `CaseInfo` object containing title, author, and sequence parts.
 #[tauri::command]
 pub async fn fetch_case_info(
     paths: State<'_, AppPaths>,
@@ -30,8 +49,19 @@ pub async fn fetch_case_info(
     Ok(case_info)
 }
 
-/// Download all parts of a sequence. Skips cases already downloaded.
-/// Emits SequenceProgress events before each part, plus per-part asset download events.
+/// Download a sequence of cases in order.
+///
+/// Cases already present on disk are skipped. Progress events are emitted
+/// for each part of the sequence and for individual asset downloads.
+///
+/// # Arguments
+///
+/// * `case_ids` - A list of AAO case IDs in the sequence.
+/// * `on_event` - A Tauri IPC channel to stream `DownloadEvent`s to the UI.
+///
+/// # Returns
+///
+/// A list of `CaseManifest`s for all successfully downloaded cases in the sequence.
 #[tauri::command]
 pub async fn download_sequence(
     paths: State<'_, AppPaths>,
@@ -113,8 +143,19 @@ pub async fn download_sequence(
     Ok(manifests)
 }
 
-/// Full download pipeline: fetch case → extract assets → download case-specific → generate manifest.
-/// Streams progress events to the frontend via Channel.
+/// Download a single case and all its required assets.
+///
+/// This executes the full pipeline: fetch metadata → extract asset URLs →
+/// download assets (with de-duplication) → generate manifest.
+///
+/// # Arguments
+///
+/// * `case_id` - The AAO case ID to download.
+/// * `on_event` - A Tauri IPC channel for real-time progress updates.
+///
+/// # Returns
+///
+/// The `CaseManifest` for the newly downloaded case.
 #[tauri::command]
 pub async fn download_case(
     paths: State<'_, AppPaths>,
@@ -138,8 +179,19 @@ pub async fn download_case(
     ).await?)
 }
 
-/// Retry downloading failed assets for a case.
-/// Reads the manifest to find failed assets, re-attempts download, updates manifest.
+/// Re-attempt downloading any assets that failed during a previous download attempt.
+///
+/// Reads the case's manifest to identify failed assets, then runs the download
+/// pipeline for those specific assets. If successful, the manifest is updated.
+///
+/// # Arguments
+///
+/// * `case_id` - The ID of the case to fix.
+/// * `on_event` - A Tauri IPC channel for progress updates.
+///
+/// # Errors
+///
+/// Returns an error if the case is not found or if the AAO website is unreachable.
 #[tauri::command]
 pub async fn retry_failed_assets(
     paths: State<'_, AppPaths>,
@@ -254,9 +306,20 @@ pub async fn retry_failed_assets(
     Ok(manifest)
 }
 
-/// Update an existing case by re-fetching case data from AAO.
-/// If `redownload_assets` is false, only re-fetches script/dialog data and downloads NEW assets.
-/// If `redownload_assets` is true, re-downloads all assets (full update).
+/// Update an existing case by re-fetching its data from AAO.
+///
+/// This is used to sync local cases with updates made on the AAO website.
+///
+/// # Arguments
+///
+/// * `case_id` - The ID of the case to update.
+/// * `redownload_assets` - If true, all assets are re-downloaded even if they exist.
+///   If false, only newly added assets in the updated trial data are downloaded.
+/// * `on_event` - A Tauri IPC channel for progress updates.
+///
+/// # Returns
+///
+/// The updated `CaseManifest`.
 #[tauri::command]
 pub async fn update_case(
     paths: State<'_, AppPaths>,

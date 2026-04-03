@@ -1,3 +1,8 @@
+//! Application configuration and storage management.
+//!
+//! This module defines the `AppConfig` struct for user settings and
+//! `StorageInfo` for displaying disk usage in the UI.
+
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -21,7 +26,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub migration_complete: bool,
     /// Unix timestamp (seconds since epoch) of the last successful Optimize & Fix run.
-    /// None means it has never been run.
+    ///
+    /// `None` means it has never been run.
     #[serde(default)]
     pub last_optimized_at: Option<u64>,
     /// Selected UI theme name ("default", "gba", "ds").
@@ -99,7 +105,11 @@ pub fn load_config(data_dir: &Path) -> AppConfig {
     }
 }
 
-/// Persist config to disk.
+/// Persist the application configuration to disk as `config.json`.
+///
+/// # Errors
+///
+/// Returns an `AppError` if JSON serialization or file writing fails.
 pub fn save_config(data_dir: &Path, config: &AppConfig) -> Result<(), crate::error::AppError> {
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
@@ -108,7 +118,7 @@ pub fn save_config(data_dir: &Path, config: &AppConfig) -> Result<(), crate::err
     Ok(())
 }
 
-/// Storage usage summary for the UI.
+/// Summarizes the current storage usage for UI display.
 #[derive(Debug, Serialize)]
 pub struct StorageInfo {
     pub data_dir: String,
@@ -131,7 +141,10 @@ pub struct StorageInfo {
     pub total_size_bytes: u64,
 }
 
-/// Compute storage usage for cases and default asset cache.
+/// Compute a detailed summary of storage usage.
+///
+/// Scans the `case/` and `defaults/` directories to calculate sizes
+/// for different asset categories (sprites, audio, metadata, etc.).
 pub fn compute_storage_info(engine_dir: &Path) -> StorageInfo {
     let cases_dir = engine_dir.join("case");
     let defaults_dir = engine_dir.join("defaults");

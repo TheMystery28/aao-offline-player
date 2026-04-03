@@ -1,3 +1,9 @@
+//! Logic for importing cases from `.aaocase` ZIP files.
+//!
+//! This module handles extracting ZIP archives that contain one or more
+//! cases, including sequences and collections. It supports de-duplication
+//! during extraction and correctly routes assets to the global defaults pool.
+
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -68,14 +74,20 @@ fn extract_and_dedup(
     ExtractResult::Written
 }
 
-/// Import a case from a .aaocase ZIP file.
+/// Import a case, sequence, or collection from a `.aaocase` ZIP file.
 ///
-/// Supports three formats:
-/// - **Single-case** (legacy): `manifest.json`, `trial_data.json`, `trial_info.json`, `assets/`
-/// - **Multi-case** (sequence): `sequence.json` + `{case_id}/manifest.json`, `{case_id}/...` per case
-/// - **Collection**: `collection.json` + `{case_id}/manifest.json`, `{case_id}/...` per case
+/// This function detects the ZIP's internal format and delegates to the
+/// appropriate specialized importer (single-case, multi-case, or collection).
 ///
-/// Returns an `ImportResult` containing the manifest and optionally any game saves.
+/// # Arguments
+///
+/// * `zip_path` - Path to the `.aaocase` or `.zip` file.
+/// * `engine_dir` - App's data directory.
+/// * `on_progress` - Optional progress callback.
+///
+/// # Returns
+///
+/// An `ImportResult` containing the manifest and metadata.
 pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, on_progress: Option<&dyn Fn(usize, usize)>) -> Result<ImportResult, AppError> {
     let file = fs::File::open(zip_path)
         .map_err(|e| format!("Failed to open ZIP file: {}", e))?;

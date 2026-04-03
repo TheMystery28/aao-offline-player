@@ -17,8 +17,16 @@ const VFS_PREFIX: &str = "AAO_VFS_ALIAS:";
 const MAX_RESOLVE_DEPTH: u8 = 5;
 
 /// Check if a file is a VFS pointer.
-/// Returns the target relative path (forward-slash normalized) if it is, None otherwise.
-/// Files >= 256 bytes are assumed to be real assets (a GIF header alone is larger).
+///
+/// # Returns
+///
+/// The target relative path (forward-slash normalized) if it is a VFS pointer,
+/// or `None` if it is a regular file or if an error occurs.
+///
+/// # Notes
+///
+/// Files >= 256 bytes are assumed to be real assets and are skipped without
+/// reading their content.
 pub fn read_vfs_pointer(path: &Path) -> Option<String> {
     let meta = fs::metadata(path).ok()?;
     if meta.len() >= 256 {
@@ -29,7 +37,12 @@ pub fn read_vfs_pointer(path: &Path) -> Option<String> {
 }
 
 /// Write a VFS pointer file that redirects to the target path.
-/// Target is always stored with forward slashes via `normalize_path`.
+///
+/// The target path is automatically normalized to use forward slashes.
+///
+/// # Errors
+///
+/// Returns an `std::io::Result` if file creation or writing fails.
 pub fn write_vfs_pointer(pointer_path: &Path, target_relative: &str) -> std::io::Result<()> {
     if let Some(parent) = pointer_path.parent() {
         fs::create_dir_all(parent)?;
@@ -38,8 +51,9 @@ pub fn write_vfs_pointer(pointer_path: &Path, target_relative: &str) -> std::io:
     fs::write(pointer_path, format!("{}{}", VFS_PREFIX, normalized))
 }
 
-/// Check if an asset file truly exists on disk — follows VFS pointers.
-/// A VFS pointer whose target is missing counts as "not exists".
+/// Check if an asset file exists on disk, transparently following VFS pointers.
+///
+/// A VFS pointer is considered to exist only if its target file also exists.
 pub fn asset_exists(data_dir: &Path, local_path: &str) -> bool {
     let disk_path = data_dir.join(local_path);
     if !disk_path.exists() {
@@ -51,9 +65,20 @@ pub fn asset_exists(data_dir: &Path, local_path: &str) -> bool {
     }
 }
 
-/// Resolve a file path, following VFS pointers with a depth limit.
-/// Returns the real physical file path. If the file is not a pointer, returns it as-is.
-/// Stops after `MAX_RESOLVE_DEPTH` hops to prevent infinite loops.
+/// Resolve a file path to its physical location on disk.
+///
+/// If the file is a VFS pointer, this function follows it recursively
+/// until a real file is found or the `MAX_RESOLVE_DEPTH` is reached.
+///
+/// # Arguments
+///
+/// * `path` - The initial path to resolve.
+/// * `data_dir` - The app's writable data directory.
+/// * `engine_dir` - The app's engine resources directory.
+///
+/// # Returns
+///
+/// The resolved `PathBuf` pointing to the physical file.
 pub fn resolve_path(path: &Path, data_dir: &Path, engine_dir: &Path) -> PathBuf {
     let mut current = path.to_path_buf();
     for _ in 0..MAX_RESOLVE_DEPTH {

@@ -1,3 +1,9 @@
+//! Core downloading logic and data structures.
+//!
+//! This module coordinates the process of fetching case data from the AAO
+//! website, identifying all necessary assets (images, music, sounds), and
+//! managing the parallel download and storage of those assets.
+
 pub mod asset_downloader;
 pub mod asset_paths;
 pub mod asset_resolver;
@@ -12,8 +18,10 @@ use serde::{Deserialize, Serialize};
 
 pub const AAONLINE_BASE: &str = "https://aaonline.fr";
 
-/// Typed error for the downloader module. Eliminates .map_err(|e| format!(...)) boilerplate.
-/// Callers outside the module convert to String via .to_string() or the From impl.
+/// Typed error for the downloader module.
+///
+/// Eliminates `.map_err(|e| format!(...))` boilerplate. Callers outside the
+/// module convert to `String` via `.to_string()` or the `From` impl.
 #[derive(thiserror::Error, Debug)]
 pub enum DownloaderError {
     #[error("IO error: {0}")]
@@ -84,7 +92,10 @@ impl SitePaths {
     pub fn voices_path(&self) -> &str { &self.voices_dir }
 }
 
-/// Case metadata parsed from trial_information.
+/// Case metadata as represented in the AAO trial information.
+///
+/// This includes basic details about the case, as well as optional
+/// sequence information for multi-part cases.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaseInfo {
     pub id: u32,
@@ -96,14 +107,22 @@ pub struct CaseInfo {
     pub sequence: Option<serde_json::Value>,
 }
 
-/// A single asset reference extracted from trial data.
+/// A reference to a single asset that needs to be downloaded.
+///
+/// Assets are classified into "case-specific" (downloaded into the case's
+/// `assets/` folder) and "shared/default" (downloaded into the global
+/// `defaults/` cache).
 #[derive(Debug, Clone, Serialize)]
 pub struct AssetRef {
+    /// Original URL from the trial data.
     pub url: String,
+    /// Type of asset (e.g. "background", "music").
     pub asset_type: String,
+    /// Whether this is a default AAO asset.
     pub is_default: bool,
     /// For internal (non-external) assets: the path under engine/ where the player expects
     /// to find this file (e.g. "defaults/images/backgrounds/AA4/Court.jpg").
+    ///
     /// Empty for external assets (they get hashed filenames in case/assets/).
     pub local_path: String,
 }
