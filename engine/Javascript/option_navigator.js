@@ -246,19 +246,9 @@ Modules.load(new Object({
 			requestAnimationFrame(pollGamepad);
 		}
 
-		// Start gamepad polling when a gamepad connects
-		window.addEventListener('gamepadconnected', function() {
-			requestAnimationFrame(pollGamepad);
-		});
-		if (navigator.getGamepads) {
-			var existing = navigator.getGamepads();
-			for (var i = 0; i < existing.length; i++) {
-				if (existing[i]) {
-					requestAnimationFrame(pollGamepad);
-					break;
-				}
-			}
-		}
+		// Always start gamepad polling — gamepadconnected may have
+		// already fired before this module loaded.
+		requestAnimationFrame(pollGamepad);
 
 		// --- Reset highlight on mode transitions ---
 

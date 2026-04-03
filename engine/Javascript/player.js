@@ -7,7 +7,7 @@ Ace Attorney Online - Player main module
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'player',
-	dependencies : ['engine_events', 'engine_plugins', 'input_manager', 'theme_manager', 'settings_panel', 'style_loader', 'trial', 'player_save', 'display_engine_screen', 'form_elements', 'language', 'nodes', 'page_loaded', 'events', 'player_sound', 'player_images', 'player_actions', 'actions_parameters', 'var_environments', 'player_courtrecord', 'expression_engine', 'player_debug', 'keyboard_controls', 'gamepad_controls', 'option_navigator'],
+	dependencies : ['engine_events', 'engine_plugins', 'input_manager', 'theme_manager', 'settings_panel', 'style_loader', 'trial', 'player_save', 'display_engine_screen', 'form_elements', 'language', 'nodes', 'page_loaded', 'events', 'player_sound', 'player_images', 'player_actions', 'actions_parameters', 'var_environments', 'player_courtrecord', 'expression_engine', 'player_debug', 'keyboard_controls', 'gamepad_controls', 'option_navigator', 'courtrecord_navigator'],
 	init : function()
 	{
 		Languages.setMainLanguage(user_language);
@@ -206,6 +206,10 @@ function player_init()
 		},false);
 
 		EngineEvents.emit('player:init', {});
+
+		// Focus the window so keyboard/gamepad input works immediately
+		// without requiring the user to click first.
+		window.focus();
 
 		// If save_data is in the URL (from Continue button), auto-click Start
 		// once all loading bars complete so the save loads without user interaction.

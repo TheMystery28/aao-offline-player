@@ -12,7 +12,7 @@ Modules.load(new Object({
 	dependencies : ['engine_events', 'events', 'page_loaded'],
 	init : function()
 	{
-		var proceedIds = ['proceed', 'skip', 'statement-forwards', 'statement-skip-forwards'];
+		var proceedIds = ['start', 'proceed', 'skip', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
 		var forwardIds = ['statement-forwards', 'statement-skip-forwards'];
 		var backButtonIds = ['cr-item-check-back', 'back', 'examination-back'];
@@ -46,6 +46,8 @@ Modules.load(new Object({
 		// Listen to input:action events from InputManager
 		EngineEvents.on('input:action', function(data) {
 			if (data.source !== 'gamepad') return;
+
+			if (data._consumed) return;
 
 			switch (data.action) {
 				case 'proceed':

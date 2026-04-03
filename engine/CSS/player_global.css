@@ -952,6 +952,15 @@ a.courtrecord-switchview:active {
 	background-color: var(--color-bg-evidence-card);
 }
 
+/* Court record keyboard/gamepad navigation highlight */
+.evidence-list .evidence_display.cr-nav-highlight {
+	outline: 2px solid var(--color-focus-highlight);
+	outline-offset: -2px;
+}
+.evidence-list .evidence_display.cr-nav-highlight .details {
+	display: block;
+}
+
 .evidence-list .evidence_display .details
 {
 	display: none;
