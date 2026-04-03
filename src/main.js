@@ -160,7 +160,8 @@ window.addEventListener("DOMContentLoaded", async function () {
     loadLibrary: function () { ctx.loadLibrary(); },
     loadGlobalPluginsPanel: function () { if (ctx.loadGlobalPluginsPanel) ctx.loadGlobalPluginsPanel(); },
     writeGameSaves: function (saves) { return ctx.writeGameSaves(saves); },
-    nextBridgeId: function () { return savesFns.nextBridgeId("backup"); }
+    nextBridgeId: function () { return savesFns.nextBridgeId("backup"); },
+    getTheme: function () { return ctx.getTheme ? ctx.getTheme() : 'default'; }
   });
   ctx.showPlayer = playerFns.showPlayer;
   ctx.showLauncher = playerFns.showLauncher;
@@ -226,6 +227,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   const settingsFns = initSettings(invoke, Channel, statusMsg);
   ctx.loadSettings = settingsFns.loadSettings;
   ctx.loadStorageInfo = settingsFns.loadStorageInfo;
+  ctx.getTheme = settingsFns.getTheme;
 
   // --- Import ---
   initImport({

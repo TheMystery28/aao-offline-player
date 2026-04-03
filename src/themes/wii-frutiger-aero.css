@@ -1,0 +1,87 @@
+/*
+ * Wii Menu — Frutiger Aero Theme
+ * ================================
+ * Inspired by the Nintendo Wii Menu and the Frutiger Aero aesthetic (2004-2013).
+ * Glossy whites, aquatic cyan-blues, bright accents, and that utopian tech-meets-nature vibe.
+ *
+ * HOW TO USE:
+ *   Copy the contents of this file into Settings → Custom CSS.
+ *   Changes apply live.
+ */
+
+:root {
+  /* Backgrounds — clean white + frosted glass blues */
+  --bg-body:         #daeef7;
+  --bg-input:        #eef7fc;
+  --bg-dark:         #b8dded;
+  --bg-hover:        #c5e8f5;
+  --bg-btn-primary:  #0077cc;
+
+  /* Text — deep navy on bright backgrounds */
+  --text-primary:    #002244;
+  --text-secondary:  #004488;
+  --text-muted:      #4477aa;
+  --text-dimmed:     #6699bb;
+  --text-disabled:   #88aacc;
+  --text-label:      #336699;
+  --text-hover:      #001133;
+  --text-bright:     #ffffff;
+
+  /* Borders — subtle icy blue */
+  --border-color:    #8ec8e8;
+  --border-light:    #b0ddf0;
+  --border-focus:    #00aaff;
+
+  /* Accents — vivid sky-blue + grass-green */
+  --accent-blue:      #00aaff;
+  --accent-blue-dark: #0077cc;
+  --accent-purple:    #44cc88;
+  --danger-text:      #cc2200;
+  --danger-hover:     #ff4400;
+}
+
+/* Glossy button effect */
+#download-btn,
+.small-btn,
+.play-btn,
+.download-btn {
+  background: linear-gradient(180deg, #33bbff 0%, #0077cc 50%, #005fa3 100%);
+  border: 1px solid #005fa3;
+  box-shadow: 0 1px 4px rgba(0,100,200,0.35), inset 0 1px 0 rgba(255,255,255,0.5);
+  text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+}
+
+#download-btn:hover,
+.small-btn:hover,
+.play-btn:hover,
+.download-btn:hover {
+  background: linear-gradient(180deg, #55ccff 0%, #0099ee 50%, #0077cc 100%);
+}
+
+/* Frosted glass panel feel */
+#settings-panel,
+#plugins-panel,
+.case-card {
+  background: rgba(220,240,255,0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(140,200,240,0.6);
+  box-shadow: 0 4px 16px rgba(0,100,200,0.12), inset 0 1px 0 rgba(255,255,255,0.7);
+}
+
+/* Aero glow on focus */
+input:focus,
+select:focus,
+textarea:focus {
+  box-shadow: 0 0 0 3px rgba(0,170,255,0.35), 0 0 12px rgba(0,170,255,0.2);
+}
+
+/* Shiny progress bar */
+#progress-bar-inner {
+  background: linear-gradient(180deg, #55ddff 0%, #00aaff 50%, #0077cc 100%);
+  box-shadow: 0 0 8px rgba(0,170,255,0.5);
+}
+
+/* Soft bokeh-inspired section separator */
+section {
+  box-shadow: 0 2px 12px rgba(0,140,220,0.08);
+}

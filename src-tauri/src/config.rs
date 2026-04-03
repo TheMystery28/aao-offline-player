@@ -24,6 +24,12 @@ pub struct AppConfig {
     /// None means it has never been run.
     #[serde(default)]
     pub last_optimized_at: Option<u64>,
+    /// Selected UI theme name ("default", "gba", "ds").
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// User-supplied CSS injected into the launcher UI after the theme preset.
+    #[serde(default)]
+    pub custom_css: String,
 }
 
 fn default_language() -> String {
@@ -38,6 +44,9 @@ fn default_auto_save() -> bool {
 fn default_blur_spoilers() -> bool {
     true
 }
+fn default_theme() -> String {
+    "default".to_string()
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -48,17 +57,23 @@ impl Default for AppConfig {
             blur_spoilers: default_blur_spoilers(),
             migration_complete: false,
             last_optimized_at: None,
+            theme: default_theme(),
+            custom_css: String::new(),
         }
     }
 }
 
 const VALID_LANGUAGES: &[&str] = &["en", "fr", "de", "es"];
+const VALID_THEMES: &[&str] = &["default", "gba", "ds"];
 
 /// Validate and clamp config values to acceptable ranges.
 pub fn validate(config: &mut AppConfig) {
     config.concurrent_downloads = config.concurrent_downloads.clamp(1, 10);
     if !VALID_LANGUAGES.contains(&config.language.as_str()) {
         config.language = default_language();
+    }
+    if !VALID_THEMES.contains(&config.theme.as_str()) {
+        config.theme = default_theme();
     }
 }
 
@@ -529,5 +544,83 @@ mod tests {
         assert_eq!(info.defaults_shared_images_bytes, 0);
         assert_eq!(info.defaults_shared_audio_bytes, 70);
         assert_eq!(info.defaults_shared_other_bytes, 0);
+    }
+
+    // --- theme field regression tests ---
+    // These tests are written BEFORE the `theme` field is added to AppConfig.
+    // They will fail to compile until the field is added, confirming we are in
+    // the TDD red phase. Once the field and validation are implemented, they pass.
+
+    #[test]
+    fn test_theme_defaults_to_default() {
+        let config = AppConfig::default();
+        assert_eq!(config.theme, "default");
+    }
+
+    #[test]
+    fn test_theme_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            theme: "gba".to_string(),
+            ..Default::default()
+        };
+        save_config(dir.path(), &config).unwrap();
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.theme, "gba");
+    }
+
+    #[test]
+    fn test_theme_missing_from_json_defaults_to_default() {
+        // Old config.json without the theme field must deserialize to "default".
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), r#"{"language":"en"}"#).unwrap();
+        let config = load_config(dir.path());
+        assert_eq!(config.theme, "default");
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_theme() {
+        let mut config = AppConfig {
+            theme: "dark_mode".to_string(),
+            ..Default::default()
+        };
+        validate(&mut config);
+        assert_eq!(config.theme, "default");
+    }
+
+    #[test]
+    fn test_validate_accepts_valid_themes() {
+        for name in &["default", "gba", "ds"] {
+            let mut config = AppConfig {
+                theme: name.to_string(),
+                ..Default::default()
+            };
+            validate(&mut config);
+            assert_eq!(&config.theme, name);
+        }
+    }
+
+    // --- custom_css regression test ---
+    // Written before the field is added: old config.json without custom_css must
+    // deserialize to an empty string (serde default).
+
+    #[test]
+    fn test_custom_css_missing_from_json_defaults_to_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), r#"{"language":"en"}"#).unwrap();
+        let config = load_config(dir.path());
+        assert_eq!(config.custom_css, "");
+    }
+
+    #[test]
+    fn test_custom_css_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            custom_css: ":root { --bg-body: #ff0000; }".to_string(),
+            ..Default::default()
+        };
+        save_config(dir.path(), &config).unwrap();
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.custom_css, ":root { --bg-body: #ff0000; }");
     }
 }

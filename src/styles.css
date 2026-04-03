@@ -1,14 +1,14 @@
 :root {
   /* Backgrounds */
-  --bg-body: #1a1a2e;
-  --bg-input: #16213e;
-  --bg-dark: #0d1117;
-  --bg-hover: #1a2a4e;
-  --bg-btn-primary: #0f3460;
+  --bg-body: #1c1c1c;
+  --bg-input: #242424;
+  --bg-dark: #111111;
+  --bg-hover: #2a2020;
+  --bg-btn-primary: #8b1a1a;
 
   /* Text */
-  --text-primary: #e0e0e0;
-  --text-secondary: #aaa;
+  --text-primary: #e8e0e0;
+  --text-secondary: #bba8a8;
   --text-muted: #888;
   --text-dimmed: #555;
   --text-disabled: #666;
@@ -17,15 +17,15 @@
   --text-bright: #fff;
 
   /* Borders */
-  --border-color: #2a2a4a;
+  --border-color: #2d1a1a;
   --border-light: #333;
-  --border-focus: #4a4a8a;
+  --border-focus: #8b1a1a;
 
   /* Accent */
-  --accent-blue: #2980b9;
-  --accent-blue-dark: #1a5276;
-  --accent-purple: #8e44ad;
-  --danger-text: #844;
+  --accent-blue: #c0392b;
+  --accent-blue-dark: #922b21;
+  --accent-purple: #e74c3c;
+  --danger-text: #e74c3c;
   --danger-hover: #f55;
 
   /* Sizing */
@@ -75,7 +75,7 @@
 
 #launcher h1 {
   font-size: 1.8rem;
-  color: var(--text-bright);
+  color: var(--text-primary);
   margin-bottom: 0.25rem;
 }
 
@@ -318,10 +318,11 @@
   border-radius: var(--radius-md);
   padding: 1rem 1.25rem;
   margin-bottom: 0.75rem;
-  transition: border-color 0.2s, box-shadow 0.3s;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.3s;
 }
 
 .case-card:hover {
+  background: var(--bg-hover);
   border-color: var(--border-focus);
 }
 
@@ -336,7 +337,7 @@
 }
 
 .case-info strong {
-  color: var(--text-bright);
+  color: var(--text-primary);
   font-size: var(--font-xl);
 }
 
@@ -521,11 +522,11 @@
 }
 
 .sequence-header:hover {
-  background: rgba(41, 128, 185, 0.08);
+  background: var(--bg-hover);
 }
 
 .sequence-header strong {
-  color: var(--text-bright);
+  color: var(--text-primary);
   font-size: var(--font-xl);
   flex: 1;
   min-width: 0;
@@ -556,8 +557,13 @@
   flex-wrap: wrap;
   gap: 0.35rem;
   padding: 0.55rem 1.25rem 0.55rem 1.5rem;
-  border-bottom: 1px solid rgba(42, 42, 74, 0.5);
+  border-bottom: 1px solid var(--border-color);
   font-size: var(--font-lg);
+  transition: background 0.2s;
+}
+
+.sequence-part:hover {
+  background: var(--bg-hover);
 }
 
 .sequence-part:last-child {
@@ -879,6 +885,23 @@
   border-color: var(--border-focus);
 }
 
+.custom-css-input {
+  width: 100%;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: var(--font-xs);
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.custom-css-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
 .range-row {
   display: flex;
   align-items: center;
@@ -1104,11 +1127,11 @@
 }
 
 .collection-header:hover {
-  background: rgba(142, 68, 173, 0.08);
+  background: var(--bg-hover);
 }
 
 .collection-header strong {
-  color: var(--text-bright);
+  color: var(--text-primary);
   font-size: var(--font-xl);
   flex: 1;
   min-width: 0;
@@ -1188,9 +1211,9 @@
 
 #cases h2 .collection-btn {
   float: right;
-  background: #2a1540;
-  color: #b87fd8;
-  border-color: #5a2d7a;
+  background: var(--bg-dark);
+  color: var(--accent-purple);
+  border-color: var(--border-color);
   font-size: var(--font-sm);
   padding: 0.2rem 0.6rem;
   position: relative;
@@ -1198,9 +1221,9 @@
 }
 
 #cases h2 .collection-btn:hover {
-  color: #d9a8f0;
+  color: var(--text-bright);
   border-color: var(--accent-purple);
-  background: #3a2050;
+  background: var(--bg-hover);
 }
 
 /* ── Collection Modal (Create / Edit) ── */

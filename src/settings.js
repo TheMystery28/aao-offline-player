@@ -1,5 +1,69 @@
 import { formatBytes, showConfirmModal, applySpoilerBlur, removeSpoilerBlur } from './helpers.js';
 
+const THEME_PRESETS = {
+  'default': {},
+  'gba': {
+    '--bg-body': '#1a0033',
+    '--bg-input': '#200040',
+    '--bg-dark': '#100020',
+    '--bg-hover': '#2a0055',
+    '--bg-btn-primary': '#4a0080',
+    '--text-primary': '#f0e8ff',
+    '--text-secondary': '#cc99ff',
+    '--text-muted': '#9966cc',
+    '--text-dimmed': '#663399',
+    '--accent-blue': '#9933ff',
+    '--accent-blue-dark': '#6600cc',
+    '--accent-purple': '#ff66aa',
+    '--border-color': '#3d0066',
+    '--border-focus': '#9933ff',
+    '--danger-text': '#ff4466'
+  },
+  'ds': {
+    '--bg-body': '#c8d0d8',
+    '--bg-input': '#d8e0e8',
+    '--bg-dark': '#b0b8c0',
+    '--bg-hover': '#d0d8e0',
+    '--bg-btn-primary': '#003399',
+    '--text-primary': '#101820',
+    '--text-secondary': '#304050',
+    '--text-hover': '#202830',
+    '--text-muted': '#374555',
+    '--text-dimmed': '#3d4f5f',
+    '--accent-blue': '#0044cc',
+    '--accent-blue-dark': '#003399',
+    '--accent-purple': '#6600cc',
+    '--border-color': '#6a7880',
+    '--border-focus': '#0044cc',
+    '--danger-text': '#cc2200'
+  }
+};
+
+function applyLauncherTheme(themeName) {
+  const preset = THEME_PRESETS[themeName] || THEME_PRESETS['default'];
+  let el = document.getElementById('launcher-theme-style');
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'launcher-theme-style';
+    document.head.appendChild(el);
+  }
+  const vars = Object.keys(preset);
+  el.textContent = vars.length > 0
+    ? ':root {\n' + vars.map(function(v) { return '  ' + v + ': ' + preset[v] + ';'; }).join('\n') + '\n}'
+    : '';
+}
+
+function applyCustomLauncherCSS(css) {
+  let el = document.getElementById('launcher-custom-style');
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'launcher-custom-style';
+  }
+  // Always move to end of <head> so it comes after launcher-theme-style and wins the cascade.
+  document.head.appendChild(el);
+  el.textContent = css || '';
+}
+
 function formatRelativeTime(unixSecs) {
   if (!unixSecs) return "Never run";
   var diff = Math.floor(Date.now() / 1000) - unixSecs;
@@ -19,6 +83,8 @@ export function initSettings(invoke, Channel, statusMsg) {
   const settingsToggle = document.getElementById("settings-toggle");
   const settingsPanel = document.getElementById("settings-panel");
   const settingsLanguage = document.getElementById("settings-language");
+  const settingsTheme = document.getElementById("settings-theme");
+  const settingsCustomCss = document.getElementById("settings-custom-css");
   const settingsConcurrency = document.getElementById("settings-concurrency");
   const concurrencyValue = document.getElementById("concurrency-value");
   const dataDirPath = document.getElementById("data-dir-path");
@@ -61,6 +127,10 @@ export function initSettings(invoke, Channel, statusMsg) {
       concurrencyValue.textContent = settings.concurrent_downloads;
       if (settingsAutoSave) settingsAutoSave.checked = settings.auto_save;
       if (settingsBlurSpoilers) settingsBlurSpoilers.checked = settings.blur_spoilers;
+      if (settingsTheme) settingsTheme.value = settings.theme || "default";
+      applyLauncherTheme(settingsTheme ? settingsTheme.value : "default");
+      if (settingsCustomCss) settingsCustomCss.value = settings.custom_css || "";
+      applyCustomLauncherCSS(settings.custom_css || "");
       lastOptimizedAt = settings.last_optimized_at;
       refreshLastOptimizedText();
     }).catch(function (e) {
@@ -73,7 +143,9 @@ export function initSettings(invoke, Channel, statusMsg) {
       language: settingsLanguage.value,
       concurrent_downloads: parseInt(settingsConcurrency.value, 10),
       auto_save: settingsAutoSave ? settingsAutoSave.checked : true,
-      blur_spoilers: settingsBlurSpoilers ? settingsBlurSpoilers.checked : true
+      blur_spoilers: settingsBlurSpoilers ? settingsBlurSpoilers.checked : true,
+      theme: settingsTheme ? settingsTheme.value : "default",
+      custom_css: settingsCustomCss ? settingsCustomCss.value : ""
     };
     invoke("save_settings", { settings: settings }).catch(function (e) {
       console.error("[SETTINGS] Failed to save settings:", e);
@@ -86,6 +158,20 @@ export function initSettings(invoke, Channel, statusMsg) {
   }
 
   settingsLanguage.addEventListener("change", debounceSave);
+  if (settingsTheme) {
+    settingsTheme.addEventListener("change", function () {
+      applyLauncherTheme(settingsTheme.value);
+      applyCustomLauncherCSS(settingsCustomCss ? settingsCustomCss.value : "");
+      debounceSave();
+    });
+  }
+
+  if (settingsCustomCss) {
+    settingsCustomCss.addEventListener("input", function () {
+      applyCustomLauncherCSS(settingsCustomCss.value);
+      debounceSave();
+    });
+  }
 
   settingsConcurrency.addEventListener("input", function () {
     concurrencyValue.textContent = settingsConcurrency.value;
@@ -213,8 +299,13 @@ export function initSettings(invoke, Channel, statusMsg) {
     });
   });
 
+  function getTheme() {
+    return settingsTheme ? settingsTheme.value : "default";
+  }
+
   return {
     loadSettings: loadSettings,
-    loadStorageInfo: loadStorageInfo
+    loadStorageInfo: loadStorageInfo,
+    getTheme: getTheme
   };
 }

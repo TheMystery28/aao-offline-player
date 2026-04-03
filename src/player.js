@@ -3,6 +3,41 @@
  *
  * @param {AppContext} ctx
  */
+function buildEngineThemeCSS(themeName) {
+  var presets = {
+    'gba': ':root {' +
+      ' --color-bg-page: #1a0033;' +
+      ' --color-bg-content: #2a0044;' +
+      ' --color-bg-section: #300050;' +
+      ' --color-bg-panel: #200040;' +
+      ' --color-bg-header: #2a0055;' +
+      ' --color-bg-button: #6600cc;' +
+      ' --color-bg-button-hover: #7700ee;' +
+      ' --color-bg-cr: #200040;' +
+      ' --color-bg-cr-switch: #6600cc;' +
+      ' --color-bg-cr-switch-hover: #7700ee;' +
+      ' --color-text-heading: #cc99ff;' +
+      ' --color-text-button: #ffffff;' +
+      ' }',
+    'ds': ':root {' +
+      ' --color-bg-page: #c8d0d8;' +
+      ' --color-bg-content: #b0c0d0;' +
+      ' --color-bg-section: #e0e8f0;' +
+      ' --color-bg-panel: #d8e0e8;' +
+      ' --color-bg-header: #c0ccd8;' +
+      ' --color-bg-button: #003399;' +
+      ' --color-bg-button-hover: #0044bb;' +
+      ' --color-bg-cr: #d8e0e8;' +
+      ' --color-bg-cr-switch: #003399;' +
+      ' --color-bg-cr-switch-hover: #0044bb;' +
+      ' --color-text-heading: #001166;' +
+      ' --color-text-button: #ffffff;' +
+      ' }',
+    'default': ''
+  };
+  return presets[themeName] || '';
+}
+
 export function initPlayer(ctx) {
   const invoke = ctx.invoke;
   const statusMsg = ctx.statusMsg;
@@ -10,6 +45,7 @@ export function initPlayer(ctx) {
   const loadGlobalPluginsPanel = ctx.loadGlobalPluginsPanel;
   const writeGameSaves = ctx.writeGameSaves;
   const nextBridgeId = ctx.nextBridgeId;
+  const getTheme = ctx.getTheme;
 
   // DOM refs (owned exclusively by the player module)
   const launcher = document.getElementById("launcher");
@@ -53,6 +89,17 @@ export function initPlayer(ctx) {
     // Debug: capture resource load errors from the iframe (one-time)
     gameFrame.addEventListener("load", function onFrameLoad() {
       gameFrame.removeEventListener("load", onFrameLoad);
+      // Inject theme CSS into the engine via EngineConfig.theme.customCSS
+      try {
+        const themeName = getTheme ? getTheme() : 'default';
+        const css = buildEngineThemeCSS(themeName);
+        gameFrame.contentWindow.postMessage(
+          { type: 'aao-set-config', path: 'theme.customCSS', value: css },
+          '*'
+        );
+      } catch (themeErr) {
+        console.warn("[PLAYER] Could not send theme to engine:", themeErr.message);
+      }
       try {
         const iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
         console.log("[PLAYER] Iframe loaded. baseURI=" + iframeDoc.baseURI);

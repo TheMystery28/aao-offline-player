@@ -1,0 +1,159 @@
+/*
+ * Classic Game Boy (DMG) Theme
+ * ==============================
+ * Homage to the original Nintendo Game Boy (1989).
+ * Strict 4-color pea-soup green palette, pixelated 8-bit aesthetic, no smooth edges.
+ *
+ * Palette (authentic DMG screen colors):
+ *   #9BBC0F — brightest, blank screen / highlights
+ *   #8BAC0F — light olive, mid surfaces
+ *   #306230 — dark olive, shadows / borders
+ *   #0F380F — deepest black-green, text / outlines
+ *
+ * HOW TO USE:
+ *   Copy the contents of this file into Settings → Custom CSS.
+ *   Changes apply live.
+ */
+
+/* Import a pixelated / monospace font for the 8-bit feel */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+:root {
+  /* Backgrounds */
+  --bg-body:         #9BBC0F;
+  --bg-input:        #8BAC0F;
+  --bg-dark:         #306230;
+  --bg-hover:        #8BAC0F;
+  --bg-btn-primary:  #306230;
+
+  /* Text — only the 4 DMG greens */
+  --text-primary:    #0F380F;
+  --text-secondary:  #306230;
+  --text-muted:      #306230;
+  --text-dimmed:     #306230;
+  --text-disabled:   #306230;
+  --text-label:      #0F380F;
+  --text-hover:      #0F380F;
+  --text-bright:     #9BBC0F;
+
+  /* Borders */
+  --border-color:    #306230;
+  --border-light:    #306230;
+  --border-focus:    #0F380F;
+
+  /* Accents */
+  --accent-blue:      #306230;
+  --accent-blue-dark: #0F380F;
+  --accent-purple:    #0F380F;
+  --danger-text:      #0F380F;
+  --danger-hover:     #306230;
+
+  /* Force pixelated rendering everywhere */
+  image-rendering: pixelated;
+
+  /* 8-bit font */
+  font-family: 'Press Start 2P', 'Courier New', monospace !important;
+  font-size: 10px !important;
+}
+
+/* Kill anti-aliasing — everything should look pixelated */
+* {
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  border-radius: 0 !important;
+}
+
+/* Hard pixel borders everywhere */
+input,
+select,
+textarea,
+button,
+.case-card,
+#settings-panel,
+#plugins-panel,
+.modal,
+.modal-content,
+section {
+  border-radius: 0 !important;
+  border-width: 2px !important;
+  border-style: solid !important;
+}
+
+/* Dithered background using CSS — checkerboard pattern simulates DMG dithering */
+body {
+  background-color: #9BBC0F;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(15,56,15,0.04) 2px,
+      rgba(15,56,15,0.04) 4px
+    );
+}
+
+/* Buttons: flat, hard-edged, high-contrast */
+#download-btn,
+.small-btn,
+.play-btn,
+.download-btn {
+  background: #306230;
+  color: #9BBC0F;
+  border: 2px solid #0F380F;
+  box-shadow: 2px 2px 0 #0F380F;
+  text-shadow: none;
+  border-radius: 0 !important;
+}
+
+#download-btn:hover,
+.small-btn:hover,
+.play-btn:hover,
+.download-btn:hover {
+  background: #0F380F;
+  color: #9BBC0F;
+  box-shadow: none;
+  transform: translate(2px, 2px);
+}
+
+/* Progress bar — hard green block */
+#progress-bar-outer {
+  border: 2px solid #0F380F;
+  border-radius: 0 !important;
+  background: #8BAC0F;
+}
+
+#progress-bar-inner {
+  background: #0F380F;
+  border-radius: 0 !important;
+  box-shadow: none;
+}
+
+/* Inputs: dark olive trough */
+input[type="text"],
+input[type="range"],
+select,
+textarea {
+  background: #8BAC0F;
+  color: #0F380F;
+  border: 2px solid #0F380F !important;
+  outline: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  box-shadow: 2px 2px 0 #0F380F !important;
+}
+
+/* Case cards: hard box with pixel shadow */
+.case-card {
+  background: #8BAC0F;
+  border: 2px solid #306230 !important;
+  box-shadow: 3px 3px 0 #0F380F;
+}
+
+/* Section headings: uppercase, bold DMG green */
+h1, h2 {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

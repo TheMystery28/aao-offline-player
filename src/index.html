@@ -91,6 +91,22 @@
           </div>
 
           <div class="settings-group">
+            <label for="settings-theme">Theme</label>
+            <select id="settings-theme">
+              <option value="default">Default (Dark)</option>
+              <option value="gba">GBA</option>
+              <option value="ds">DS</option>
+            </select>
+          </div>
+
+          <div class="settings-group">
+            <label for="settings-custom-css">Custom CSS</label>
+            <textarea id="settings-custom-css" class="custom-css-input" rows="5"
+              placeholder=":root { --bg-btn-primary: #c0392b; }&#10;/* Override any launcher CSS variable */"></textarea>
+            <p class="settings-hint">CSS applied after the theme. Changes apply live.</p>
+          </div>
+
+          <div class="settings-group">
             <label for="settings-concurrency">Concurrent Downloads</label>
             <div class="range-row">
               <input type="range" id="settings-concurrency" min="1" max="10" value="3" />
