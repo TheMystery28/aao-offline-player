@@ -127,6 +127,25 @@ Modules.load(new Object({
 
 //INDEPENDENT INSTRUCTIONS
 var current_music_id;
+var _musicPositionCache = 0;
+var _musicPositionRAF = null;
+
+// Heartbeat: cache the music position every animation frame while playing.
+// Needed because Howler's stop() resets <audio>.currentTime to 0, making
+// howl.seek() useless for recovery after silent audio death on Android.
+function _trackMusicPosition()
+{
+	if(current_music_id && current_music_id != MUSIC_STOP)
+	{
+		var howl = SoundHowler.getSoundById('music_' + current_music_id);
+		if(howl && howl.playing())
+		{
+			var pos = howl.seek();
+			if(typeof pos === 'number' && pos > 0) _musicPositionCache = pos;
+		}
+	}
+	_musicPositionRAF = requestAnimationFrame(_trackMusicPosition);
+}
 
 //EXPORTED VARIABLES
 
@@ -140,15 +159,43 @@ function playSound(sound_id)
 
 function playMusic(music_id)
 {
-	if(current_music_id != music_id)
+	var howler_id = 'music_' + music_id;
+	var needsRestart = (current_music_id != music_id);
+	var recoveryPosition = 0;
+
+	// Liveness check: on Android WebView, the <audio> element may have
+	// silently died (rejected play() Promise, OS audio session kill).
+	// Detect this by checking howl.playing() and recover from cached position.
+	if(!needsRestart && current_music_id != MUSIC_STOP)
+	{
+		var howl = SoundHowler.getSoundById(howler_id);
+		if(howl && !howl.playing())
+		{
+			needsRestart = true;
+			recoveryPosition = _musicPositionCache;
+		}
+	}
+
+	if(needsRestart)
 	{
 		stopMusic();
-		var howler_id = 'music_' + music_id;
 		// Reset the volume, if a fade changed it.
 		SoundHowler.setSoundVolume(howler_id, getRowById('music', music_id).volume);
-		SoundHowler.playSound(howler_id);
+		var playId = SoundHowler.playSound(howler_id);
+
+		// If recovering a dead track, seamlessly seek to where it died
+		if(recoveryPosition > 0 && typeof playId === 'number')
+		{
+			var activeHowl = SoundHowler.getSoundById(howler_id);
+			if(activeHowl) activeHowl.seek(recoveryPosition, playId);
+		}
+
 		current_music_id = music_id;
+		_musicPositionCache = recoveryPosition;
 		EngineEvents.emit('music:play', { musicId: music_id });
+
+		// Start position tracking if not already running
+		if(!_musicPositionRAF) _trackMusicPosition();
 	}
 }
 
@@ -221,6 +268,8 @@ function stopMusic()
 {
 	SoundHowler.stopSound('music_' + current_music_id);
 	current_music_id = MUSIC_STOP;
+	_musicPositionCache = 0;
+	if(_musicPositionRAF) { cancelAnimationFrame(_musicPositionRAF); _musicPositionRAF = null; }
 	EngineEvents.emit('music:stop', {});
 }
 

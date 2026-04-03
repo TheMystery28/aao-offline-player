@@ -164,6 +164,8 @@
 		['Save Load Guards', typeof testSaveLoadGuards === 'function' ? testSaveLoadGuards : null],
 		['Save Audio Behavior', typeof testSaveAudioBehavior === 'function' ? testSaveAudioBehavior : null],
 			['Sound', typeof testSound === 'function' ? testSound : null],
+		['Sound Loop Mechanism', typeof testSoundLoopMechanism === 'function' ? testSoundLoopMechanism : null],
+		['Sound Liveness Recovery', typeof testSoundLivenessRecovery === 'function' ? testSoundLivenessRecovery : null],
 			['Display', typeof testDisplay === 'function' ? testDisplay : null],
 			['Expression Engine', typeof testExpressionEngine === 'function' ? testExpressionEngine : null],
 			['Language', typeof testLanguage === 'function' ? testLanguage : null],

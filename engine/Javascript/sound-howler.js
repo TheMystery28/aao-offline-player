@@ -99,12 +99,17 @@ function SoundHowler() {
 		});
 
 		// For HTML5 Audio with loop_start: set up seek-based looping.
-		// When the track ends, seek to loop_start and replay.
+		// When the track ends, spawn a new playback node and seek it to loop_start.
+		// IMPORTANT: play() must come BEFORE seek() to avoid a race condition where
+		// seek() mutates the dying node while _ended() is still cleaning it up,
+		// causing two concurrent <audio> elements on Android WebView.
 		if (useHtml5 && args.loop && args.loop.start) {
 			var loopStartSec = args.loop.start / 1000;
 			newHowl.on('end', function() {
-				newHowl.seek(loopStartSec);
-				newHowl.play();
+				var newId = newHowl.play();
+				if (typeof newId === 'number') {
+					newHowl.seek(loopStartSec, newId);
+				}
 			});
 		}
 
@@ -123,7 +128,7 @@ function SoundHowler() {
 		var sound = self.getSoundById(id);
 		if (sound._sprite.intro) {
 			if(from_loop) {
-				sound.play("loop");
+				return sound.play("loop");
 			}
 			else {
 				sound._onend = [
@@ -134,9 +139,9 @@ function SoundHowler() {
 				  }
 				}
 				]
-				sound.play("intro");
+				return sound.play("intro");
 			}
-		} else if (sound !== null) sound.play();
+		} else if (sound !== null) return sound.play();
 	};
 
 	self.pauseSound = function(id)
