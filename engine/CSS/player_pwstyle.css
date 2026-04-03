@@ -116,8 +116,10 @@
 
 #options a:hover,
 #options a:focus,
+#options a.option-nav-highlight,
 #options-investigation a:hover,
-#options-investigation a:focus { border-color:var(--color-focus-highlight); }
+#options-investigation a:focus,
+#options-investigation a.option-nav-highlight { border-color:var(--color-focus-highlight); }
 
 #options-investigation a {
 	background:var(--color-bg-game-options-inv);

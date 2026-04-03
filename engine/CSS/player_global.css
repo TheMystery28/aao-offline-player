@@ -543,12 +543,19 @@ body > #content > section.layout-stack #screens {
 	margin-top:5px; 
 }
 
+/* Keyboard/gamepad navigation highlight */
+#options a.option-nav-highlight,
+#options-investigation a.option-nav-highlight {
+	outline:2px solid var(--color-focus-highlight);
+	outline-offset:-2px;
+}
+
 /* TODO: add handling for that later, maybe
 #options a.done::before {
 	display:block;
 	position:absolute;
 	top:-7px; left:-7px;
-	
+
 	content:url("../images/player/tick.png");
 }*/
 
