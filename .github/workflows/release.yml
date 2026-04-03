@@ -220,6 +220,11 @@ jobs:
       - name: Generate Android icons from app icon
         run: npx tauri icon src-tauri/icons/icon.png
 
+      - name: Generate full-diameter round icons
+        run: |
+          pip install Pillow
+          python3 scripts/gen-android-round-icons.py
+
       - name: Allow cleartext localhost traffic (for local asset server)
         run: |
           cat > src-tauri/gen/android/app/src/main/res/xml/network_security_config.xml << 'XMLEOF'
