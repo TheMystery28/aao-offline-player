@@ -85,6 +85,14 @@ function loadSaveData(save)
 	}
 	player_status = save.player_status;
 	top_screen.setVariableEnvironment(player_status.game_env);
+	stopNonMusicSounds();
+	// Cancel any in-flight typing chain so stale blips stop immediately.
+	// Not all loadSaveData paths call readFrame → initLoadFrame, so we must cancel here.
+	if(top_screen && top_screen.text_display)
+	{
+		top_screen.text_display._typingGen++;
+		top_screen.text_display.stopTalking();
+	}
 	try { playMusic(save.current_music_id); } catch(e) { /* sounds may not be loaded yet during auto-start */ }
 	refreshHealthBar();
 	
@@ -262,25 +270,15 @@ function refreshSavesList()
 				}
 			}
 			if (!latestStr) return;
-			if(player_status.proceed_timer && !player_status.proceed_timer_met)
-			{
-				alert(l('save_error_pending_timer'));
-			}
-			else if(player_status.proceed_typing && !player_status.proceed_typing_met)
-			{
-				alert(l('save_error_frame_typing'));
-			}
-			else
-			{
-				if (latestPartId == trial_information.id) {
-					loadSaveString(latestStr);
-				} else {
-					// Redirect to the other part with save data
-					var url = new URL(window.location.href);
-					url.searchParams.set('trial_id', latestPartId);
-					url.searchParams.set('save_data', Base64.encode(latestStr));
-					window.location.href = url.toString();
-				}
+			// Instant load: no restriction on timer/typing state
+			if (latestPartId == trial_information.id) {
+				loadSaveString(latestStr);
+			} else {
+				// Redirect to the other part with save data
+				var url = new URL(window.location.href);
+				url.searchParams.set('trial_id', latestPartId);
+				url.searchParams.set('save_data', Base64.encode(latestStr));
+				window.location.href = url.toString();
 			}
 		}, false);
 		btnRow.appendChild(load_button);
@@ -357,16 +355,11 @@ function refreshSavesList()
 				save_link.href = url.toString();
 
 				registerEventHandler(save_link, 'click', function(event) {
-					if (player_status.proceed_timer && !player_status.proceed_timer_met) {
-						alert(l('save_error_pending_timer'));
-					} else if (player_status.proceed_typing && !player_status.proceed_typing_met) {
-						alert(l('save_error_frame_typing'));
+					// Instant load: no restriction on timer/typing state
+					if (entry.isCurrent) {
+						loadSaveString(entry.saveString);
 					} else {
-						if (entry.isCurrent) {
-							loadSaveString(entry.saveString);
-						} else {
-							window.location.href = save_link.href;
-						}
+						window.location.href = save_link.href;
 					}
 					event.preventDefault();
 				}, false);

@@ -161,6 +161,8 @@
 			['Court Record', typeof testCourtRecord === 'function' ? testCourtRecord : null],
 			['Controls', typeof testControls === 'function' ? testControls : null],
 			['Save', typeof testSave === 'function' ? testSave : null],
+		['Save Load Guards', typeof testSaveLoadGuards === 'function' ? testSaveLoadGuards : null],
+		['Save Audio Behavior', typeof testSaveAudioBehavior === 'function' ? testSaveAudioBehavior : null],
 			['Sound', typeof testSound === 'function' ? testSound : null],
 			['Display', typeof testDisplay === 'function' ? testDisplay : null],
 			['Expression Engine', typeof testExpressionEngine === 'function' ? testExpressionEngine : null],

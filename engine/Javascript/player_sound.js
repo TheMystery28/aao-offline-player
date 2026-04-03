@@ -224,6 +224,18 @@ function stopMusic()
 	EngineEvents.emit('music:stop', {});
 }
 
+function stopNonMusicSounds()
+{
+	for(var i = 0; i < SoundHowler.registeredSounds.length; i++)
+	{
+		var sid = SoundHowler.registeredSounds[i].id;
+		if(sid.indexOf('music_') !== 0)
+		{
+			SoundHowler.registeredSounds[i].howl.stop();
+		}
+	}
+}
+
 // All "sound player" functions are needed for a minimalist music player.
 // Currently, this is needed for audio evidence in the Court Record.
 function updateSoundPlayerProgress(sound) {

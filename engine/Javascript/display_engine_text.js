@@ -60,6 +60,7 @@ function TextDisplay(character_display, screen_display)
 	
 	self.is_talking = false;
 	self.timeSinceBlip = 0;
+	self._typingGen = 0; // generation counter — incremented on each new frame to cancel stale typing chains
 	
 	self.startTalking = function()
 	{
@@ -248,8 +249,14 @@ function TextDisplay(character_display, screen_display)
 	};
 	
 	// Type text in given container and run callback when done
-	self.typeText = function(container, remaining_text, speed, callback)
+	self.typeText = function(container, remaining_text, speed, callback, _gen)
 	{
+		// On first call _gen is undefined; capture current generation.
+		// On recursive setTimeout calls _gen carries the original value.
+		if(_gen === undefined) _gen = self._typingGen;
+		// If a new frame started since this chain was launched, abandon silently.
+		if(_gen !== self._typingGen) return;
+
 		if(self.skip_remaining_text || self.instant_mode_enabled)
 		{
 			self.instantTypeText(container, remaining_text, callback);
@@ -308,8 +315,8 @@ function TextDisplay(character_display, screen_display)
 								
 								// Type in new container before resuming typing the rest
 								self.typeText(inner_container, first_tag.tag_contents, speed, function(){
-									self.typeText(container, next_remaining_text, speed, callback);
-								});
+									self.typeText(container, next_remaining_text, speed, callback, _gen);
+								}, _gen);
 								
 								return; // Interrupt typing, since it'll be resumed by the callback
 								
@@ -443,7 +450,7 @@ function TextDisplay(character_display, screen_display)
 					
 					// If not interrupted before, resume typing after tag
 					window.setTimeout(function() {
-						self.typeText(container, next_remaining_text, speed, callback);
+						self.typeText(container, next_remaining_text, speed, callback, _gen);
 					}, next_delay);
 				}
 				else
@@ -483,7 +490,7 @@ function TextDisplay(character_display, screen_display)
 					
 					// Then move forward in the string
 					window.setTimeout(function() {
-						self.typeText(container, remaining_text.substring(1), speed, callback);
+						self.typeText(container, remaining_text.substring(1), speed, callback, _gen);
 					}, 33 / speed);
 				}
 			}
@@ -507,6 +514,7 @@ function TextDisplay(character_display, screen_display)
 	// Separation allows the old textbox to be cleared before startup animations finish
 	self.initLoadFrame = function(frame_data)
 	{
+		self._typingGen++; // invalidate any in-flight typing chain from a previous frame
 		self.skip_remaining_text = false; // reinit skipping state
 		
 		if(!self.previous_frame_merged)
