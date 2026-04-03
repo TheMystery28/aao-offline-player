@@ -1,5 +1,123 @@
-import { formatBytes, escapeHtml, showUpdateModal, showConfirmModal, groupCasesBySequence } from './helpers.js';
+import { formatBytes, escapeHtml, showUpdateModal, showConfirmModal, groupCasesBySequence, applySpoilerBlur } from './helpers.js';
 import { buildSequenceGroupCore } from './collections/rendering.js';
+
+// ── Asset gallery helpers ──────────────────────────────────────────────────
+
+const IMAGE_EXTS = ['gif', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'svg'];
+const AUDIO_EXTS = ['mp3', 'ogg', 'wav', 'aac', 'm4a', 'flac'];
+
+function getExt(path) { return (path.split('.').pop() || '').toLowerCase(); }
+function isImage(path) { return IMAGE_EXTS.indexOf(getExt(path)) !== -1; }
+function isAudio(path) { return AUDIO_EXTS.indexOf(getExt(path)) !== -1; }
+
+export function switchInspectTab(name) {
+  const tabs = ['images', 'audio', 'failed'];
+  tabs.forEach(function (t) {
+    const tabBtn = document.querySelector('.inspect-tab[data-tab="' + t + '"]');
+    const panel = document.getElementById('inspect-' + t + '-panel');
+    if (tabBtn) tabBtn.classList.toggle('active', t === name);
+    if (panel) panel.classList.toggle('hidden', t !== name);
+  });
+}
+
+export function showInspectModal(manifest, serverUrl) {
+  const images = [];
+  const audio = [];
+  const assetMap = manifest.asset_map || {};
+
+  Object.keys(assetMap).forEach(function (localUrl) {
+    const localPath = assetMap[localUrl];
+    // Mirror Rust case_relative(): assets/* need case/{id}/ prefix; defaults/* serve as-is
+    const serverPath = localPath.indexOf('assets/') === 0
+      ? 'case/' + manifest.case_id + '/' + localPath
+      : localPath;
+    const fullUrl = serverUrl + '/' + serverPath;
+    const name = localPath.split('/').pop();
+    if (isImage(localPath)) {
+      images.push({ url: fullUrl, name: name });
+    } else if (isAudio(localPath)) {
+      audio.push({ url: fullUrl, name: name });
+    }
+  });
+
+  const failed = manifest.failed_assets || [];
+
+  // Update title and counts
+  const titleEl = document.getElementById('inspect-modal-title');
+  if (titleEl) titleEl.textContent = manifest.title + ' \u2014 Assets';
+  const imgCount = document.getElementById('inspect-image-count');
+  if (imgCount) imgCount.textContent = images.length;
+  const audCount = document.getElementById('inspect-audio-count');
+  if (audCount) audCount.textContent = audio.length;
+  const failCount = document.getElementById('inspect-failed-count');
+  if (failCount) failCount.textContent = failed.length;
+
+  // Render images
+  const imgGrid = document.getElementById('inspect-image-grid');
+  if (imgGrid) {
+    imgGrid.innerHTML = '';
+    images.forEach(function (img) {
+      const el = document.createElement('img');
+      el.className = 'inspect-image-item';
+      el.src = img.url;
+      el.title = img.name;
+      el.alt = img.name;
+      el.loading = 'lazy';
+      applySpoilerBlur(el);
+      imgGrid.appendChild(el);
+    });
+  }
+
+  // Render audio
+  const audioList = document.getElementById('inspect-audio-list');
+  if (audioList) {
+    audioList.innerHTML = '';
+    audio.forEach(function (aud) {
+      const row = document.createElement('div');
+      row.className = 'inspect-audio-row';
+      const label = document.createElement('span');
+      label.className = 'inspect-audio-name';
+      label.textContent = aud.name;
+      applySpoilerBlur(label);
+      const player = document.createElement('audio');
+      player.controls = true;
+      player.src = aud.url;
+      row.appendChild(label);
+      row.appendChild(player);
+      audioList.appendChild(row);
+    });
+  }
+
+  // Render failed
+  const failedList = document.getElementById('inspect-failed-list');
+  if (failedList) {
+    failedList.innerHTML = '';
+    if (failed.length === 0) {
+      failedList.innerHTML = '<p class="muted">No failed downloads.</p>';
+    } else {
+      failed.forEach(function (f) {
+        const row = document.createElement('div');
+        row.className = 'inspect-failed-row';
+        const urlDiv = document.createElement('div');
+        urlDiv.className = 'inspect-failed-url';
+        urlDiv.textContent = f.url;
+        const errDiv = document.createElement('div');
+        errDiv.className = 'inspect-failed-error';
+        errDiv.textContent = f.error;
+        row.appendChild(urlDiv);
+        row.appendChild(errDiv);
+        failedList.appendChild(row);
+      });
+    }
+  }
+
+  // Activate images tab by default and show modal
+  switchInspectTab('images');
+  const modal = document.getElementById('inspect-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 
 /**
  * Initialise the Library section: case list rendering, search/sort, and case actions.
@@ -399,6 +517,19 @@ export function initLibrary(ctx) {
       })(manifest));
       actions.appendChild(pluginBtn);
 
+      const inspectPartBtn = document.createElement("button");
+      inspectPartBtn.className = "inspect-btn small-btn";
+      inspectPartBtn.textContent = "Inspect";
+      inspectPartBtn.title = "Browse case assets";
+      inspectPartBtn.addEventListener("click", (function (m) {
+        return function () {
+          invoke("get_server_url").then(function (serverUrl) {
+            showInspectModal(m, serverUrl);
+          });
+        };
+      })(manifest));
+      actions.appendChild(inspectPartBtn);
+
       const deleteBtn = document.createElement("button");
       deleteBtn.className = "delete-btn";
       deleteBtn.textContent = "Delete";
@@ -518,6 +649,37 @@ export function initLibrary(ctx) {
       });
   }
 
+  // Wire up inspect modal event listeners (once, at init time)
+  (function initInspectModal() {
+    const modal = document.getElementById('inspect-modal');
+    const closeBtn = document.getElementById('inspect-close-btn');
+    if (!modal || !closeBtn) return;
+
+    // Tab switching
+    modal.querySelectorAll('.inspect-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        switchInspectTab(btn.getAttribute('data-tab'));
+      });
+    });
+
+    // Close button
+    closeBtn.addEventListener('click', function () {
+      modal.classList.add('hidden');
+    });
+
+    // Click outside modal content to close
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.classList.add('hidden');
+    });
+
+    // Escape key to close
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+        modal.classList.add('hidden');
+      }
+    });
+  })();
+
   return {
     loadLibrary: loadLibrary,
     getCachedCases: function () { return cachedCases; },
@@ -526,6 +688,7 @@ export function initLibrary(ctx) {
     playCase: playCase,
     deleteCase: deleteCase,
     exportCase: exportCase,
-    withExportProgress: withExportProgress
+    withExportProgress: withExportProgress,
+    showInspectModal: showInspectModal
   };
 }

@@ -469,6 +469,21 @@ export function appendCaseCardInto(ctx, container, c) {
     ariaButtons[ab].setAttribute("aria-label", btnText + " " + c.title);
   }
 
+  // Inspect button — added after ARIA loop so it does not interfere with existing buttons
+  const actionsDiv = card.querySelector(".case-actions");
+  const deleteBtnEl = card.querySelector(".delete-btn");
+  const inspectBtn = document.createElement("button");
+  inspectBtn.className = "inspect-btn small-btn";
+  inspectBtn.textContent = "Inspect";
+  inspectBtn.title = "Browse case assets";
+  inspectBtn.setAttribute("aria-label", "Inspect " + c.title);
+  inspectBtn.addEventListener("click", function () {
+    invoke("get_server_url").then(function (serverUrl) {
+      ctx.showInspectModal(c, serverUrl);
+    });
+  });
+  actionsDiv.insertBefore(inspectBtn, deleteBtnEl);
+
   card.querySelector(".play-btn").addEventListener("click", function () {
     ctx.playCase(c.case_id, c.title);
   });

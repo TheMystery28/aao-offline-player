@@ -1788,3 +1788,120 @@
   color: #ccc;
   font-size: 0.9rem;
 }
+
+/* ── Inspect Modal ── */
+
+.inspect-modal-content {
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  max-width: 900px;
+  width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: var(--font-xl);
+  font-weight: 600;
+}
+
+.inspect-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.inspect-tab {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: var(--radius-xs);
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: var(--font-xs);
+}
+
+.inspect-tab.active {
+  background: var(--bg-btn-primary);
+  color: var(--text-bright);
+  border-color: var(--bg-btn-primary);
+}
+
+.inspect-tab:hover:not(.active) {
+  background: var(--bg-hover);
+}
+
+.inspect-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.inspect-panel.hidden {
+  display: none;
+}
+
+#inspect-image-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inspect-image-item {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  background: #000;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.inspect-audio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--font-xs);
+}
+
+.inspect-audio-row audio {
+  flex: 1;
+  height: 28px;
+}
+
+.inspect-audio-name {
+  min-width: 140px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.inspect-failed-row {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-light);
+  font-size: var(--font-xs);
+}
+
+.inspect-failed-url {
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.inspect-failed-error {
+  color: var(--danger-text);
+}

@@ -162,5 +162,29 @@
       </div>
       <iframe id="game-frame" allowfullscreen></iframe>
     </div>
+
+    <!-- Inspect Case Assets modal -->
+    <div id="inspect-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="inspect-modal-title">
+      <div class="inspect-modal-content">
+        <div class="modal-header">
+          <h2 id="inspect-modal-title">Case Assets</h2>
+          <button id="inspect-close-btn" class="small-btn">&times; Close</button>
+        </div>
+        <div class="inspect-tabs">
+          <button class="inspect-tab active" data-tab="images">Images (<span id="inspect-image-count">0</span>)</button>
+          <button class="inspect-tab" data-tab="audio">Audio (<span id="inspect-audio-count">0</span>)</button>
+          <button class="inspect-tab" data-tab="failed">Failed (<span id="inspect-failed-count">0</span>)</button>
+        </div>
+        <div id="inspect-images-panel" class="inspect-panel">
+          <div id="inspect-image-grid"></div>
+        </div>
+        <div id="inspect-audio-panel" class="inspect-panel hidden">
+          <div id="inspect-audio-list"></div>
+        </div>
+        <div id="inspect-failed-panel" class="inspect-panel hidden">
+          <div id="inspect-failed-list"></div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

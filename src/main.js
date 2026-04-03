@@ -214,6 +214,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   ctx.deleteCase = libraryFns.deleteCase;
   ctx.exportCase = libraryFns.exportCase;
   ctx.withExportProgress = libraryFns.withExportProgress;
+  ctx.showInspectModal = libraryFns.showInspectModal;
 
   // --- Collections ---
   const collectionsFns = initCollections(ctx);
