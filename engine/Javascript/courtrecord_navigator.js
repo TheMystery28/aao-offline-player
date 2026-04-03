@@ -194,7 +194,8 @@ Modules.load(new Object({
 				clearTimeout(longPressTimer);
 				longPressTimer = null;
 			}
-			longPressTriggered = false;
+			// Note: longPressTriggered is NOT reset here — it must survive
+			// deactivate() so key repeats are still swallowed. Reset on keyup.
 		}
 
 		// --- Keyboard handler (capture phase to intercept before InputManager) ---
@@ -209,6 +210,17 @@ Modules.load(new Object({
 				}
 				e.preventDefault();
 				e.stopImmediatePropagation();
+				return;
+			}
+
+			// After long-press fires checkItem → deactivate(), key repeats
+			// still arrive while the key is held. Swallow them to prevent
+			// proceed from firing.
+			if (!crNavActive && longPressTriggered) {
+				if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+				}
 				return;
 			}
 
@@ -255,17 +267,18 @@ Modules.load(new Object({
 		}, true); // capture phase — fires before InputManager
 
 		document.addEventListener('keyup', function(e) {
-			if (!crNavActive) return;
-
 			if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
-				e.preventDefault();
-				e.stopImmediatePropagation();
+				// Always intercept keyup if long-press was triggered (even after deactivate)
+				if (longPressTriggered || crNavActive) {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+				}
 
 				if (longPressTimer) {
 					// Released before long-press threshold → quick select
 					clearTimeout(longPressTimer);
 					longPressTimer = null;
-					if (!longPressTriggered) {
+					if (!longPressTriggered && crNavActive) {
 						var items = getVisibleItems();
 						selectItem(items, highlightIndex);
 					}

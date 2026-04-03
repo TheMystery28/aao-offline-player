@@ -915,33 +915,16 @@ a.courtrecord-switchview:active {
 	overflow-y: auto;
 	overflow-x: hidden;
 	padding: var(--panel-padding);
-	display: flex;
-	flex-wrap: wrap;
-	align-content: flex-start;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+	align-content: start;
 	gap: var(--card-margin);
-}
-
-@media (orientation: portrait) and (hover: none) {
-	.evidence-list
-	{
-		padding: 0;
-		margin: 0;
-	}
-
-	.evidence-list .evidence_display {
-		display: block;
-		flex: none;
-		width: 85%;
-		margin: 0 auto 5px;
-	}
 }
 
 
 .evidence-list .evidence_display
 {
-	flex: 1 1 250px;
-	min-width: 250px;
-	max-width: 100%;
+	width: 100%;
 	margin: 0;
 	padding: var(--panel-padding) 0;
 	vertical-align: top;
