@@ -15,6 +15,7 @@ Modules.load(new Object({
 		var proceedIds = ['proceed', 'skip', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
 		var forwardIds = ['statement-forwards', 'statement-skip-forwards'];
+		var backButtonIds = ['cr-item-check-back', 'back', 'examination-back'];
 
 		function isVisible(el) {
 			if (!el) return false;
@@ -32,6 +33,15 @@ Modules.load(new Object({
 			}
 			return false;
 		}
+
+		// Escape key → click visible back button (#back or #examination-back)
+		document.addEventListener('keydown', function(e) {
+			if (e.code === 'Escape' || e.key === 'Escape') {
+				if (clickFirstVisible(backButtonIds)) {
+					e.preventDefault();
+				}
+			}
+		});
 
 		// Listen to input:action events from InputManager
 		EngineEvents.on('input:action', function(data) {

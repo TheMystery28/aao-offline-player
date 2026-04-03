@@ -15,6 +15,7 @@ Modules.load(new Object({
 		var proceedIds = ['proceed', 'skip', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
 		var forwardIds = ['statement-forwards', 'statement-skip-forwards'];
+		var backButtonIds = ['cr-item-check-back', 'back', 'examination-back'];
 
 		function isVisible(el) {
 			if (!el) return false;
@@ -52,7 +53,10 @@ Modules.load(new Object({
 					break;
 				case 'back':
 				case 'backStatement':
-					clickById(backId);
+					// Try statement back first, then back buttons (#back, #examination-back)
+					if (!clickById(backId)) {
+						clickFirstVisible(backButtonIds);
+					}
 					break;
 				case 'forward':
 					clickFirstVisible(forwardIds);
