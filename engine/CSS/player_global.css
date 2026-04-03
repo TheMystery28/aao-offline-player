@@ -260,14 +260,20 @@ body > #content > section.layout-stack #screens {
 	image-rendering: -moz-crisp-edges;
 }
 
-/* Additional magnification for mobile devices in portrait orientation */
+/* Additional magnification for mobile devices in portrait orientation.
+   JS caps --mobile-screen-scale-capped so the scaled width (including
+   box-shadow bleed) never exceeds the viewport on narrow phones. */
 @media (orientation: portrait) and (hover: none) {
 	#screens
 	{
-		transform: scale(var(--mobile-screen-scale, 1.4));
+		/* Center against viewport, not parent — bypasses any WebView/safe-area
+		   offsets on ancestor elements that CSS can't override. */
+		position: relative;
+		left: 50vw;
+		transform: translateX(-50%) scale(var(--mobile-screen-scale-capped, var(--mobile-screen-scale, 1.4)));
 		transform-origin: top center;
-		margin-left: auto;
-		margin-right: auto;
+		margin-left: 0;
+		margin-right: 0;
 		margin-bottom: var(--screen-margin-bottom-mobile, 0px);
 	}
 }

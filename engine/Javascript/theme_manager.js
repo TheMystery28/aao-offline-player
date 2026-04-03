@@ -205,20 +205,38 @@ var ThemeManager = (function() {
 		}
 		if (mobileScale !== undefined) {
 			document.documentElement.style.setProperty('--mobile-screen-scale', String(mobileScale));
-			// Compute mobile margin-bottom (including examination mode)
-			var metaHeight = 18;
-			var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
-			var totalH = metaHeight + (2 * gapPx) + (2 * 192);
-			var screenBottom = document.getElementById('screen-bottom');
-			if (screenBottom && screenBottom.classList.contains('examination')) {
-				totalH += 32;
-			}
-			document.documentElement.style.setProperty(
-				'--screen-margin-bottom-mobile',
-				(totalH * (mobileScale - 1)) + 'px'
-			);
 		}
+		capMobileScale();
 		computeAutoFitScreenSize();
+	}
+
+	/** Cap --mobile-screen-scale so the scaled #screens (incl. box-shadow)
+	 *  never exceeds the viewport width. Sets --mobile-screen-scale-capped
+	 *  and --screen-margin-bottom-mobile accordingly. */
+	function capMobileScale() {
+		var mobileScale = parseFloat(
+			getComputedStyle(document.documentElement).getPropertyValue('--mobile-screen-scale')
+		) || 1.4;
+		var screenWidth = parseFloat(
+			getComputedStyle(document.documentElement).getPropertyValue('--screen-width')
+		) || 256;
+		// 6px accounts for 3px box-shadow on each side of the screen children
+		var maxScale = window.innerWidth / (screenWidth + 6);
+		var capped = Math.min(mobileScale, maxScale);
+		document.documentElement.style.setProperty('--mobile-screen-scale-capped', String(capped));
+
+		// Compute mobile margin-bottom using the capped scale
+		var metaHeight = 18;
+		var gapPx = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.7;
+		var totalH = metaHeight + (2 * gapPx) + (2 * 192);
+		var screenBottom = document.getElementById('screen-bottom');
+		if (screenBottom && screenBottom.classList.contains('examination')) {
+			totalH += 32;
+		}
+		document.documentElement.style.setProperty(
+			'--screen-margin-bottom-mobile',
+			(totalH * (capped - 1)) + 'px'
+		);
 	}
 
 	function applyNightMode() {
@@ -768,6 +786,7 @@ var ThemeManager = (function() {
 			if (section && typeof ResizeObserver !== 'undefined') {
 				new ResizeObserver(function() {
 					updateLayoutMode();
+					capMobileScale();
 					computeAutoFitScreenSize();
 				}).observe(section);
 			}
@@ -777,6 +796,7 @@ var ThemeManager = (function() {
 			var screenBottom = document.getElementById('screen-bottom');
 			if (screenBottom) {
 				new MutationObserver(function() {
+					capMobileScale();
 					computeAutoFitScreenSize();
 				}).observe(screenBottom, { attributes: true, attributeFilter: ['class'] });
 			}
