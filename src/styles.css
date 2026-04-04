@@ -290,21 +290,6 @@
   border-color: var(--border-focus);
 }
 
-#library-sort {
-  background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  padding: 0.5rem 0.75rem;
-  font-size: var(--font-md);
-  cursor: pointer;
-}
-
-#library-sort:focus {
-  outline: none;
-  border-color: var(--border-focus);
-}
-
 /* ── Case Cards ── */
 
 .case-card {
@@ -1538,6 +1523,11 @@
 
   #launcher h1 {
     font-size: 1.4rem;
+  }
+
+  /* Hide folder import on mobile (no filesystem picker) */
+  #import-folder-btn {
+    display: none;
   }
 
   /* Download section: stack input and button */

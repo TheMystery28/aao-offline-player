@@ -147,7 +147,6 @@ export function initLibrary(ctx) {
 
   // DOM refs
   const librarySearch = document.getElementById("library-search");
-  const librarySort = document.getElementById("library-sort");
 
   // State
   let cachedCases = [];
@@ -195,7 +194,6 @@ export function initLibrary(ctx) {
 
   function applySearchAndSort() {
     const query = (librarySearch.value || "").trim().toLowerCase();
-    const sortBy = librarySort.value;
 
     let filtered = cachedCases;
     if (query) {
@@ -206,20 +204,9 @@ export function initLibrary(ctx) {
       });
     }
 
+    // Default sort: name A-Z
     const sorted = filtered.slice();
-    if (sortBy === "name-asc") {
-      sorted.sort(function (a, b) { return a.title.localeCompare(b.title); });
-    } else if (sortBy === "name-desc") {
-      sorted.sort(function (a, b) { return b.title.localeCompare(a.title); });
-    } else if (sortBy === "date-new") {
-      sorted.sort(function (a, b) { return (b.download_date || "").localeCompare(a.download_date || ""); });
-    } else if (sortBy === "date-old") {
-      sorted.sort(function (a, b) { return (a.download_date || "").localeCompare(b.download_date || ""); });
-    } else if (sortBy === "size-big") {
-      sorted.sort(function (a, b) { return b.assets.total_size_bytes - a.assets.total_size_bytes; });
-    } else if (sortBy === "size-small") {
-      sorted.sort(function (a, b) { return a.assets.total_size_bytes - b.assets.total_size_bytes; });
-    }
+    sorted.sort(function (a, b) { return a.title.localeCompare(b.title); });
 
     renderCaseList(sorted, cachedCollections, query);
   }
@@ -229,7 +216,6 @@ export function initLibrary(ctx) {
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     searchDebounceTimer = setTimeout(applySearchAndSort, 200);
   });
-  librarySort.addEventListener("change", applySearchAndSort);
 
   function renderCaseList(cases, collections, searchQuery) {
     libraryLoading.classList.add("hidden");
