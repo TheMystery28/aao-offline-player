@@ -10,14 +10,11 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
-  # Silences deprecation warnings for actions still using Node 20
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set version from tag
         shell: bash
@@ -37,7 +34,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -70,7 +67,7 @@ jobs:
           Compress-Archive -Path "portable\*" -DestinationPath "AAO-Offline-Player-Windows-portable.zip"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-windows
           path: AAO-Offline-Player-Windows-portable.zip
@@ -79,7 +76,7 @@ jobs:
   linux:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set version from tag
         run: |
@@ -115,7 +112,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -143,7 +140,7 @@ jobs:
           mv src-tauri/target/release/bundle/appimage/*.AppImage AAO-Offline-Player_amd64.AppImage
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-linux
           path: |
@@ -154,7 +151,7 @@ jobs:
   android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set version from tag
         run: |
@@ -175,14 +172,14 @@ jobs:
           workspaces: src-tauri
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
 
       - name: Cache Gradle
         if: hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') != ''
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -195,7 +192,7 @@ jobs:
 
       - name: Cache Android NDK
         id: cache-ndk
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /usr/local/lib/android/sdk/ndk/28.0.12674087
           key: ${{ runner.os }}-ndk-28.0.12674087
@@ -205,12 +202,12 @@ jobs:
         run: sdkmanager "ndk;28.0.12674087"
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
       - name: Cache npm (Android)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-android-${{ hashFiles('**/package-lock.json') }}
@@ -281,7 +278,7 @@ jobs:
         run: mv "${{ steps.sign.outputs.signedFile }}" AAO-Offline-Player-universal.apk
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-android
           path: AAO-Offline-Player-universal.apk
@@ -292,7 +289,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
