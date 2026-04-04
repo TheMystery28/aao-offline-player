@@ -169,6 +169,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   });
   ctx.showPlayer = playerFns.showPlayer;
   ctx.showLauncher = playerFns.showLauncher;
+  ctx.getRuntimeFailedAssets = playerFns.getRuntimeFailedAssets;
 
   // --- Plugins ---
   const pluginsFns = initPlugins({

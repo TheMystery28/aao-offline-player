@@ -59,6 +59,121 @@ pub fn list_cases(
     Ok(cases)
 }
 
+/// Get assets in the manifest whose files are missing from disk.
+///
+/// Checks two sources:
+/// 1. `asset_map` entries whose local files don't exist
+/// 2. Asset-like paths in `trial_data.json` that aren't on disk (catches
+///    defaults that were never downloaded or imported)
+///
+/// Called lazily when the Inspect modal opens — avoids disk I/O on every library load.
+#[tauri::command]
+pub async fn get_missing_assets(
+    paths: State<'_, AppPaths>,
+    case_id: u32,
+) -> Result<Vec<downloader::manifest::MissingAsset>, AppError> {
+    let data_dir = paths.data_dir.clone();
+    let case_dir = data_dir.join("case").join(case_id.to_string());
+    let manifest = downloader::manifest::read_manifest(&case_dir)?;
+
+    let mut missing = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    // 1. Check asset_map entries
+    let case_prefix = format!("case/{}/", case_id);
+    log::info!("[get_missing_assets] case_id={}, asset_map has {} entries, data_dir={}", case_id, manifest.asset_map.len(), data_dir.display());
+    for (url, local_path) in &manifest.asset_map {
+        if local_path.is_empty() {
+            continue;
+        }
+        let disk_path = if local_path.starts_with("defaults/") {
+            local_path.to_string()
+        } else {
+            format!("{}{}", case_prefix, local_path)
+        };
+        let exists = downloader::vfs::asset_exists(&data_dir, &disk_path);
+        if local_path.contains("mp3") || local_path.contains("ogg") || local_path.contains("wav") || local_path.contains("opus") {
+            log::info!("[get_missing_assets] AUDIO local_path={}, disk_path={}, exists={}", local_path, disk_path, exists);
+        }
+        if !exists {
+            seen.insert(url.clone());
+            missing.push(downloader::manifest::MissingAsset {
+                url: url.clone(),
+                local_path: local_path.clone(),
+            });
+        }
+    }
+
+    // 2. Scan trial_data.json for sound/music/voice assets not on disk.
+    //    trial_data stores raw paths (e.g. music[i].path = "Game/song"),
+    //    resolved at runtime to "defaults/music/Game/song.mp3" etc.
+    let trial_data_path = case_dir.join("trial_data.json");
+    if let Ok(td_bytes) = std::fs::read(&trial_data_path) {
+        if let Ok(td) = serde_json::from_slice::<serde_json::Value>(&td_bytes) {
+            // Check music entries
+            if let Some(music_arr) = td.get("music").and_then(|v| v.as_array()) {
+                for m in music_arr.iter().skip(1) {
+                    let external = m.get("external").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if external { continue; }
+                    if let Some(path) = m.get("path").and_then(|v| v.as_str()) {
+                        let local = format!("defaults/music/{}.mp3", path);
+                        if !seen.contains(&local) && !downloader::vfs::asset_exists(&data_dir, &local) {
+                            seen.insert(local.clone());
+                            missing.push(downloader::manifest::MissingAsset {
+                                url: local.clone(), local_path: local,
+                            });
+                        }
+                    }
+                }
+            }
+            // Check sound entries
+            if let Some(sounds_arr) = td.get("sounds").and_then(|v| v.as_array()) {
+                for s in sounds_arr.iter().skip(1) {
+                    let external = s.get("external").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if external { continue; }
+                    if let Some(path) = s.get("path").and_then(|v| v.as_str()) {
+                        let local = format!("defaults/sounds/{}.mp3", path);
+                        if !seen.contains(&local) && !downloader::vfs::asset_exists(&data_dir, &local) {
+                            seen.insert(local.clone());
+                            missing.push(downloader::manifest::MissingAsset {
+                                url: local.clone(), local_path: local,
+                            });
+                        }
+                    }
+                }
+            }
+            // Check voice entries (used by profiles)
+            if let Some(profiles_arr) = td.get("profiles").and_then(|v| v.as_array()) {
+                for p in profiles_arr.iter().skip(1) {
+                    if let Some(voice) = p.get("voice").and_then(|v| v.as_i64()) {
+                        if voice < 0 && voice != -4 {
+                            let id = -voice;
+                            for ext in &["opus", "wav", "mp3"] {
+                                let local = format!("defaults/voices/voice_singleblip_{}.{}", id, ext);
+                                if !seen.contains(&local) && downloader::vfs::asset_exists(&data_dir, &local) {
+                                    // At least one format exists — don't report as missing
+                                    seen.insert(format!("voice_{}", id));
+                                    break;
+                                }
+                            }
+                            let voice_key = format!("voice_{}", id);
+                            if !seen.contains(&voice_key) {
+                                seen.insert(voice_key);
+                                let local = format!("defaults/voices/voice_singleblip_{}.opus", id);
+                                missing.push(downloader::manifest::MissingAsset {
+                                    url: local.clone(), local_path: local,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(missing)
+}
+
 /// Delete a downloaded case and all its associated files from disk.
 ///
 /// This also unregisters the case assets from the de-duplication index to

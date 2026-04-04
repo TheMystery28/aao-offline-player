@@ -93,7 +93,16 @@ function LoadingBar()
 	self.failedOne = function(resource_id)
 	{
 		current_failed++;
-		if (typeof resource_id !== "undefined") console.log("Failed to load: " + resource_id);
+		if (typeof resource_id !== "undefined") {
+			console.log("Failed to load: " + resource_id);
+			// Notify parent frame (launcher) so Inspect modal can show runtime failures
+			if (window.parent && window.parent !== window) {
+				window.parent.postMessage({
+					type: 'aao-asset-failed',
+					resource: String(resource_id)
+				}, '*');
+			}
+		}
 		self.updateDisplay();
 	};
 

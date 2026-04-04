@@ -73,6 +73,7 @@ export function initPlayer(ctx) {
   // --- Player ---
 
   function showPlayer(title, url, author) {
+    runtimeFailedAssets.length = 0; // Reset for new case
     console.log("[PLAYER] showPlayer title=" + title + " url=" + url);
     if (author) {
       playerTitle.textContent = title + " — " + author;
@@ -393,5 +394,17 @@ export function initPlayer(ctx) {
     }
   });
 
-  return { showPlayer: showPlayer, showLauncher: showLauncher };
+  // Collect runtime asset load failures reported by the engine via postMessage.
+  // Reset when a new case is played; read by the Inspect modal.
+  const runtimeFailedAssets = [];
+  window.addEventListener("message", function (event) {
+    if (event.data && event.data.type === "aao-asset-failed" && event.data.resource) {
+      runtimeFailedAssets.push(event.data.resource);
+    }
+  });
+
+  function getRuntimeFailedAssets() { return runtimeFailedAssets; }
+  function clearRuntimeFailedAssets() { runtimeFailedAssets.length = 0; }
+
+  return { showPlayer: showPlayer, showLauncher: showLauncher, getRuntimeFailedAssets: getRuntimeFailedAssets, clearRuntimeFailedAssets: clearRuntimeFailedAssets };
 }

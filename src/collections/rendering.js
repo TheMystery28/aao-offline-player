@@ -479,7 +479,7 @@ export function appendCaseCardInto(ctx, container, c) {
   inspectBtn.setAttribute("aria-label", "Inspect " + c.title);
   inspectBtn.addEventListener("click", function () {
     invoke("get_server_url").then(function (serverUrl) {
-      ctx.showInspectModal(c, serverUrl);
+      ctx.showInspectModal(c, serverUrl, ctx.getRuntimeFailedAssets ? ctx.getRuntimeFailedAssets() : []);
     });
   });
   actionsDiv.insertBefore(inspectBtn, deleteBtnEl);

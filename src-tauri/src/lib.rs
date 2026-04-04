@@ -264,6 +264,7 @@ pub fn run() {
             commands::download::cancel_download,
             // cases
             commands::cases::list_cases,
+            commands::cases::get_missing_assets,
             commands::cases::delete_case,
             // saves
             commands::saves::backup_saves,

@@ -12,6 +12,13 @@ use crate::error::AppError;
 use super::CaseInfo;
 use super::asset_downloader::DownloadedAsset;
 
+/// An asset present in the manifest but whose file is missing on disk.
+#[derive(Debug, Clone, Serialize)]
+pub struct MissingAsset {
+    pub url: String,
+    pub local_path: String,
+}
+
 /// An asset that failed to download.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FailedAsset {

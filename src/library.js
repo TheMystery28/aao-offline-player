@@ -20,7 +20,7 @@ export function switchInspectTab(name) {
   });
 }
 
-export function showInspectModal(manifest, serverUrl) {
+export async function showInspectModal(manifest, serverUrl, runtimeFailures) {
   const images = [];
   const audio = [];
   const assetMap = manifest.asset_map || {};
@@ -40,7 +40,32 @@ export function showInspectModal(manifest, serverUrl) {
     }
   });
 
-  const failed = manifest.failed_assets || [];
+  // Combine download failures with assets missing from disk
+  const downloadFailed = manifest.failed_assets || [];
+  let missingAssets = [];
+  try {
+    missingAssets = await window.__TAURI__.core.invoke('get_missing_assets', { caseId: manifest.case_id });
+  } catch (e) {
+    console.warn('[Inspect] Failed to check missing assets:', e);
+  }
+  // Merge: download failures + disk-missing + runtime load failures
+  const runtimeEntries = (runtimeFailures || []).map(function (r) {
+    return { url: r, error: 'Failed to load at runtime' };
+  });
+  const failed = downloadFailed.concat(
+    missingAssets.map(function (m) {
+      return { url: m.url, error: 'File missing from disk: ' + m.local_path };
+    })
+  ).concat(runtimeEntries);
+  // Deduplicate by url
+  const seenUrls = {};
+  const dedupedFailed = [];
+  for (let i = 0; i < failed.length; i++) {
+    if (!seenUrls[failed[i].url]) {
+      seenUrls[failed[i].url] = true;
+      dedupedFailed.push(failed[i]);
+    }
+  }
 
   // Update title and counts
   const titleEl = document.getElementById('inspect-modal-title');
@@ -50,7 +75,7 @@ export function showInspectModal(manifest, serverUrl) {
   const audCount = document.getElementById('inspect-audio-count');
   if (audCount) audCount.textContent = audio.length;
   const failCount = document.getElementById('inspect-failed-count');
-  if (failCount) failCount.textContent = failed.length;
+  if (failCount) failCount.textContent = dedupedFailed.length;
 
   // Render images
   const imgGrid = document.getElementById('inspect-image-grid');
@@ -92,10 +117,10 @@ export function showInspectModal(manifest, serverUrl) {
   const failedList = document.getElementById('inspect-failed-list');
   if (failedList) {
     failedList.innerHTML = '';
-    if (failed.length === 0) {
+    if (dedupedFailed.length === 0) {
       failedList.innerHTML = '<p class="muted">No failed downloads.</p>';
     } else {
-      failed.forEach(function (f) {
+      dedupedFailed.forEach(function (f) {
         const row = document.createElement('div');
         row.className = 'inspect-failed-row';
         const urlDiv = document.createElement('div');
@@ -510,7 +535,7 @@ export function initLibrary(ctx) {
       inspectPartBtn.addEventListener("click", (function (m) {
         return function () {
           invoke("get_server_url").then(function (serverUrl) {
-            showInspectModal(m, serverUrl);
+            showInspectModal(m, serverUrl, ctx.getRuntimeFailedAssets ? ctx.getRuntimeFailedAssets() : []);
           });
         };
       })(manifest));
