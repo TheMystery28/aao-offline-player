@@ -9,6 +9,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Silences deprecation warnings for actions still using Node 20
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   windows:
@@ -85,13 +87,7 @@ jobs:
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
-      - name: Cache apt packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
-          key: ${{ runner.os }}-apt-tauri-v1
+      # Removed the flaky apt-cache step here
 
       - name: Install Linux dependencies
         run: |
@@ -123,6 +119,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          # Prevent Linux/Android NPM cache collision
+          cache-dependency-path: package-lock.json 
 
       - name: Install npm dependencies
         run: npm ci
@@ -209,7 +207,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          # Cache handling is moved to a manual cache step to prevent collisions with the Linux job
+
+      - name: Cache npm (Android)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-android-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-node-android-
 
       - name: Install npm dependencies
         run: npm ci
@@ -267,13 +272,10 @@ jobs:
           name: release-android
           path: AAO-Offline-Player-universal.apk
 
-  # ── Create GitHub Release with all artifacts ──
   publish:
     needs: [windows, linux, android]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
