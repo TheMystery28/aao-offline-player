@@ -224,8 +224,18 @@ jobs:
 
       - name: Upgrade Java and Kotlin JVM targets to 17
         run: |
-          sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/' src-tauri/gen/android/app/build.gradle.kts
-          sed -i 's/JavaVersion.VERSION_1_8/JavaVersion.VERSION_17/g' src-tauri/gen/android/app/build.gradle.kts
+          cat <<EOF >> src-tauri/gen/android/app/build.gradle.kts
+          
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          EOF
 
       - name: Generate Android icons from app icon
         run: npx tauri icon src-tauri/icons/icon.png
