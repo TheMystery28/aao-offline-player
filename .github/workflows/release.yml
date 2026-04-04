@@ -9,6 +9,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+
   # Silences deprecation warnings for actions still using Node 20
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -73,6 +74,7 @@ jobs:
         with:
           name: release-windows
           path: AAO-Offline-Player-Windows-portable.zip
+          compression-level: 0 # File is already a ZIP. Prevent redundant compression cycles.
 
   linux:
     runs-on: ubuntu-22.04
@@ -86,8 +88,6 @@ jobs:
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-
-      # Removed the flaky apt-cache step here
 
       - name: Install Linux dependencies
         run: |
@@ -149,6 +149,7 @@ jobs:
           path: |
             AAO-Offline-Player_amd64.deb
             AAO-Offline-Player_amd64.AppImage
+          compression-level: 0 # Files are inherently compressed binaries.
 
   android:
     runs-on: ubuntu-latest
@@ -207,7 +208,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          # Cache handling is moved to a manual cache step to prevent collisions with the Linux job
 
       - name: Cache npm (Android)
         uses: actions/cache@v4
@@ -221,6 +221,11 @@ jobs:
 
       - name: Init Android project
         run: npx tauri android init
+
+      - name: Upgrade Java and Kotlin JVM targets to 17
+        run: |
+          sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/' src-tauri/gen/android/app/build.gradle.kts
+          sed -i 's/JavaVersion.VERSION_1_8/JavaVersion.VERSION_17/g' src-tauri/gen/android/app/build.gradle.kts
 
       - name: Generate Android icons from app icon
         run: npx tauri icon src-tauri/icons/icon.png
@@ -252,25 +257,25 @@ jobs:
           NDK_HOME: /usr/local/lib/android/sdk/ndk/28.0.12674087
 
       - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
+        uses: ilharp/sign-android-release@v1
         with:
-          releaseDirectory: src-tauri/gen/android/app/build/outputs/apk/universal/release
-          signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
-          alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          releaseDir: src-tauri/gen/android/app/build/outputs/apk/universal/release
+          signingKey: ${{ secrets.ANDROID_SIGNING_KEY }}
+          keyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
           keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "35.0.0"
+          buildToolsVersion: "35.0.0"
         id: sign
 
       - name: Rename signed APK
-        run: mv "${{ steps.sign.outputs.signedReleaseFile }}" AAO-Offline-Player-universal.apk
+        run: mv "${{ steps.sign.outputs.signedFile }}" AAO-Offline-Player-universal.apk
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-android
           path: AAO-Offline-Player-universal.apk
+          compression-level: 0
 
   publish:
     needs: [windows, linux, android]
