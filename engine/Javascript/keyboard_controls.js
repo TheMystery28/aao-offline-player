@@ -9,9 +9,11 @@ action names to DOM button clicks.
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'keyboard_controls',
-	dependencies : ['engine_events', 'events', 'page_loaded'],
+	dependencies : ['engine_events', 'input_registry', 'events', 'page_loaded'],
 	init : function()
 	{
+		InputRegistry.register({ action: 'back_escape', label: 'back', keyboard: 'Escape', gamepad: 'B', source: 'engine' });
+
 		var proceedIds = ['start', 'proceed', 'present-center', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
 		var forwardIds = ['statement-forwards', 'statement-skip-forwards'];

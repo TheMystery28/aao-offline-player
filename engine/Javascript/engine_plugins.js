@@ -196,6 +196,18 @@ var EnginePlugins = (function() {
 							_domListeners.splice(i, 1); break;
 						}
 					}
+				},
+				/**
+				 * Register a control binding in the InputRegistry for display
+				 * in the settings panel. Tracked — auto-removed on plugin destroy.
+				 * @param {Object} entry - { action, label, keyboard, gamepad }
+				 */
+				registerBinding: function(entry) {
+					entry.source = 'plugin:' + pluginName;
+					InputRegistry.register(entry);
+				},
+				unregisterBinding: function(action) {
+					InputRegistry.unregister(action, 'plugin:' + pluginName);
 				}
 			},
 
@@ -399,6 +411,7 @@ var EnginePlugins = (function() {
 			for (i = 0; i < _disabledModules.length; i++) {
 				try { InputManager.enableModule(_disabledModules[i]); } catch (e) {}
 			}
+			try { InputRegistry.unregisterBySource('plugin:' + pluginName); } catch (e) {}
 			_styles = []; _sounds = []; _domListeners = []; _mediaListeners = [];
 			_intervals = []; _timeouts = []; _rafs = []; _disabledModules = [];
 		};

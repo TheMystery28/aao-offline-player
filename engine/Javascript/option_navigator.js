@@ -15,9 +15,12 @@ Emits:
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'option_navigator',
-	dependencies : ['engine_events', 'events', 'page_loaded'],
+	dependencies : ['engine_events', 'input_registry', 'events', 'page_loaded'],
 	init : function()
 	{
+		InputRegistry.register({ action: 'selectOption', label: 'select option (1-9)', keyboard: '1-9', gamepad: '—', source: 'engine' });
+		InputRegistry.register({ action: 'navigateOptions', label: 'navigate options', keyboard: 'Arrows', gamepad: 'D-Pad', source: 'engine' });
+
 		var highlightIndex = -1;
 		var bottomScreen = document.getElementById('screen-bottom');
 

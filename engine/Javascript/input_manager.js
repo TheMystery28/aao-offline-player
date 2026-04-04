@@ -10,7 +10,7 @@ ES2017 max — no import/export, no ES2018+ features.
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'input_manager',
-	dependencies : ['engine_events', 'engine_config', 'events', 'page_loaded'],
+	dependencies : ['engine_events', 'engine_config', 'input_registry', 'events', 'page_loaded'],
 	init : function()
 	{
 		InputManager._init();
@@ -260,6 +260,12 @@ var InputManager = (function() {
 					buildLookups();
 				}
 			}, 0, 'engine');
+
+			// Register hardcoded shortcuts in the controls registry
+			InputRegistry.register({ action: 'save', label: 'save', keyboard: 'Ctrl+S', gamepad: 'RT', source: 'engine' });
+			InputRegistry.register({ action: 'loadLatest', label: 'load latest', keyboard: 'Ctrl+L', gamepad: 'LT', source: 'engine' });
+			InputRegistry.register({ action: 'reset', label: 'reset settings', keyboard: 'Ctrl+D', gamepad: 'Start (hold)', source: 'engine' });
+			InputRegistry.register({ action: 'fullscreen', label: 'fullscreen', keyboard: 'F11', gamepad: 'Select', source: 'engine' });
 
 			// Keyboard event listeners
 			document.addEventListener('keydown', onKeyDown);

@@ -11,7 +11,7 @@ ES2017 max — no import/export, no ES2018+ features.
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'settings_panel',
-	dependencies : ['engine_config', 'engine_events', 'nodes', 'events', 'form_elements', 'language', 'page_loaded'],
+	dependencies : ['engine_config', 'engine_events', 'input_registry', 'nodes', 'events', 'form_elements', 'language', 'page_loaded'],
 	init : function()
 	{
 		SettingsPanel._init();
@@ -49,35 +49,10 @@ var SettingsPanel = (function() {
 	var MIXED_LAYOUTS = [];
 	var TOP_LAYOUTS = [];
 
-	// CR keybindings that are non-functional — skip from display
-	var HIDDEN_BINDINGS = [
-		'courtRecordToggle', 'courtRecordEvidence', 'courtRecordProfiles',
-		'crCheck', 'crNavigateUp', 'crNavigateDown', 'crNavigateLeft',
-		'crNavigateRight', 'crSelect'
-	];
-
 	/** Show or hide an element via display style. */
 	function showHide(el, visible) {
 		if (el) el.style.display = visible ? '' : 'none';
 	}
-
-	// Action name → readable display label for the Controls table
-	var ACTION_LABELS = {
-		'proceed': 'proceed',
-		'back': 'back statement',
-		'forward': 'forward statement',
-		'crSwitchTab': 'switch tab',
-		'press': 'press witness',
-		'present': 'present evidence'
-	};
-
-	// Gamepad button index → readable name (W3C standard mapping)
-	var GAMEPAD_NAMES = {
-		0: 'A', 1: 'B', 2: 'X', 3: 'Y',
-		4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT',
-		8: 'View', 9: 'Menu', 10: 'L3', 11: 'R3',
-		12: 'D-Up', 13: 'D-Down', 14: 'D-Left', 15: 'D-Right', 16: 'Xbox'
-	};
 
 	function addCheckbox(container, configPath, labelKey) {
 		const checkbox = createFormElement('checkbox');
@@ -355,9 +330,10 @@ var SettingsPanel = (function() {
 		container.appendChild(btn);
 	}
 
-	function addBindingsDisplay(container) {
-		var kbConfig = EngineConfig.get('controls.keyboard') || {};
-		var gpConfig = EngineConfig.get('controls.gamepad') || {};
+	var bindingsContainer = null;
+
+	function buildBindingsTable() {
+		var entries = InputRegistry.getAll();
 
 		var table = document.createElement('table');
 		addClass(table, 'bindings-display');
@@ -369,51 +345,35 @@ var SettingsPanel = (function() {
 		var h3 = document.createElement('th'); h3.textContent = 'Gamepad'; header.appendChild(h3);
 		table.appendChild(header);
 
-		// Config-driven bindings (keyboard + gamepad share same action names)
-		var actions = Object.keys(kbConfig);
-		for (var i = 0; i < actions.length; i++) {
-			if (HIDDEN_BINDINGS.indexOf(actions[i]) !== -1) continue;
-			var keys = kbConfig[actions[i]];
-			if (!Array.isArray(keys) || keys.length === 0) continue;
+		for (var i = 0; i < entries.length; i++) {
+			var e = entries[i];
 			var row = document.createElement('tr');
-			var ac = document.createElement('td'); ac.textContent = ACTION_LABELS[actions[i]] || actions[i]; row.appendChild(ac);
-			var kc = document.createElement('td'); kc.textContent = keys.join(', '); row.appendChild(kc);
-			// Gamepad column
-			var gc = document.createElement('td');
-			var gpButtons = gpConfig[actions[i]];
-			if (Array.isArray(gpButtons) && gpButtons.length > 0) {
-				gc.textContent = gpButtons.map(function(b) { return GAMEPAD_NAMES[b] || ('Btn' + b); }).join(', ');
+			// Plugin entries get a subtle style
+			if (e.source.indexOf('plugin:') === 0) {
+				row.style.fontStyle = 'italic';
+				row.style.opacity = '0.8';
 			}
-			row.appendChild(gc);
+			var ac = document.createElement('td'); ac.textContent = e.label; row.appendChild(ac);
+			var kc = document.createElement('td'); kc.textContent = e.keyboard || ''; row.appendChild(kc);
+			var gc = document.createElement('td'); gc.textContent = e.gamepad || ''; row.appendChild(gc);
 			table.appendChild(row);
 		}
 
-		// Global shortcuts (not in config — hardcoded in input_manager)
-		var shortcuts = [
-			['save', 'Ctrl+S', 'RT'],
-			['load latest', 'Ctrl+L', 'LT'],
-			['reset settings', 'Ctrl+D', 'Start (hold)'],
-			['fullscreen', 'F11', 'Select'],
-			['select option (1-9)', '1-9', '—'],
-			['navigate options', 'Arrows', 'D-Pad'],
-			['browse evidence/profiles', 'X', 'X'],
-			['check evidence (hold)', 'Enter (hold)', 'A (hold)'],
-			['back', 'Escape', 'B']
-		];
-		for (var si = 0; si < shortcuts.length; si++) {
-			var row = document.createElement('tr');
-			var ac = document.createElement('td'); ac.textContent = shortcuts[si][0]; row.appendChild(ac);
-			var kc = document.createElement('td'); kc.textContent = shortcuts[si][1]; row.appendChild(kc);
-			var gc = document.createElement('td'); gc.textContent = shortcuts[si][2]; row.appendChild(gc);
-			table.appendChild(row);
-		}
-		container.appendChild(table);
+		return table;
+	}
 
-		// Tab behavior description
-		var tabNote = document.createElement('p');
-		tabNote.style.cssText = 'font-size:10px;color:grey;margin:4px 0 0;';
-		tabNote.textContent = 'Switch tab: toggles Evidence/Profiles. Double-press to open Settings, press again to return.';
-		container.appendChild(tabNote);
+	function refreshBindingsDisplay() {
+		if (!bindingsContainer) return;
+		emptyNode(bindingsContainer);
+		bindingsContainer.appendChild(buildBindingsTable());
+	}
+
+	function addBindingsDisplay(container) {
+		bindingsContainer = container;
+		refreshBindingsDisplay();
+
+		// Live-update when registry changes (plugin load/unload, config change)
+		EngineEvents.on('controls:registry:changed', refreshBindingsDisplay, 0, 'engine');
 	}
 
 	function buildLayoutPicker(container, configPath) {

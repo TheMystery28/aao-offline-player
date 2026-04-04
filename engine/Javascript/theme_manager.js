@@ -10,7 +10,7 @@ ES2017 max — no import/export, no ES2018+ features.
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'theme_manager',
-	dependencies : ['engine_config', 'engine_events', 'page_loaded'],
+	dependencies : ['engine_config', 'engine_events', 'input_registry', 'page_loaded'],
 	init : function()
 	{
 		ThemeManager._init();
@@ -773,6 +773,8 @@ var ThemeManager = (function() {
 					cycleTab();
 				}
 			}, 0, 'engine');
+
+			InputRegistry.register({ action: 'switchToSettings', label: 'switch to settings (double-press)', keyboard: 'Tab ×2', gamepad: 'Y ×2', source: 'engine' });
 
 			// Listen for config sync messages from parent frame
 			window.addEventListener('message', function(e) {

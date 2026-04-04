@@ -18,9 +18,12 @@ Emits:
 //MODULE DESCRIPTOR
 Modules.load(new Object({
 	name : 'courtrecord_navigator',
-	dependencies : ['engine_events', 'events', 'page_loaded'],
+	dependencies : ['engine_events', 'input_registry', 'events', 'page_loaded'],
 	init : function()
 	{
+		InputRegistry.register({ action: 'browseEvidence', label: 'browse evidence/profiles', keyboard: 'KeyX', gamepad: 'X', source: 'engine' });
+		InputRegistry.register({ action: 'checkEvidence', label: 'check evidence (hold)', keyboard: 'Enter (hold)', gamepad: 'A (hold)', source: 'engine' });
+
 		var crNavActive = false;
 		var highlightIndex = -1;
 		var LONG_PRESS_MS = 500;
