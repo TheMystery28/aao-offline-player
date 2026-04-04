@@ -31,14 +31,19 @@ def make_round_icon(source: Path, size: int) -> Image.Image:
     return result
 
 def make_adaptive_foreground(source: Path, base_size: int) -> Image.Image:
-    """Generates the modern adaptive icon foreground without padding."""
-    # Adaptive icons have a canvas size of 108dp (2.25x the base size)
+    """Generates the modern adaptive icon foreground centered in the OS safe zone."""
+    # Adaptive icons have a total canvas of 108dp (2.25x the base size).
+    # Android reserves the outer 18dp on each side for parallax animations.
+    # The visible mask is applied at 72dp (1.5x base), so scale to that.
     canvas_size = int(base_size * 2.25)
-    
-    # Scale the source image to fill the ENTIRE adaptive canvas.
-    # The OS will apply its own circular mask to this, resulting in a maximum-size icon.
-    img = Image.open(source).convert("RGBA").resize((canvas_size, canvas_size), Image.Resampling.LANCZOS)
-    return img
+    visible_size = int(base_size * 1.5)
+
+    img = Image.open(source).convert("RGBA").resize((visible_size, visible_size), Image.Resampling.LANCZOS)
+
+    canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    offset = (canvas_size - visible_size) // 2
+    canvas.paste(img, (offset, offset))
+    return canvas
 
 def main():
     repo_root = Path(__file__).parent.parent
@@ -64,7 +69,7 @@ def main():
         # 2. Overwrite adaptive foreground icon (Required for Android 8+)
         make_adaptive_foreground(source, size).save(out_foreground)
         
-        print(f"  Updated {mipmap} (Legacy: {size}px, Adaptive: {int(size * 2.25)}px)")
+        print(f"  Updated {mipmap} (Legacy: {size}px, Adaptive Canvas: {int(size * 2.25)}px, Visual: {int(size * 1.5)}px)")
 
     print("Done.")
 

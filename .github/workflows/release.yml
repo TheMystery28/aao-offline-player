@@ -227,7 +227,7 @@ jobs:
 
       - name: Generate full-diameter round icons
         run: |
-          pip install Pillow
+          pip install Pillow --break-system-packages
           python3 scripts/gen-android-round-icons.py
 
       - name: Allow cleartext localhost traffic (for local asset server)
