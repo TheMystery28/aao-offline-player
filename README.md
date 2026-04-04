@@ -110,10 +110,6 @@ In tabbed mode, **Switch tab** toggles between Evidence and Profiles. Double-pre
 
 Keyboard controls were inspired by the [AAO Keyboard Controls userscript](https://aaonline.fr/forum/viewtopic.php?t=13534). Gamepad support uses the W3C Standard Gamepad mapping.
 
-### Known issues
-
-- The asset loading bars (images/sounds) may not reach 100% green on some cases, especially on Linux. All assets are still present and the game plays correctly — the bar just doesn't fully fill due to various reasons.
-
 ### Author note
 
 Since the AAO source code is open, it would technically be possible to use it to create and share cases entirely offline — bypassing the website. That's not the primary intent, but let's be honest: the server crashes regularly — too regularly — and to make matters worse, most custom assets aren't even hosted on the website itself. While yes, they aren't hosting the assets, the site not being reachable randomly makes people unlikely to even play the games.
