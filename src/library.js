@@ -177,17 +177,22 @@ export function initLibrary(ctx) {
   let cachedCases = [];
   let cachedCollections = [];
 
-  // Coalesce rapid loadLibrary() calls via requestAnimationFrame.
+  // Coalesce rapid loadLibrary() calls via microtask.
   // Multiple calls in the same JS execution block result in a single refresh.
+  // Uses queueMicrotask instead of requestAnimationFrame because rAF is paused
+  // on Android WebView during heavy async operations (downloads), which blocks
+  // the UI from updating until a user interaction forces a paint.
+  // queueMicrotask runs immediately after the current synchronous code finishes,
+  // before yielding to the event loop for rendering — no stale-frame risk.
   let isLibraryRefreshScheduled = false;
 
   function loadLibrary() {
     if (isLibraryRefreshScheduled) return;
     isLibraryRefreshScheduled = true;
-    requestAnimationFrame(function () {
+    queueMicrotask(function () {
       isLibraryRefreshScheduled = false;
       loadLibraryImpl();
-    });
+    }, 0);
   }
 
   function loadLibraryImpl() {
