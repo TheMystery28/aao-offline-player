@@ -12,7 +12,7 @@ Modules.load(new Object({
 	dependencies : ['engine_events', 'events', 'page_loaded'],
 	init : function()
 	{
-		var proceedIds = ['start', 'proceed', 'present-center', 'statement-forwards', 'statement-skip-forwards'];
+		var proceedIds = ['proceed', 'present-center', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
 		var forwardIds = ['statement-forwards', 'statement-skip-forwards'];
 		var backButtonIds = ['cr-item-check-back', 'back', 'examination-back'];
@@ -21,8 +21,10 @@ Modules.load(new Object({
 
 		function isVisible(el) {
 			if (!el) return false;
-			// offsetWidth/offsetHeight are 0 when the element or any ancestor is hidden
-			return el.offsetWidth > 0 || el.offsetHeight > 0;
+			// Must have layout (not display:none or parent hidden)
+			// AND not visibility:hidden (which keeps layout but is invisible/unclickable)
+			if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
+			return getComputedStyle(el).visibility !== 'hidden';
 		}
 
 		function clickFirstVisible(ids) {

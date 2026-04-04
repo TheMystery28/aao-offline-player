@@ -34,6 +34,12 @@ Modules.load(new Object({
 
 		// --- Helpers ---
 
+		function isVisible(el) {
+			if (!el) return false;
+			if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
+			return getComputedStyle(el).visibility !== 'hidden';
+		}
+
 		function getActiveTab() {
 			var cr = document.getElementById('courtrecord');
 			if (!cr) return null;
@@ -84,7 +90,7 @@ Modules.load(new Object({
 		function selectItem(items, idx) {
 			if (idx < 0 || idx >= items.length) return;
 			var summary = items[idx].querySelector('.summary');
-			if (summary) {
+			if (summary && isVisible(summary)) {
 				deactivate();
 				EngineEvents.emit('courtrecord:nav:select', {
 					index: idx,
@@ -98,7 +104,7 @@ Modules.load(new Object({
 		function checkItem(items, idx) {
 			if (idx < 0 || idx >= items.length) return;
 			var checkBtn = getCheckButton(items[idx]);
-			if (checkBtn) {
+			if (checkBtn && isVisible(checkBtn)) {
 				deactivate(); // exit nav mode before opening check screen
 				EngineEvents.emit('courtrecord:nav:check', {
 					index: idx,
@@ -111,6 +117,7 @@ Modules.load(new Object({
 
 		function activate() {
 			crNavActive = true;
+			InputManager.disableModule('option_navigator');
 			var items = getVisibleItems();
 			if (items.length > 0) {
 				setHighlight(items, 0);
@@ -120,6 +127,7 @@ Modules.load(new Object({
 
 		function deactivate() {
 			crNavActive = false;
+			InputManager.enableModule('option_navigator');
 			highlightIndex = -1;
 			clearLongPress();
 			var items = getVisibleItems();

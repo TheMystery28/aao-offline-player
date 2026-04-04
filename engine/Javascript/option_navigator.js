@@ -26,6 +26,12 @@ Modules.load(new Object({
 
 		// --- Helpers ---
 
+		function isVisible(el) {
+			if (!el) return false;
+			if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
+			return getComputedStyle(el).visibility !== 'hidden';
+		}
+
 		function getMode() {
 			if (!bottomScreen) return null;
 			if (bottomScreen.classList.contains('options')) return 'options';
@@ -78,8 +84,10 @@ Modules.load(new Object({
 		}
 
 		function selectOption(el, idx) {
-			if (el) {
+			if (el && isVisible(el)) {
 				var mode = getMode();
+				var elems = getOptionElements(mode);
+				clearHighlight(elems);
 				highlightIndex = -1;
 				EngineEvents.emit('options:select', {
 					index: idx,
@@ -118,6 +126,9 @@ Modules.load(new Object({
 
 		// --- Keyboard handler ---
 
+		// Capture phase — fires BEFORE InputManager's bubble-phase handler.
+		// This ensures stopImmediatePropagation prevents InputManager from
+		// seeing arrow/Enter/Space keys during options mode.
 		document.addEventListener('keydown', function(e) {
 			if (InputManager.isModuleDisabled('option_navigator')) return;
 			var mode = getMode();
@@ -141,6 +152,7 @@ Modules.load(new Object({
 			if (mode === 'options') {
 				if (e.code === 'ArrowDown' || e.code === 'ArrowRight') {
 					e.preventDefault();
+					e.stopImmediatePropagation();
 					if (highlightIndex < 0) {
 						setHighlight(elems, 0);
 					} else {
@@ -150,6 +162,7 @@ Modules.load(new Object({
 				}
 				if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') {
 					e.preventDefault();
+					e.stopImmediatePropagation();
 					if (highlightIndex < 0) {
 						setHighlight(elems, elems.length - 1);
 					} else {
@@ -167,6 +180,7 @@ Modules.load(new Object({
 				else if (e.code === 'ArrowRight') dir = 'right';
 				if (dir) {
 					e.preventDefault();
+					e.stopImmediatePropagation();
 					moveInvestigation(dir, elems);
 					return;
 				}
@@ -174,13 +188,15 @@ Modules.load(new Object({
 
 			// Enter/Space to select highlighted option
 			if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
+				// Always consume Enter/Space during options mode to prevent proceed from firing
+				e.preventDefault();
+				e.stopImmediatePropagation();
 				if (highlightIndex >= 0 && highlightIndex < elems.length) {
-					e.preventDefault();
 					selectOption(elems[highlightIndex], highlightIndex);
 					return;
 				}
 			}
-		});
+		}, true); // capture phase
 
 		// --- Gamepad d-pad polling ---
 		// Standard gamepad: button 12=up, 13=down, 14=left, 15=right
@@ -261,6 +277,10 @@ Modules.load(new Object({
 
 		EngineEvents.on('frame:after', function() {
 			var mode = getMode();
+			// Always reset highlight when options are not visible
+			if (!mode && highlightIndex !== -1) {
+				highlightIndex = -1;
+			}
 			if (mode !== lastMode) {
 				if (lastMode) {
 					highlightIndex = -1;
