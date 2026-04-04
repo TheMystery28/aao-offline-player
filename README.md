@@ -52,11 +52,13 @@ Plugins can be:
 - **Attached as raw code** via the launcher's plugin panel or per-case plugin manager
 - **Bundled in `.aaocase`** exports (case authors can include plugins with their cases)
 
-The launcher provides a unified plugin panel showing all installed plugins with their scopes, plus per-case plugin management. See `engine/plugins_examples/` for sample plugins.
+**Control overrides:** Plugins can disable and replace built-in control modules (keyboard, gamepad, option navigator, court record navigator) via `api.controls.disable()`. They can also cancel any input action with `data.preventDefault()` on `input:action` events. Disabled modules are automatically re-enabled when the plugin is destroyed.
+
+The launcher provides a unified plugin panel showing all installed plugins with their scopes, per-scope parameter editing, plus per-case plugin management. See `engine/plugins_examples/` for sample plugins.
 
 ### Library management
 
-The library supports collections — user-created groups of cases and/or sequences with custom ordering. Cases can be searched by title, author, or ID, and sorted by name, date, or size.
+The library supports collections — user-created groups of cases and/or sequences with custom ordering. Cases can be searched by title, author, or ID, and sorted by name, date, or size. Each case card includes an **asset gallery** (Inspect modal) for browsing all downloaded images, music, and sounds.
 
 ### The player
 
@@ -65,7 +67,7 @@ The library supports collections — user-created groups of cases and/or sequenc
 The in-game player is a modified version of the AAO engine with a configurable settings panel, dark mode, and built-in keyboard/gamepad controls.
 
 Features added to the engine:
-- **Dark mode** (grey palette, on by default)
+- **Dark mode** (grey palette, on by default) with **custom CSS theming** support
 - **Responsive layout** with automatic wide/tabbed/stacked modes based on window size
 - **GPU-accelerated screen scaling** via `transform: scale()` with margin compensation for pixel-perfect rendering
 - **Panel arrangement picker** (12 layouts) to reorder the screen, evidence, and settings panels
@@ -76,11 +78,11 @@ Features added to the engine:
 - **Gamepad support** with W3C Standard mapping
 - **Option list navigation** with arrow keys / d-pad / number keys 1-9
 - **Court record navigation** (X key / X button) with spatial grid browsing and long-press Check
-- **Save management** with sorted list across sequence parts and load-latest
-- **Plugin system** with tracked auto-cleanup API for extending the player
+- **Save management** with sorted list across sequence parts, load-latest, and instant load
+- **Plugin system** with tracked auto-cleanup API and built-in control override support
 - **Config-driven architecture** with persistent user settings in localStorage
 - **Event bus** for decoupled module communication
-- **Accessibility options**: font scale, line spacing, reduce motion, disable screen shake, disable flash
+- **Accessibility**: font scale, line spacing, reduce motion, disable screen shake, disable flash, ARIA labels, focus traps, keyboard-navigable modals and headers
 
 ### Controls
 
