@@ -202,6 +202,7 @@ Modules.load(new Object({
 		// --- Keyboard handler (capture phase to intercept before InputManager) ---
 
 		document.addEventListener('keydown', function(e) {
+			if (InputManager.isModuleDisabled('courtrecord_navigator')) return;
 			// X key toggles CR navigation
 			if (e.code === 'KeyX' && !e.ctrlKey && !e.altKey && !e.metaKey) {
 				if (crNavActive) {
@@ -276,6 +277,7 @@ Modules.load(new Object({
 		}, true); // capture phase — fires before InputManager
 
 		document.addEventListener('keyup', function(e) {
+			if (InputManager.isModuleDisabled('courtrecord_navigator')) return;
 			if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
 				// Always intercept keyup if long-press was triggered (even after deactivate)
 				if (longPressTriggered || crNavActive) {
@@ -321,6 +323,7 @@ Modules.load(new Object({
 		}
 
 		function pollGamepad() {
+			if (InputManager.isModuleDisabled('courtrecord_navigator')) { requestAnimationFrame(pollGamepad); return; }
 			var gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
 			for (var g = 0; g < gamepads.length; g++) {
 				var gp = gamepads[g];

@@ -171,7 +171,7 @@ var InputManager = (function() {
 		if (!REPEAT_ACTIONS[action] && pressed[guardKey]) return;
 		pressed[guardKey] = true;
 
-		EngineEvents.emit('input:action', { source: 'keyboard', action: action });
+		EngineEvents.emitCancellable('input:action', { source: 'keyboard', action: action });
 	}
 
 	function onKeyUp(e) {
@@ -227,7 +227,7 @@ var InputManager = (function() {
 						gamepadWasPressed[key] = true;
 						var specialHandler = GAMEPAD_SPECIAL_ACTIONS[action];
 						if (specialHandler) { specialHandler(); }
-						else { EngineEvents.emit('input:action', { source: 'gamepad', action: action }); }
+						else { EngineEvents.emitCancellable('input:action', { source: 'gamepad', action: action }); }
 					}
 				} else {
 					if (gamepadWasPressed[key]) {
@@ -304,6 +304,25 @@ var InputManager = (function() {
 		 */
 		rebuildLookups: function() {
 			buildLookups();
+		},
+
+		/**
+		 * Module disable registry.
+		 * Plugins can disable built-in control modules by name.
+		 * Modules: 'keyboard_controls', 'gamepad_controls', 'option_navigator', 'courtrecord_navigator'
+		 */
+		_disabledModules: {},
+
+		disableModule: function(name) {
+			this._disabledModules[name] = true;
+		},
+
+		enableModule: function(name) {
+			delete this._disabledModules[name];
+		},
+
+		isModuleDisabled: function(name) {
+			return !!this._disabledModules[name];
 		}
 	};
 })();

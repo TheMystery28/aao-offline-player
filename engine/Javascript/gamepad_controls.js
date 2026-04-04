@@ -47,6 +47,7 @@ Modules.load(new Object({
 
 		// Listen to input:action events from InputManager
 		EngineEvents.on('input:action', function(data) {
+			if (InputManager.isModuleDisabled('gamepad_controls')) return;
 			if (data.source !== 'gamepad') return;
 
 			if (data._consumed) return;

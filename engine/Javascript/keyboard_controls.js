@@ -38,6 +38,7 @@ Modules.load(new Object({
 
 		// Escape key → click visible back button (#back or #examination-back)
 		document.addEventListener('keydown', function(e) {
+			if (InputManager.isModuleDisabled('keyboard_controls')) return;
 			if (e.code === 'Escape' || e.key === 'Escape') {
 				if (clickFirstVisible(backButtonIds)) {
 					e.preventDefault();
@@ -47,6 +48,7 @@ Modules.load(new Object({
 
 		// Listen to input:action events from InputManager
 		EngineEvents.on('input:action', function(data) {
+			if (InputManager.isModuleDisabled('keyboard_controls')) return;
 			if (data.source !== 'keyboard') return;
 
 			switch (data.action) {

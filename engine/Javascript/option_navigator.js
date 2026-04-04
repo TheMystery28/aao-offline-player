@@ -116,6 +116,7 @@ Modules.load(new Object({
 		// --- Keyboard handler ---
 
 		document.addEventListener('keydown', function(e) {
+			if (InputManager.isModuleDisabled('option_navigator')) return;
 			var mode = getMode();
 			if (!mode) return;
 
@@ -188,6 +189,7 @@ Modules.load(new Object({
 		}
 
 		function pollGamepad() {
+			if (InputManager.isModuleDisabled('option_navigator')) { requestAnimationFrame(pollGamepad); return; }
 			var mode = getMode();
 			if (mode) {
 				var gamepads = navigator.getGamepads ? navigator.getGamepads() : [];

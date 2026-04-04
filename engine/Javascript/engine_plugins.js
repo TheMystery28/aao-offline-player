@@ -53,6 +53,7 @@ var EnginePlugins = (function() {
 		var _intervals = [];
 		var _timeouts = [];
 		var _rafs = [];
+		var _disabledModules = [];
 		var _eventNs = 'plugin:' + pluginName;
 
 		var api = {
@@ -335,6 +336,29 @@ var EnginePlugins = (function() {
 				}
 			},
 
+			// --- Built-in control module management (tracked) ---
+			controls: {
+				/**
+				 * Disable a built-in control module. The module stops processing input.
+				 * Modules: 'keyboard_controls', 'gamepad_controls', 'option_navigator', 'courtrecord_navigator'
+				 * Tracked — automatically re-enabled when the plugin is destroyed.
+				 */
+				disable: function(moduleName) {
+					InputManager.disableModule(moduleName);
+					if (_disabledModules.indexOf(moduleName) === -1) {
+						_disabledModules.push(moduleName);
+					}
+				},
+				enable: function(moduleName) {
+					InputManager.enableModule(moduleName);
+					var idx = _disabledModules.indexOf(moduleName);
+					if (idx !== -1) _disabledModules.splice(idx, 1);
+				},
+				isDisabled: function(moduleName) {
+					return InputManager.isModuleDisabled(moduleName);
+				}
+			},
+
 			// --- Display engine access ---
 			display: {
 				getTopScreen: function() { return typeof top_screen !== 'undefined' ? top_screen : null; },
@@ -372,8 +396,11 @@ var EnginePlugins = (function() {
 				try { cancelAnimationFrame(_rafs[i]); } catch (e) {}
 			}
 			try { EngineEvents.clearNamespace(_eventNs); } catch (e) {}
+			for (i = 0; i < _disabledModules.length; i++) {
+				try { InputManager.enableModule(_disabledModules[i]); } catch (e) {}
+			}
 			_styles = []; _sounds = []; _domListeners = []; _mediaListeners = [];
-			_intervals = []; _timeouts = []; _rafs = [];
+			_intervals = []; _timeouts = []; _rafs = []; _disabledModules = [];
 		};
 
 		return api;
