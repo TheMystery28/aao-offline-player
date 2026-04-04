@@ -29,7 +29,7 @@ portpicker = "0.1.1"
 tiny_http = "0.12"
 log = "0.4"
 tauri-plugin-log = "2"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 regex = "1"
 futures = "0.3"
 tokio = { version = "1", features = ["fs", "time"] }

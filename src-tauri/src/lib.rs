@@ -293,6 +293,8 @@ pub fn run() {
             // import
             commands::import::import_case,
             commands::import::import_save,
+            commands::import::download_from_url,
+            commands::import::delete_temp_file,
             // export
             commands::export::export_case,
             commands::export::export_sequence,

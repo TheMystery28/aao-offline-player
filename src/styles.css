@@ -223,7 +223,8 @@
 
 #import-folder-btn,
 #import-file-btn,
-#import-paste-save-btn {
+#import-paste-save-btn,
+#import-paste-url-btn {
   background: var(--bg-input);
   color: var(--text-hover);
   border: 1px solid var(--border-color);
@@ -237,7 +238,8 @@
 
 #import-folder-btn:hover,
 #import-file-btn:hover,
-#import-paste-save-btn:hover {
+#import-paste-save-btn:hover,
+#import-paste-url-btn:hover {
   background: var(--bg-hover);
   border-color: var(--border-focus);
   color: var(--text-bright);
@@ -245,7 +247,8 @@
 
 #import-folder-btn:disabled,
 #import-file-btn:disabled,
-#import-paste-save-btn:disabled {
+#import-paste-save-btn:disabled,
+#import-paste-url-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

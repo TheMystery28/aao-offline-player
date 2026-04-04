@@ -471,3 +471,115 @@ fn test_export_import_saves_roundtrip() {
     assert!(case_saves.contains_key("1710000000000"));
     assert!(case_saves.contains_key("1710005000000"));
 }
+
+// ── Regression tests for zipped aaoffline import ────────────────────────
+
+/// Regression: standard .aaocase ZIP import must still work unchanged.
+#[test]
+fn test_regression_aaocase_import_still_works() {
+    let tmp = tempfile::tempdir().unwrap();
+    let engine = tempfile::tempdir().unwrap();
+
+    let zip_path = create_test_aaocase(tmp.path(), 90001);
+    let result = import_aaocase_zip(&zip_path, engine.path(), None).unwrap();
+    assert_eq!(result.manifest.case_id, 90001);
+    assert_eq!(result.manifest.title, "ZIP Test Case");
+    assert!(engine.path().join("case/90001/manifest.json").exists());
+    assert!(engine.path().join("case/90001/trial_data.json").exists());
+    assert!(engine.path().join("case/90001/assets/bg.png").exists());
+}
+
+/// Regression: invalid ZIP still returns a clear error.
+#[test]
+fn test_regression_invalid_zip_still_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let engine = tempfile::tempdir().unwrap();
+
+    let bad_path = tmp.path().join("garbage.zip");
+    fs::write(&bad_path, "not a zip file at all").unwrap();
+
+    let result = import_aaocase_zip(&bad_path, engine.path(), None);
+    assert!(result.is_err());
+}
+
+/// Regression: ZIP without manifest.json still errors from import_aaocase_zip.
+#[test]
+fn test_regression_zip_without_manifest_errors() {
+    use std::io::Write;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let engine = tempfile::tempdir().unwrap();
+
+    let zip_path = tmp.path().join("no_manifest.zip");
+    let file = fs::File::create(&zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+    zip.start_file("random.txt", options).unwrap();
+    zip.write_all(b"hello").unwrap();
+    zip.finish().unwrap();
+
+    let result = import_aaocase_zip(&zip_path, engine.path(), None);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("manifest.json"));
+}
+
+/// Helper: create a zipped aaoffline folder (ZIP containing index.html + assets/).
+fn create_zipped_aaoffline(dir: &Path, case_id: u32, title: &str) -> PathBuf {
+    use std::io::Write;
+
+    let zip_path = dir.join(format!("aaoffline_{}.zip", case_id));
+    let file = fs::File::create(&zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+
+    let html = format!(
+        r#"<html>
+<script>
+var trial_information = {{"author":"ZipTester","author_id":1,"can_read":true,"can_write":false,"format":"Def6","id":{},"language":"en","last_edit_date":1000000,"sequence":null,"title":"{}"}};
+var initial_trial_data = {{"profiles":[0,{{"icon":"assets/icon.png","short_name":"Hero","custom_sprites":[]}}],"frames":[0],"evidence":[0],"places":[0],"cross_examinations":[0]}};
+</script>
+</html>"#,
+        case_id, title
+    );
+
+    zip.start_file("index.html", options).unwrap();
+    zip.write_all(html.as_bytes()).unwrap();
+
+    zip.start_file("assets/icon.png", options).unwrap();
+    zip.write_all(b"fake icon data").unwrap();
+
+    zip.start_file("assets/bg.jpg", options).unwrap();
+    zip.write_all(b"fake bg data").unwrap();
+
+    zip.finish().unwrap();
+    zip_path
+}
+
+/// Helper: create a zipped aaoffline with files inside a subfolder.
+fn create_zipped_aaoffline_in_subfolder(dir: &Path, case_id: u32, title: &str, subfolder: &str) -> PathBuf {
+    use std::io::Write;
+
+    let zip_path = dir.join(format!("aaoffline_sub_{}.zip", case_id));
+    let file = fs::File::create(&zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+
+    let html = format!(
+        r#"<html>
+<script>
+var trial_information = {{"author":"SubTester","author_id":1,"can_read":true,"can_write":false,"format":"Def6","id":{},"language":"en","last_edit_date":1000000,"sequence":null,"title":"{}"}};
+var initial_trial_data = {{"profiles":[0,{{"icon":"assets/icon.png","short_name":"Hero","custom_sprites":[]}}],"frames":[0],"evidence":[0],"places":[0],"cross_examinations":[0]}};
+</script>
+</html>"#,
+        case_id, title
+    );
+
+    zip.start_file(format!("{}/index.html", subfolder), options).unwrap();
+    zip.write_all(html.as_bytes()).unwrap();
+
+    zip.start_file(format!("{}/assets/icon.png", subfolder), options).unwrap();
+    zip.write_all(b"fake icon data").unwrap();
+
+    zip.finish().unwrap();
+    zip_path
+}

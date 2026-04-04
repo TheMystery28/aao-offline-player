@@ -105,7 +105,49 @@ pub async fn import_case(
         }
     } else if path.is_file() {
         let _ = on_event.send(DownloadEvent::Started { total: 0 });
-        importer::import_aaocase_zip(&path, &data_dir, Some(&progress_cb))?
+        match importer::import_aaocase_zip(&path, &data_dir, Some(&progress_cb)) {
+            Ok(result) => result,
+            Err(aaocase_err) => {
+                // Not a .aaocase — try extracting as zipped aaoffline folder
+                let temp_dir = data_dir.join("_import_temp_unzip");
+                if temp_dir.exists() { let _ = fs::remove_dir_all(&temp_dir); }
+                let extract_result = (|| -> Result<importer::ImportResult, crate::error::AppError> {
+                    fs::create_dir_all(&temp_dir)
+                        .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+                    let file = fs::File::open(&path)
+                        .map_err(|e| format!("Failed to open ZIP: {}", e))?;
+                    let mut archive = zip::ZipArchive::new(file)
+                        .map_err(|e| format!("Not a valid ZIP: {}", e))?;
+                    archive.extract(&temp_dir)
+                        .map_err(|e| format!("ZIP extraction failed: {}", e))?;
+
+                    let root = temp_dir.as_path();
+                    let has_subfolders = !importer::find_aaoffline_subfolders(root).is_empty();
+                    if has_subfolders {
+                        importer::import_aaoffline_batch(root, &data_dir, None, Some(&progress_cb))
+                    } else if root.join("index.html").exists() {
+                        let output = importer::import_aaoffline(root, &data_dir, Some(&progress_cb))?;
+                        Ok(importer::ImportResult {
+                            manifest: output.manifest, saves: None,
+                            missing_defaults: 0, batch_manifests: Vec::new(),
+                            batch_errors: Vec::new(), dedup_saved_bytes: output.dedup_saved_bytes,
+                        })
+                    } else {
+                        Err("No index.html found in ZIP".to_string().into())
+                    }
+                })();
+                let _ = fs::remove_dir_all(&temp_dir); // Always clean up
+                match extract_result {
+                    Ok(result) => result,
+                    Err(zip_err) => {
+                        return Err(format!(
+                            "Could not import: not a valid .aaocase ({}), and not a valid aaoffline ZIP ({})",
+                            aaocase_err, zip_err
+                        ).into());
+                    }
+                }
+            }
+        }
     } else {
         return Err(format!("Not a file or directory: {}", source_path).into());
     };
@@ -156,6 +198,143 @@ pub async fn import_case(
     );
 
     Ok(import_result)
+}
+
+/// Download a file from a URL to a temp path for subsequent import.
+///
+/// Streams the response to disk to avoid loading large files into RAM.
+/// Returns the temp file path. The caller is responsible for cleanup.
+#[tauri::command]
+pub async fn download_from_url(
+    paths: State<'_, AppPaths>,
+    url: String,
+    on_event: Channel<DownloadEvent>,
+) -> Result<String, AppError> {
+    use futures::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let client = &paths.http_client;
+    let response = client.get(&url).send().await
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()).into());
+    }
+
+    // Total size from Content-Length (if available)
+    let total_size = response.content_length().unwrap_or(0);
+    let _ = on_event.send(DownloadEvent::Started { total: 1 });
+
+    // Detect extension from URL path first
+    let url_ext = url.rsplit('/').next()
+        .and_then(|name| name.split('?').next()) // strip query params
+        .and_then(|name| name.rsplit('.').next())
+        .and_then(|e| {
+            let lower = e.to_lowercase();
+            match lower.as_str() {
+                "aaocase" | "aaoplug" | "aaosave" | "zip" => Some(lower),
+                _ => None,
+            }
+        });
+
+    // Download to a temp file (no extension yet — we'll rename after detection)
+    let temp_raw = paths.data_dir.join("_download_temp_raw");
+
+    let mut file = tokio::fs::File::create(&temp_raw).await
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    let mut stream = response.bytes_stream();
+    let mut downloaded: u64 = 0;
+    let start = std::time::Instant::now();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
+        file.write_all(&chunk).await
+            .map_err(|e| format!("File write error: {}", e))?;
+        downloaded += chunk.len() as u64;
+        let _ = on_event.send(DownloadEvent::Progress {
+            completed: if total_size > 0 { ((downloaded * 100) / total_size) as usize } else { 0 },
+            total: 100,
+            current_url: url.clone(),
+            bytes_downloaded: downloaded,
+            elapsed_ms: start.elapsed().as_millis() as u64,
+        });
+    }
+    drop(file); // flush
+
+    // If URL didn't have a known extension, detect from file content
+    let ext = if let Some(e) = url_ext {
+        e
+    } else {
+        detect_file_type(&temp_raw).ok_or_else(|| {
+            let _ = std::fs::remove_file(&temp_raw);
+            AppError::from("Could not determine file type. Expected .aaocase, .aaoplug, .aaosave, or .zip".to_string())
+        })?
+    };
+
+    let temp_path = paths.data_dir.join(format!("_download_temp.{}", ext));
+    std::fs::rename(&temp_raw, &temp_path)
+        .map_err(|e| format!("Failed to rename temp file: {}", e))?;
+
+    Ok(temp_path.to_string_lossy().to_string())
+}
+
+/// Detect AAO file type by peeking at content.
+/// Returns "aaocase", "aaoplug", "aaosave", or "zip" — or None if unrecognizable.
+fn detect_file_type(path: &std::path::Path) -> Option<String> {
+    let data = std::fs::read(path).ok()?;
+    if data.len() < 4 { return None; }
+
+    // ZIP magic bytes: PK\x03\x04
+    if data[0..4] == [0x50, 0x4B, 0x03, 0x04] {
+        // It's a ZIP — peek inside to classify
+        if let Ok(file) = std::fs::File::open(path) {
+            if let Ok(mut archive) = zip::ZipArchive::new(file) {
+                let names: Vec<String> = (0..archive.len())
+                    .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+                    .collect();
+                if names.iter().any(|n| n == "manifest.json" || n.ends_with("/manifest.json")) {
+                    return Some("aaocase".to_string());
+                }
+                if names.iter().any(|n| n == "saves.json" || n.ends_with("/saves.json")) {
+                    // Could be .aaosave (saves.json at root without manifest.json)
+                    if !names.iter().any(|n| n.ends_with("trial_data.json")) {
+                        return Some("aaosave".to_string());
+                    }
+                }
+                if names.iter().any(|n| n == "index.html" || n.ends_with("/index.html")) {
+                    return Some("zip".to_string()); // zipped aaoffline
+                }
+                // Check for .aaoplug (has plugin JS files)
+                if names.iter().any(|n| n.ends_with(".js")) {
+                    return Some("aaoplug".to_string());
+                }
+                return Some("zip".to_string()); // generic ZIP, let import_case handle it
+            }
+        }
+        return Some("zip".to_string());
+    }
+
+    // Not a ZIP — check if it's JSON (possible raw save data)
+    let text = String::from_utf8_lossy(&data);
+    let trimmed = text.trim_start();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        return Some("aaosave".to_string());
+    }
+
+    None // unrecognizable
+}
+
+/// Delete a temp file created by download_from_url.
+#[tauri::command]
+pub async fn delete_temp_file(path: String) -> Result<(), AppError> {
+    let p = std::path::PathBuf::from(&path);
+    // Safety: only delete files in data dir that start with _download_temp
+    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+        if name.starts_with("_download_temp") {
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+    Ok(())
 }
 
 /// Import game saves from a `.aaosave` file.

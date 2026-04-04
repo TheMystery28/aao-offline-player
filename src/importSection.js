@@ -227,4 +227,66 @@ export function initImport(ctx) {
   importPasteSaveBtn.addEventListener("click", function () {
     showPasteSaveModal();
   });
+
+  const importPasteUrlBtn = document.getElementById("import-paste-url-btn");
+  importPasteUrlBtn.addEventListener("click", function () {
+    if (isDownloadInProgress()) {
+      importResult.textContent = "A download is already in progress.";
+      importResult.className = "result-error";
+      return;
+    }
+    showPromptModal(
+      "<strong>Download from URL</strong>",
+      "Paste a direct link to a .aaocase, .aaoplug, .aaosave, or .zip aaoffline file",
+      "",
+      "Download & Import",
+      async function (url) {
+        if (!url || !url.trim()) return;
+        url = url.trim();
+        importResult.textContent = "";
+        importResult.className = "";
+
+        // Show progress bar during download
+        progressContainer.classList.remove("hidden");
+        progressPhase.textContent = "Downloading file...";
+        progressBarInner.style.width = "0%";
+        progressText.textContent = "";
+
+        const onEvent = new Channel();
+        onEvent.onmessage = function (msg) {
+          if (msg.event === "progress") {
+            const pct = msg.data.total > 0 ? Math.round((msg.data.completed / msg.data.total) * 100) : 0;
+            progressBarInner.style.width = pct + "%";
+            progressText.textContent = formatBytes(msg.data.bytes_downloaded) + " downloaded" + (pct > 0 ? " (" + pct + "%)" : "");
+          }
+        };
+
+        let tempPath = null;
+        try {
+          tempPath = await invoke("download_from_url", { url: url, onEvent: onEvent });
+          progressPhase.textContent = "Download complete. Importing...";
+          progressBarInner.style.width = "100%";
+          const lower = tempPath.toLowerCase();
+          if (lower.endsWith(".aaosave")) {
+            progressContainer.classList.add("hidden");
+            doImportSave(tempPath);
+          } else if (lower.endsWith(".aaoplug")) {
+            progressContainer.classList.add("hidden");
+            doImportPlugin(tempPath);
+          } else {
+            // doImport shows its own progress bar
+            doImport(tempPath);
+          }
+        } catch (e) {
+          progressContainer.classList.add("hidden");
+          importResult.textContent = "Download failed: " + e;
+          importResult.className = "result-error";
+        } finally {
+          if (tempPath) {
+            invoke("delete_temp_file", { path: tempPath }).catch(function () {});
+          }
+        }
+      }
+    );
+  });
 }
