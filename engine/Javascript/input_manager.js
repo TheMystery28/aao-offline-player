@@ -186,7 +186,7 @@ var InputManager = (function() {
 
 	// Long-press Start (button 9) to reset settings
 	var resetTimer = null;
-	var RESET_HOLD_MS = 2000;
+	var RESET_HOLD_MS = 500;
 
 	function checkGamepadCombos(buttons, gamepadIndex) {
 		var startKey = gamepadIndex + '_resetStart';
