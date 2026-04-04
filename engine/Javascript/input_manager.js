@@ -27,7 +27,7 @@ var InputManager = (function() {
 	let gamepadLookup = {};
 
 	// Actions that allow key repeat (no pressed guard)
-	const REPEAT_ACTIONS = { 'skip': true };
+	const REPEAT_ACTIONS = {};
 
 	// Track pressed state to prevent repeat-firing
 	const pressed = {};
@@ -184,15 +184,28 @@ var InputManager = (function() {
 		}
 	}
 
+	// Long-press Start (button 9) to reset settings
+	var resetTimer = null;
+	var RESET_HOLD_MS = 2000;
+
 	function checkGamepadCombos(buttons, gamepadIndex) {
-		var comboKey = gamepadIndex + '_resetCombo';
-		if (buttons[5] && buttons[5].pressed && buttons[7] && buttons[7].pressed) {
-			if (!gamepadWasPressed[comboKey]) {
-				gamepadWasPressed[comboKey] = true;
-				EngineConfig.reset();
+		var startKey = gamepadIndex + '_resetStart';
+		if (buttons[9] && buttons[9].pressed) {
+			if (!gamepadWasPressed[startKey]) {
+				gamepadWasPressed[startKey] = true;
+				resetTimer = setTimeout(function() {
+					EngineConfig.reset();
+					resetTimer = null;
+				}, RESET_HOLD_MS);
 			}
 		} else {
-			gamepadWasPressed[comboKey] = false;
+			if (gamepadWasPressed[startKey]) {
+				gamepadWasPressed[startKey] = false;
+				if (resetTimer) {
+					clearTimeout(resetTimer);
+					resetTimer = null;
+				}
+			}
 		}
 	}
 

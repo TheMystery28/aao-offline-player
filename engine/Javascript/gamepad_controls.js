@@ -12,15 +12,17 @@ Modules.load(new Object({
 	dependencies : ['engine_events', 'events', 'page_loaded'],
 	init : function()
 	{
-		var proceedIds = ['start', 'proceed', 'skip', 'statement-forwards', 'statement-skip-forwards'];
+		var proceedIds = ['start', 'proceed', 'present-center', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
 		var forwardIds = ['statement-forwards', 'statement-skip-forwards'];
 		var backButtonIds = ['cr-item-check-back', 'back', 'examination-back'];
+		var pressIds = ['press'];
+		var presentIds = ['present-center', 'present-topright'];
 
 		function isVisible(el) {
 			if (!el) return false;
-			var s = getComputedStyle(el);
-			return s.display !== 'none' && s.visibility !== 'hidden';
+			// offsetWidth/offsetHeight are 0 when the element or any ancestor is hidden
+			return el.offsetWidth > 0 || el.offsetHeight > 0;
 		}
 
 		function clickFirstVisible(ids) {
@@ -62,6 +64,12 @@ Modules.load(new Object({
 					break;
 				case 'forward':
 					clickFirstVisible(forwardIds);
+					break;
+				case 'press':
+					clickFirstVisible(pressIds);
+					break;
+				case 'present':
+					clickFirstVisible(presentIds);
 					break;
 			}
 		}, 0, 'engine');

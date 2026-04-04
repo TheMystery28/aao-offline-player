@@ -2,20 +2,22 @@
     "controls": {
         "keyboard": {
             "proceed": ["Enter", "Space"],
-            "skip": ["Shift"],
             "back": ["ArrowLeft"],
             "forward": ["ArrowRight"],
-            "crSwitchTab": ["Tab"]
+            "crSwitchTab": ["Tab"],
+            "press": ["KeyQ"],
+            "present": ["KeyW"]
         },
         "gamepad": {
             "proceed": [0],
-            "skip": [5],
             "back": [1, 14],
             "forward": [15],
-            "save": [4],
+            "save": [7],
             "loadLatest": [6],
             "fullscreen": [8],
-            "crSwitchTab": [3]
+            "crSwitchTab": [3],
+            "press": [4],
+            "present": [5]
         }
     },
     "display": {

@@ -64,10 +64,11 @@ var SettingsPanel = (function() {
 	// Action name → readable display label for the Controls table
 	var ACTION_LABELS = {
 		'proceed': 'proceed',
-		'skip': 'fast-forward (hold)',
 		'back': 'back statement',
 		'forward': 'forward statement',
-		'crSwitchTab': 'switch tab'
+		'crSwitchTab': 'switch tab',
+		'press': 'press witness',
+		'present': 'present evidence'
 	};
 
 	// Gamepad button index → readable name (W3C standard mapping)
@@ -389,10 +390,15 @@ var SettingsPanel = (function() {
 
 		// Global shortcuts (not in config — hardcoded in input_manager)
 		var shortcuts = [
-			['save', 'Ctrl+S', 'LB'],
+			['save', 'Ctrl+S', 'RT'],
 			['load latest', 'Ctrl+L', 'LT'],
-			['reset settings', 'Ctrl+D', 'RB+RT'],
-			['fullscreen', 'F11', 'View']
+			['reset settings', 'Ctrl+D', 'Start (hold)'],
+			['fullscreen', 'F11', 'Select'],
+			['select option (1-9)', '1-9', '—'],
+			['navigate options', 'Arrows', 'D-Pad'],
+			['browse evidence/profiles', 'X', 'X'],
+			['check evidence (hold)', 'Enter (hold)', 'A (hold)'],
+			['back', 'Escape', 'B']
 		];
 		for (var si = 0; si < shortcuts.length; si++) {
 			var row = document.createElement('tr');

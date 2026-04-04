@@ -82,6 +82,7 @@ Modules.load(new Object({
 			if (idx < 0 || idx >= items.length) return;
 			var summary = items[idx].querySelector('.summary');
 			if (summary) {
+				deactivate();
 				EngineEvents.emit('courtrecord:nav:select', {
 					index: idx,
 					element: items[idx],
@@ -257,11 +258,19 @@ Modules.load(new Object({
 				return;
 			}
 
-			// Escape exits CR navigation
+			// Escape — deactivate CR nav, then also click any visible back button
 			if (e.code === 'Escape') {
 				e.preventDefault();
 				e.stopImmediatePropagation();
 				deactivate();
+				var backIds = ['cr-item-check-back', 'back', 'examination-back'];
+				for (var bi = 0; bi < backIds.length; bi++) {
+					var btn = document.getElementById(backIds[bi]);
+					if (btn && (btn.offsetWidth > 0 || btn.offsetHeight > 0)) {
+						btn.click();
+						break;
+					}
+				}
 				return;
 			}
 		}, true); // capture phase — fires before InputManager

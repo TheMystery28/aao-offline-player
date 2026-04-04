@@ -72,8 +72,10 @@ Features added to the engine:
 - **Width sliders** for page, screen, evidence, and settings panels with live ghost preview
 - **Fullscreen toggle** (F11 / gamepad View button)
 - **Hide header** option
-- **Quick save/load** (Ctrl+S / Ctrl+L / gamepad LB / LT)
+- **Quick save/load** (Ctrl+S / Ctrl+L / gamepad RT / LT)
 - **Gamepad support** with W3C Standard mapping
+- **Option list navigation** with arrow keys / d-pad / number keys 1-9
+- **Court record navigation** (X key / X button) with spatial grid browsing and long-press Check
 - **Save management** with sorted list across sequence parts and load-latest
 - **Plugin system** with tracked auto-cleanup API for extending the player
 - **Config-driven architecture** with persistent user settings in localStorage
@@ -84,15 +86,23 @@ Features added to the engine:
 
 | Action | Keyboard | Gamepad |
 |--------|----------|---------|
-| Proceed / skip | Enter, Space | A |
-| Fast-forward (hold) | Shift | RB |
+| Proceed | Enter, Space | A |
 | Back statement | Arrow Left | B, D-Left |
 | Forward statement | Arrow Right | D-Right |
+| Press witness | Q | LB |
+| Present evidence | W | RB |
 | Switch tab | Tab | Y |
-| Save | Ctrl+S | LB |
+| Browse evidence/profiles | X | X |
+| Select option (1-9) | Number keys | — |
+| Save | Ctrl+S | RT |
 | Load latest save | Ctrl+L | LT |
-| Toggle fullscreen | F11 | View |
-| Reset settings | Ctrl+D | RB+RT |
+| Toggle fullscreen | F11 | Select |
+| Reset settings | Ctrl+D | Start (hold) |
+| Back | Escape | B |
+
+**Option lists** and **investigation menus** can be navigated with arrow keys / d-pad and confirmed with Enter/A. Number keys 1-9 directly select options by position.
+
+**Court record navigation**: press X to enter navigation mode, use arrow keys / d-pad to browse items, Enter/A to select (for presenting), hold Enter/A to open the Check panel. Press X or Escape to exit.
 
 In tabbed mode, **Switch tab** toggles between Evidence and Profiles. Double-press to open Settings, press once to return.
 
