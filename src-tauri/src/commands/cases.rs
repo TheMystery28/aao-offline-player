@@ -8,6 +8,7 @@ use tauri::State;
 
 use crate::app_state::AppPaths;
 use crate::downloader;
+use crate::downloader::paths::normalize_path;
 use crate::error::AppError;
 
 /// List all downloaded cases by scanning the `case/` directory for manifests.
@@ -81,7 +82,6 @@ pub async fn get_missing_assets(
 
     // 1. Check asset_map entries
     let case_prefix = format!("case/{}/", case_id);
-    log::info!("[get_missing_assets] case_id={}, asset_map has {} entries, data_dir={}", case_id, manifest.asset_map.len(), data_dir.display());
     for (url, local_path) in &manifest.asset_map {
         if local_path.is_empty() {
             continue;
@@ -91,11 +91,7 @@ pub async fn get_missing_assets(
         } else {
             format!("{}{}", case_prefix, local_path)
         };
-        let exists = downloader::vfs::asset_exists(&data_dir, &disk_path);
-        if local_path.contains("mp3") || local_path.contains("ogg") || local_path.contains("wav") || local_path.contains("opus") {
-            log::info!("[get_missing_assets] AUDIO local_path={}, disk_path={}, exists={}", local_path, disk_path, exists);
-        }
-        if !exists {
+        if !downloader::vfs::asset_exists(&data_dir, &disk_path) {
             seen.insert(url.clone());
             missing.push(downloader::manifest::MissingAsset {
                 url: url.clone(),
@@ -116,7 +112,7 @@ pub async fn get_missing_assets(
                     let external = m.get("external").and_then(|v| v.as_bool()).unwrap_or(false);
                     if external { continue; }
                     if let Some(path) = m.get("path").and_then(|v| v.as_str()) {
-                        let local = format!("defaults/music/{}.mp3", path);
+                        let local = normalize_path(&format!("defaults/music/{}.mp3", path));
                         if !seen.contains(&local) && !downloader::vfs::asset_exists(&data_dir, &local) {
                             seen.insert(local.clone());
                             missing.push(downloader::manifest::MissingAsset {
@@ -132,7 +128,7 @@ pub async fn get_missing_assets(
                     let external = s.get("external").and_then(|v| v.as_bool()).unwrap_or(false);
                     if external { continue; }
                     if let Some(path) = s.get("path").and_then(|v| v.as_str()) {
-                        let local = format!("defaults/sounds/{}.mp3", path);
+                        let local = normalize_path(&format!("defaults/sounds/{}.mp3", path));
                         if !seen.contains(&local) && !downloader::vfs::asset_exists(&data_dir, &local) {
                             seen.insert(local.clone());
                             missing.push(downloader::manifest::MissingAsset {
