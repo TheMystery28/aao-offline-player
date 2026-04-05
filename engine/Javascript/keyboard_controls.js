@@ -14,7 +14,7 @@ Modules.load(new Object({
 	{
 		InputRegistry.register({ action: 'back_escape', label: 'back', keyboard: 'Escape', gamepad: 'B', source: 'engine' });
 
-		var proceedIds = ['proceed', 'present-center', 'statement-forwards', 'statement-skip-forwards'];
+		var proceedIds = ['skip', 'proceed', 'present-center', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
 		var forwardIds = ['statement-forwards', 'statement-skip-forwards'];
 		var backButtonIds = ['cr-item-check-back', 'back', 'examination-back'];
