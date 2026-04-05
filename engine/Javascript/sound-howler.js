@@ -109,6 +109,22 @@ function SoundHowler() {
 				var newId = newHowl.play();
 				if (typeof newId === 'number') {
 					newHowl.seek(loopStartSec, newId);
+
+					// WORKAROUND for Howler v2.2.4 _playLock queue leak:
+					// play() sets _playLock = true while the HTML5 <audio>
+					// play() Promise is pending. The seek() above gets queued
+					// instead of executing. When the Promise resolves, Howler
+					// releases the lock but does NOT call _loadQueue() (only
+					// does so when internal=true). Force a drain on the next
+					// tick — by then the Promise microtask has resolved and
+					// _playLock is false, so the queued seek executes normally.
+					// _loadQueue() with no event arg executes the first queued
+					// action. For a dedicated music Howl this is always our seek.
+					setTimeout(function() {
+						if (newHowl && newHowl._queue && newHowl._queue.length > 0) {
+							newHowl._loadQueue();
+						}
+					}, 0);
 				}
 			});
 		}

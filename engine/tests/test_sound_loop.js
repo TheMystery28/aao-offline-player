@@ -9,7 +9,9 @@
  *
  * Phase 2 — Liveness Check + Position Recovery:
  *   Verifies playMusic() detects silently-dead music, that playSound() returns
- *   a playback ID, and that _musicPositionCache tracks position for recovery.
+ *   a playback ID, that _musicPositionCache tracks position for recovery,
+ *   and that the heartbeat has reactive dead-audio detection with exponential
+ *   backoff (_musicDeadFrames, _recoveryAttempts, _recoverMusic, _playLock check).
  */
 
 /**
@@ -97,6 +99,18 @@ function testSoundLoopMechanism() {
 	TestHarness.assert(
 		!firstSeekBeforePlay,
 		'onend handler does NOT have seek() before play() (old buggy pattern absent)'
+	);
+
+	// --- Phase 1: Queue drain via setTimeout + _loadQueue ---
+	// After play() + seek(), a setTimeout must force-drain the Howler queue
+	// to work around the _playLock preventing seek() from executing.
+	TestHarness.assert(
+		onendBody.indexOf('_loadQueue') !== -1,
+		'onend handler drains Howler queue via _loadQueue() after seek'
+	);
+	TestHarness.assert(
+		onendBody.indexOf('setTimeout') !== -1,
+		'onend handler uses setTimeout to defer queue drain after _playLock release'
 	);
 }
 
@@ -192,6 +206,60 @@ function testSoundLivenessRecovery() {
 	TestHarness.assert(
 		stopMusicBody.indexOf('cancelAnimationFrame') !== -1,
 		'stopMusic calls cancelAnimationFrame to clean up tracker'
+	);
+
+	// --- Heartbeat recovery: _musicDeadFrames and _recoveryAttempts ---
+	TestHarness.assert(
+		'_musicDeadFrames' in window,
+		'_musicDeadFrames is declared as a global variable'
+	);
+	TestHarness.assert(
+		'_recoveryAttempts' in window,
+		'_recoveryAttempts is declared as a global variable'
+	);
+
+	// --- _recoverMusic function exists ---
+	TestHarness.assertType(
+		typeof _recoverMusic !== 'undefined' ? _recoverMusic : undefined,
+		'function',
+		'_recoverMusic recovery function exists'
+	);
+
+	// --- Heartbeat uses _playLock and document.hidden for dead-audio detection ---
+	var trackBody = '';
+	var trackStart = playerSource.indexOf('function _trackMusicPosition');
+	var trackEnd = playerSource.indexOf('\nfunction ', trackStart + 1);
+	if (trackStart !== -1 && trackEnd !== -1) {
+		trackBody = playerSource.substring(trackStart, trackEnd);
+	} else if (trackStart !== -1) {
+		trackBody = playerSource.substring(trackStart, trackStart + 1500);
+	}
+
+	TestHarness.assert(
+		trackBody.indexOf('_playLock') !== -1,
+		'_trackMusicPosition checks _playLock for dead-audio detection'
+	);
+	TestHarness.assert(
+		trackBody.indexOf('document.hidden') !== -1,
+		'_trackMusicPosition checks document.hidden to skip background recovery'
+	);
+	TestHarness.assert(
+		trackBody.indexOf('_recoverMusic') !== -1,
+		'_trackMusicPosition calls _recoverMusic on confirmed dead audio'
+	);
+	TestHarness.assert(
+		trackBody.indexOf('_musicDeadFrames') !== -1,
+		'_trackMusicPosition uses _musicDeadFrames grace period'
+	);
+
+	// --- stopMusic resets recovery state ---
+	TestHarness.assert(
+		stopMusicBody.indexOf('_musicDeadFrames') !== -1,
+		'stopMusic resets _musicDeadFrames'
+	);
+	TestHarness.assert(
+		stopMusicBody.indexOf('_recoveryAttempts') !== -1,
+		'stopMusic resets _recoveryAttempts'
 	);
 
 	// --- Behavioral test: stopNonMusicSounds still exists and filters correctly ---

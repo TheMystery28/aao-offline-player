@@ -52,15 +52,31 @@ Modules.load(new Object({
 				}
 			});
 
+			// Immediate recovery when the app regains focus. Android often kills
+			// the <audio> hardware context during any switch away. The heartbeat
+			// would eventually catch this, but reacting to 'focus' provides
+			// instant recovery on the most common Android audio-death scenario.
+			window.addEventListener('focus', function() {
+				if(current_music_id && current_music_id != MUSIC_STOP)
+				{
+					var howl = SoundHowler.getSoundById('music_' + current_music_id);
+					if(howl && !howl.playing() && !howl._playLock)
+					{
+						console.warn('[SOUND] Recovery triggered by window focus');
+						_recoverMusic();
+					}
+				}
+			});
+
 			// Register all music files with lazy loading (streams on-demand).
 			// The visibilitychange handler above suspends/resumes AudioContext
 			// to prevent the Android "Broken pipe" crash during background/foreground transitions.
-			for(var i = 1; i < trial_data.music.length; i++)
+			for(let i = 1; i < trial_data.music.length; i++)
 			{
 				sounds_loading.addOne();
-				var url = getMusicUrl(trial_data.music[i]);
-				var music_id = 'music_' + trial_data.music[i].id;
-				SoundHowler.registerSound(music_id, {
+				let url = getMusicUrl(trial_data.music[i]);
+				let music_id = 'music_' + trial_data.music[i].id;
+				let howl = SoundHowler.registerSound(music_id, {
 					url: url,
 					html5: true,
 					preload: false,
@@ -69,6 +85,15 @@ Modules.load(new Object({
 					},
 					volume: trial_data.music[i].volume
 				});
+
+				// Log Howler play errors for Android Logcat debugging.
+				// Howler v2.2.4 silently swallows rejected play() Promises —
+				// this makes them visible. state() narrows the cause:
+				// 'loading' = network/protocol issue, 'loaded' = OS rejection.
+				howl.on('playerror', function(id, msg) {
+					console.error('[SOUND] playerror on ' + music_id + ' | state: ' + howl.state() + ' | sound ' + id + ' | ' + msg);
+				});
+
 				sounds_loading.loadedOne();
 			}
 			
@@ -129,10 +154,16 @@ Modules.load(new Object({
 var current_music_id;
 var _musicPositionCache = 0;
 var _musicPositionRAF = null;
+var _musicDeadFrames = 0;
+var _recoveryAttempts = 0;
 
-// Heartbeat: cache the music position every animation frame while playing.
-// Needed because Howler's stop() resets <audio>.currentTime to 0, making
-// howl.seek() useless for recovery after silent audio death on Android.
+// Heartbeat: cache the music position every animation frame while playing,
+// and detect silently-dead audio on Android for automatic recovery.
+// Position caching is needed because Howler's stop() resets <audio>.currentTime
+// to 0, making howl.seek() useless for recovery after silent audio death.
+// Dead-audio detection uses Howler's _playLock flag as the signal for
+// "has Howler finished its play() attempt?" — if _playLock is false and
+// howl.playing() is false, the audio has genuinely died.
 function _trackMusicPosition()
 {
 	if(current_music_id && current_music_id != MUSIC_STOP)
@@ -142,9 +173,51 @@ function _trackMusicPosition()
 		{
 			var pos = howl.seek();
 			if(typeof pos === 'number' && pos > 0) _musicPositionCache = pos;
+			_musicDeadFrames = 0;
+			_recoveryAttempts = 0;
+		}
+		else if(howl && !howl._playLock && !document.hidden)
+		{
+			// Audio is not playing, Howler has no pending play() attempt,
+			// and the app is in the foreground. The <audio> element has
+			// silently died (Android audio focus loss, system resource
+			// reclaim, rejected play() Promise, etc.).
+			// Base grace period of 6 frames (~100ms at 60fps). After 5
+			// failed attempts, exponential backoff caps at 96 frames (~1.6s).
+			var gracePeriod = 6;
+			if(_recoveryAttempts > 5)
+			{
+				gracePeriod = 6 * Math.pow(2, Math.min(_recoveryAttempts - 5, 4));
+			}
+			_musicDeadFrames++;
+			if(_musicDeadFrames > gracePeriod)
+			{
+				_musicDeadFrames = 0;
+				_recoverMusic();
+			}
 		}
 	}
 	_musicPositionRAF = requestAnimationFrame(_trackMusicPosition);
+}
+
+function _recoverMusic()
+{
+	_recoveryAttempts++;
+	var music_id = current_music_id;
+	var pos = _musicPositionCache;
+	console.warn('[SOUND] Heartbeat recovery (attempt ' + _recoveryAttempts + '): restarting music_' + music_id + ' from ' + pos.toFixed(1) + 's');
+	stopMusic();
+	var howler_id = 'music_' + music_id;
+	SoundHowler.setSoundVolume(howler_id, getRowById('music', music_id).volume);
+	var playId = SoundHowler.playSound(howler_id);
+	if(pos > 0 && typeof playId === 'number')
+	{
+		var activeHowl = SoundHowler.getSoundById(howler_id);
+		if(activeHowl) activeHowl.seek(pos, playId);
+	}
+	current_music_id = music_id;
+	_musicPositionCache = pos;
+	if(!_musicPositionRAF) _trackMusicPosition();
 }
 
 //EXPORTED VARIABLES
@@ -269,6 +342,8 @@ function stopMusic()
 	SoundHowler.stopSound('music_' + current_music_id);
 	current_music_id = MUSIC_STOP;
 	_musicPositionCache = 0;
+	_musicDeadFrames = 0;
+	_recoveryAttempts = 0;
 	if(_musicPositionRAF) { cancelAnimationFrame(_musicPositionRAF); _musicPositionRAF = null; }
 	EngineEvents.emit('music:stop', {});
 }
