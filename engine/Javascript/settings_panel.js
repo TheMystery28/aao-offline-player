@@ -356,6 +356,17 @@ var SettingsPanel = (function() {
 			var ac = document.createElement('td'); ac.textContent = e.label; row.appendChild(ac);
 			var kc = document.createElement('td'); kc.textContent = e.keyboard || ''; row.appendChild(kc);
 			var gc = document.createElement('td'); gc.textContent = e.gamepad || ''; row.appendChild(gc);
+			// Per-source grayout: full row if both disabled, single cell otherwise
+			if (e.module) {
+				var kbOff = InputManager.isModuleDisabled(e.module, 'keyboard');
+				var gpOff = InputManager.isModuleDisabled(e.module, 'gamepad');
+				if (kbOff && gpOff) {
+					row.classList.add('control-disabled');
+				} else {
+					if (kbOff) kc.classList.add('control-disabled');
+					if (gpOff) gc.classList.add('control-disabled');
+				}
+			}
 			table.appendChild(row);
 		}
 
@@ -374,6 +385,8 @@ var SettingsPanel = (function() {
 
 		// Live-update when registry changes (plugin load/unload, config change)
 		EngineEvents.on('controls:registry:changed', refreshBindingsDisplay, 0, 'engine');
+		// Live-update when a module is disabled/enabled (per-source grayout)
+		EngineEvents.on('controls:module:changed', refreshBindingsDisplay, 0, 'engine');
 	}
 
 	function buildLayoutPicker(container, configPath) {

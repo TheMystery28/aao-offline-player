@@ -353,21 +353,25 @@ var EnginePlugins = (function() {
 				/**
 				 * Disable a built-in control module. The module stops processing input.
 				 * Modules: 'keyboard_controls', 'gamepad_controls', 'option_navigator', 'courtrecord_navigator'
+				 * Optional source: 'keyboard' or 'gamepad' for per-source control.
 				 * Tracked — automatically re-enabled when the plugin is destroyed.
 				 */
-				disable: function(moduleName) {
-					InputManager.disableModule(moduleName);
-					if (_disabledModules.indexOf(moduleName) === -1) {
-						_disabledModules.push(moduleName);
+				disable: function(moduleName, source) {
+					InputManager.disableModule(moduleName, source);
+					_disabledModules.push({ name: moduleName, source: source || null });
+				},
+				enable: function(moduleName, source) {
+					InputManager.enableModule(moduleName, source);
+					for (var di = _disabledModules.length - 1; di >= 0; di--) {
+						var dm = _disabledModules[di];
+						if (dm.name === moduleName && dm.source === (source || null)) {
+							_disabledModules.splice(di, 1);
+							break;
+						}
 					}
 				},
-				enable: function(moduleName) {
-					InputManager.enableModule(moduleName);
-					var idx = _disabledModules.indexOf(moduleName);
-					if (idx !== -1) _disabledModules.splice(idx, 1);
-				},
-				isDisabled: function(moduleName) {
-					return InputManager.isModuleDisabled(moduleName);
+				isDisabled: function(moduleName, source) {
+					return InputManager.isModuleDisabled(moduleName, source);
 				}
 			},
 
@@ -409,7 +413,7 @@ var EnginePlugins = (function() {
 			}
 			try { EngineEvents.clearNamespace(_eventNs); } catch (e) {}
 			for (i = 0; i < _disabledModules.length; i++) {
-				try { InputManager.enableModule(_disabledModules[i]); } catch (e) {}
+				try { InputManager.enableModule(_disabledModules[i].name, _disabledModules[i].source); } catch (e) {}
 			}
 			try { InputRegistry.unregisterBySource('plugin:' + pluginName); } catch (e) {}
 			_styles = []; _sounds = []; _domListeners = []; _mediaListeners = [];

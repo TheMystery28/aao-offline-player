@@ -21,8 +21,8 @@ Modules.load(new Object({
 	dependencies : ['engine_events', 'input_registry', 'events', 'page_loaded'],
 	init : function()
 	{
-		InputRegistry.register({ action: 'browseEvidence', label: 'browse evidence/profiles', keyboard: 'KeyX', gamepad: 'X', source: 'engine' });
-		InputRegistry.register({ action: 'checkEvidence', label: 'check evidence (hold)', keyboard: 'Enter (hold)', gamepad: 'A (hold)', source: 'engine' });
+		InputRegistry.register({ action: 'browseEvidence', label: 'browse evidence/profiles', keyboard: 'KeyX', gamepad: 'X', source: 'engine', module: 'courtrecord_navigator' });
+		InputRegistry.register({ action: 'checkEvidence', label: 'check evidence (hold)', keyboard: 'Enter (hold)', gamepad: 'A (hold)', source: 'engine', module: 'courtrecord_navigator' });
 
 		var crNavActive = false;
 		var highlightIndex = -1;
@@ -213,7 +213,7 @@ Modules.load(new Object({
 		// --- Keyboard handler (capture phase to intercept before InputManager) ---
 
 		document.addEventListener('keydown', function(e) {
-			if (InputManager.isModuleDisabled('courtrecord_navigator')) return;
+			if (InputManager.isModuleDisabled('courtrecord_navigator', 'keyboard')) return;
 			// X key toggles CR navigation
 			if (e.code === 'KeyX' && !e.ctrlKey && !e.altKey && !e.metaKey) {
 				if (crNavActive) {
@@ -288,7 +288,7 @@ Modules.load(new Object({
 		}, true); // capture phase — fires before InputManager
 
 		document.addEventListener('keyup', function(e) {
-			if (InputManager.isModuleDisabled('courtrecord_navigator')) return;
+			if (InputManager.isModuleDisabled('courtrecord_navigator', 'keyboard')) return;
 			if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
 				// Always intercept keyup if long-press was triggered (even after deactivate)
 				if (longPressTriggered || crNavActive) {
@@ -334,7 +334,7 @@ Modules.load(new Object({
 		}
 
 		function pollGamepad() {
-			if (InputManager.isModuleDisabled('courtrecord_navigator')) { requestAnimationFrame(pollGamepad); return; }
+			if (InputManager.isModuleDisabled('courtrecord_navigator', 'gamepad')) { requestAnimationFrame(pollGamepad); return; }
 			var gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
 			for (var g = 0; g < gamepads.length; g++) {
 				var gp = gamepads[g];

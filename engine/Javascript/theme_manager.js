@@ -774,7 +774,7 @@ var ThemeManager = (function() {
 				}
 			}, 0, 'engine');
 
-			InputRegistry.register({ action: 'switchToSettings', label: 'switch to settings (double-press)', keyboard: 'Tab ×2', gamepad: 'Y ×2', source: 'engine' });
+			InputRegistry.register({ action: 'switchToSettings', label: 'switch to settings (double-press)', keyboard: 'Tab ×2', gamepad: 'Y ×2', source: 'engine', module: 'theme_manager' });
 
 			// Listen for config sync messages from parent frame
 			window.addEventListener('message', function(e) {

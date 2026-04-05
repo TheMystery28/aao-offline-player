@@ -1243,6 +1243,11 @@ a.courtrecord-switchview:active {
 	padding: 0 5px;
 }
 
+.control-disabled {
+	opacity: 0.35;
+	text-decoration: line-through;
+}
+
 #player_saves button {
 	display: block;
 	float: right;

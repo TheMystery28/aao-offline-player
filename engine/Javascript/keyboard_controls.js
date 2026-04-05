@@ -12,7 +12,7 @@ Modules.load(new Object({
 	dependencies : ['engine_events', 'input_registry', 'events', 'page_loaded'],
 	init : function()
 	{
-		InputRegistry.register({ action: 'back_escape', label: 'back', keyboard: 'Escape', gamepad: 'B', source: 'engine' });
+		InputRegistry.register({ action: 'back_escape', label: 'back', keyboard: 'Escape', gamepad: 'B', source: 'engine', module: 'keyboard_controls' });
 
 		var proceedIds = ['skip', 'proceed', 'present-center', 'statement-forwards', 'statement-skip-forwards'];
 		var backId = 'statement-backwards';
@@ -42,7 +42,7 @@ Modules.load(new Object({
 
 		// Escape key → click visible back button (#back or #examination-back)
 		document.addEventListener('keydown', function(e) {
-			if (InputManager.isModuleDisabled('keyboard_controls')) return;
+			if (InputManager.isModuleDisabled('keyboard_controls', 'keyboard')) return;
 			if (e.code === 'Escape' || e.key === 'Escape') {
 				if (clickFirstVisible(backButtonIds)) {
 					e.preventDefault();
@@ -52,7 +52,7 @@ Modules.load(new Object({
 
 		// Listen to input:action events from InputManager
 		EngineEvents.on('input:action', function(data) {
-			if (InputManager.isModuleDisabled('keyboard_controls')) return;
+			if (InputManager.isModuleDisabled('keyboard_controls', 'keyboard')) return;
 			if (data.source !== 'keyboard') return;
 
 			switch (data.action) {

@@ -18,8 +18,8 @@ Modules.load(new Object({
 	dependencies : ['engine_events', 'input_registry', 'events', 'page_loaded'],
 	init : function()
 	{
-		InputRegistry.register({ action: 'selectOption', label: 'select option (1-9)', keyboard: '1-9', gamepad: '—', source: 'engine' });
-		InputRegistry.register({ action: 'navigateOptions', label: 'navigate options', keyboard: 'Arrows', gamepad: 'D-Pad', source: 'engine' });
+		InputRegistry.register({ action: 'selectOption', label: 'select option (1-9)', keyboard: '1-9', gamepad: '—', source: 'engine', module: 'option_navigator' });
+		InputRegistry.register({ action: 'navigateOptions', label: 'navigate options', keyboard: 'Arrows', gamepad: 'D-Pad', source: 'engine', module: 'option_navigator' });
 
 		var highlightIndex = -1;
 		var bottomScreen = document.getElementById('screen-bottom');
@@ -130,7 +130,7 @@ Modules.load(new Object({
 		// This ensures stopImmediatePropagation prevents InputManager from
 		// seeing arrow/Enter/Space keys during options mode.
 		document.addEventListener('keydown', function(e) {
-			if (InputManager.isModuleDisabled('option_navigator')) return;
+			if (InputManager.isModuleDisabled('option_navigator', 'keyboard')) return;
 			var mode = getMode();
 			if (!mode) return;
 
@@ -208,7 +208,7 @@ Modules.load(new Object({
 		}
 
 		function pollGamepad() {
-			if (InputManager.isModuleDisabled('option_navigator')) { requestAnimationFrame(pollGamepad); return; }
+			if (InputManager.isModuleDisabled('option_navigator', 'gamepad')) { requestAnimationFrame(pollGamepad); return; }
 			var mode = getMode();
 			if (mode) {
 				var gamepads = navigator.getGamepads ? navigator.getGamepads() : [];

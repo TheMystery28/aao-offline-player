@@ -262,10 +262,10 @@ var InputManager = (function() {
 			}, 0, 'engine');
 
 			// Register hardcoded shortcuts in the controls registry
-			InputRegistry.register({ action: 'save', label: 'save', keyboard: 'Ctrl+S', gamepad: 'RT', source: 'engine' });
-			InputRegistry.register({ action: 'loadLatest', label: 'load latest', keyboard: 'Ctrl+L', gamepad: 'LT', source: 'engine' });
-			InputRegistry.register({ action: 'reset', label: 'reset settings', keyboard: 'Ctrl+D', gamepad: 'Start (hold)', source: 'engine' });
-			InputRegistry.register({ action: 'fullscreen', label: 'fullscreen', keyboard: 'F11', gamepad: 'Select', source: 'engine' });
+			InputRegistry.register({ action: 'save', label: 'save', keyboard: 'Ctrl+S', gamepad: 'RT', source: 'engine', module: 'input_manager' });
+			InputRegistry.register({ action: 'loadLatest', label: 'load latest', keyboard: 'Ctrl+L', gamepad: 'LT', source: 'engine', module: 'input_manager' });
+			InputRegistry.register({ action: 'reset', label: 'reset settings', keyboard: 'Ctrl+D', gamepad: 'Start (hold)', source: 'engine', module: 'input_manager' });
+			InputRegistry.register({ action: 'fullscreen', label: 'fullscreen', keyboard: 'F11', gamepad: 'Select', source: 'engine', module: 'input_manager' });
 
 			// Keyboard event listeners
 			document.addEventListener('keydown', onKeyDown);
@@ -313,22 +313,51 @@ var InputManager = (function() {
 		},
 
 		/**
-		 * Module disable registry.
-		 * Plugins can disable built-in control modules by name.
-		 * Modules: 'keyboard_controls', 'gamepad_controls', 'option_navigator', 'courtrecord_navigator'
+		 * Module disable registry with per-source granularity.
+		 * Plugins can disable built-in control modules by name and optionally
+		 * by input source ('keyboard' or 'gamepad').
+		 *
+		 * disableModule('x')            → disable both sources
+		 * disableModule('x', 'keyboard') → disable keyboard only
+		 * enableModule('x')             → enable both sources
+		 * enableModule('x', 'gamepad')  → enable gamepad only
+		 * isModuleDisabled('x')         → true only if BOTH disabled
+		 * isModuleDisabled('x', 'keyboard') → true if keyboard disabled
 		 */
 		_disabledModules: {},
 
-		disableModule: function(name) {
-			this._disabledModules[name] = true;
+		disableModule: function(name, source) {
+			if (!this._disabledModules[name]) {
+				this._disabledModules[name] = { keyboard: false, gamepad: false };
+			}
+			if (!source) {
+				this._disabledModules[name].keyboard = true;
+				this._disabledModules[name].gamepad = true;
+			} else {
+				this._disabledModules[name][source] = true;
+			}
+			EngineEvents.emit('controls:module:changed', { module: name });
 		},
 
-		enableModule: function(name) {
-			delete this._disabledModules[name];
+		enableModule: function(name, source) {
+			if (!this._disabledModules[name]) return;
+			if (!source) {
+				delete this._disabledModules[name];
+			} else {
+				this._disabledModules[name][source] = false;
+				if (!this._disabledModules[name].keyboard && !this._disabledModules[name].gamepad) {
+					delete this._disabledModules[name];
+				}
+			}
+			EngineEvents.emit('controls:module:changed', { module: name });
 		},
 
-		isModuleDisabled: function(name) {
-			return !!this._disabledModules[name];
+		isModuleDisabled: function(name, source) {
+			var entry = this._disabledModules[name];
+			if (!entry) return false;
+			// No source → true only if BOTH disabled (legacy compat)
+			if (!source) return entry.keyboard && entry.gamepad;
+			return !!entry[source];
 		}
 	};
 })();
