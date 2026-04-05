@@ -219,6 +219,12 @@ jobs:
       - name: Init Android project
         run: npx tauri android init
 
+      - name: Keep screen awake during playback
+        run: |
+          MAIN_ACTIVITY=$(find src-tauri/gen/android/app/src/main/java -name "MainActivity.kt")
+          sed -i '/^package /a import android.view.WindowManager' "$MAIN_ACTIVITY"
+          sed -i '/super\.onCreate/a \ \ \ \ window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)' "$MAIN_ACTIVITY"
+
       - name: Upgrade Java and Kotlin JVM targets to 17
         run: |
           cat <<EOF >> src-tauri/gen/android/app/build.gradle.kts
