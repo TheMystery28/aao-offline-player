@@ -4,16 +4,19 @@ A desktop and mobile app (Tauri v2) that lets users download, manage, and play A
 
 ![Main interface](docs/images/main_interface.PNG)
 
-### Download
+### Download and install
 
-Grab the latest build from the [Releases page](https://github.com/TheMystery28/aao-offline-player/releases/latest):
+1. Go to the [Releases page](https://github.com/TheMystery28/aao-offline-player/releases/latest)
+2. Under **Assets**, download the file for your platform:
 
-| Platform | File | Notes |
-|----------|------|-------|
-| **Windows** | `AAO-Offline-Player-Windows-portable.zip` | Extract and run — no installation needed |
-| **Linux** | `.AppImage` | Portable — `chmod +x` and run |
-| **Linux (Debian/Ubuntu)** | `.deb` | Install with `sudo dpkg -i` |
-| **Android** | `.apk` | Enable "Install from unknown sources" to install |
+| Platform | File | How to use |
+|----------|------|------------|
+| **Windows** | `AAO-Offline-Player-Windows-portable.zip` | Extract the ZIP anywhere and run `AAO Offline Player.exe` — no installation needed |
+| **Linux** | `AAO-Offline-Player_amd64.AppImage` | `chmod +x` the file and run it |
+| **Linux (Debian/Ubuntu)** | `AAO-Offline-Player_amd64.deb` | Install with `sudo dpkg -i AAO-Offline-Player_amd64.deb` |
+| **Android** | `AAO-Offline-Player-universal.apk` | Enable "Install from unknown sources" in your device settings, then open the APK |
+
+3. Once the app is open, paste an AAO case URL or case ID in the download bar and click **Download**
 
 ### How it works
 
