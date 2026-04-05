@@ -136,7 +136,9 @@ api.input.offKeyUp(handler)           // Manual removal
 // Tracked — listens to input:action events for a specific action name
 api.input.registerAction(actionName, handler)
 
-// Tracked — registers a control binding in the settings panel display
+// Tracked — registers a control binding that appears in the settings controls table.
+// Plugin bindings show in italic below built-in controls.
+// Auto-removed from the table when the plugin is destroyed.
 api.input.registerBinding({
     action: 'myAction',
     label: 'My Custom Action',
@@ -150,12 +152,20 @@ api.input.unregisterBinding(action)   // Manual removal
 
 Disable/replace built-in control modules. Tracked — auto-re-enabled on destroy.
 
+Supports per-source granularity: pass `'keyboard'` or `'gamepad'` as the second argument to disable only one input source while leaving the other active. Omit the source to disable both.
+
 ```javascript
 // Modules: 'keyboard_controls', 'gamepad_controls', 'option_navigator', 'courtrecord_navigator'
-api.controls.disable('option_navigator')
-api.controls.enable('option_navigator')
-api.controls.isDisabled('option_navigator')
+api.controls.disable('option_navigator')              // disable both keyboard and gamepad
+api.controls.disable('option_navigator', 'keyboard')  // disable keyboard only
+api.controls.disable('option_navigator', 'gamepad')   // disable gamepad only
+api.controls.enable('option_navigator')               // re-enable both
+api.controls.enable('option_navigator', 'keyboard')   // re-enable keyboard only
+api.controls.isDisabled('option_navigator')            // true only if BOTH sources disabled
+api.controls.isDisabled('option_navigator', 'keyboard') // true if keyboard specifically disabled
 ```
+
+When a module is disabled, its rows in the settings controls table are grayed out automatically. If only one source is disabled, only the corresponding column (Keyboard or Gamepad) is grayed out.
 
 ### api.settings
 
@@ -219,6 +229,8 @@ Listen via `events.on(name, handler, priority)`. All listeners are auto-namespac
 | `courtrecord:nav:select` | `{ index, element, tab }` | CR item selected |
 | `courtrecord:nav:check` | `{ index, element, tab }` | CR item check opened |
 | `controls:registry:changed` | — | Controls table needs rebuild |
+| `controls:module:changed` | `{ module }` | Module disabled/enabled (grayout updates) |
+| `controls:action:changed` | `{ action, disabled }` | Action disabled/enabled via settings toggle |
 
 ### Cancelling input actions
 
