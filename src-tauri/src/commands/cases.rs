@@ -180,26 +180,30 @@ pub async fn get_missing_assets(
 ///
 /// Returns an error if the case directory does not exist or if deletion fails.
 #[tauri::command]
-pub fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(), AppError> {
-    let data_dir = &paths.data_dir;
+pub async fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(), AppError> {
+    let data_dir = paths.data_dir.clone();
 
-    let case_dir = data_dir.join("case").join(case_id.to_string());
-    if !case_dir.exists() {
-        return Err(format!("Case {} not found", case_id).into());
-    }
+    tokio::task::spawn_blocking(move || {
+        let case_dir = data_dir.join("case").join(case_id.to_string());
+        if !case_dir.exists() {
+            return Err(format!("Case {} not found", case_id).into());
+        }
 
-    // Remove case entries from the persistent hash index before deleting files
-    if let Ok(index) = downloader::dedup::DedupIndex::open(data_dir) {
-        let _ = index.unregister_prefix(&downloader::asset_paths::case_prefix(case_id));
-    }
+        // Remove case entries from the persistent hash index before deleting files
+        if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
+            let _ = index.unregister_prefix(&downloader::asset_paths::case_prefix(case_id));
+        }
 
-    fs::remove_dir_all(&case_dir)
-        .map_err(|e| format!("Failed to delete case {}: {}", case_id, e))?;
+        fs::remove_dir_all(&case_dir)
+            .map_err(|e| format!("Failed to delete case {}: {}", case_id, e))?;
 
-    log::info!("Deleted case {} at {}", case_id, case_dir.display());
+        log::info!("Deleted case {} at {}", case_id, case_dir.display());
 
-    // Auto-clean unused shared defaults
-    let _ = downloader::dedup::clear_unused_defaults(data_dir);
+        // Auto-clean unused shared defaults
+        let _ = downloader::dedup::clear_unused_defaults(&data_dir);
 
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("Delete task failed: {}", e)))?
 }
