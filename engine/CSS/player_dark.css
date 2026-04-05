@@ -39,6 +39,7 @@
 	--color-bg-evidence-card: #2a2a2a;
 	--color-bg-evidence-details: #2a2a2a;
 	--color-border-evidence-card: #3a3a3a;
+	--color-border-evidence-summary: #3a3a3a;
 	--color-bg-cr-check-overlay: rgba(0, 0, 0, 0.7);
 	--color-bg-cr-check-panel: #2a2a2a;
 
@@ -123,6 +124,13 @@
 /* Evidence detail buttonbar */
 .night-mode .evidence_display .details .buttonbar-bottom {
 	background: #333;
+}
+
+/* Form select elements */
+.night-mode select {
+	background-color: #333;
+	color: #e0e0e0;
+	border-color: #555;
 }
 
 /* Button hover/disabled overrides */
