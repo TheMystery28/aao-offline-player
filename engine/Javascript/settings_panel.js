@@ -384,7 +384,10 @@ var SettingsPanel = (function() {
 	}
 
 	function addBindingsDisplay(container) {
-		bindingsContainer = container;
+		// Use a dedicated wrapper so refreshes don't wipe sibling elements
+		const wrapper = document.createElement('div');
+		container.appendChild(wrapper);
+		bindingsContainer = wrapper;
 		refreshBindingsDisplay();
 
 		// Live-update when registry changes (plugin load/unload, config change)
@@ -587,17 +590,6 @@ var SettingsPanel = (function() {
 		addCheckbox(displayContent, 'display.hideHeader', 'hide_header');
 		addCheckbox(displayContent, 'display.fullscreen', 'fullscreen');
 
-		var actionSep = document.createElement('hr');
-		actionSep.setAttribute('aria-hidden', 'true');
-		actionSep.className = 'settings-separator';
-		displayContent.appendChild(actionSep);
-
-		addCheckbox(displayContent, 'features.actionProceed', 'action_proceed');
-		addCheckbox(displayContent, 'features.actionBack', 'action_back');
-		addCheckbox(displayContent, 'features.actionPressPresent', 'action_press_present');
-		addCheckbox(displayContent, 'features.actionStatements', 'action_statements');
-		addCheckbox(displayContent, 'features.optionNavigation', 'option_navigation');
-
 		displayDetails.appendChild(displayContent);
 		container.appendChild(displayDetails);
 
@@ -651,6 +643,17 @@ var SettingsPanel = (function() {
 		addClass(controlsContent, 'settings-section-content');
 
 		addBindingsDisplay(controlsContent);
+
+		var actionSep = document.createElement('hr');
+		actionSep.setAttribute('aria-hidden', 'true');
+		actionSep.className = 'settings-separator';
+		controlsContent.appendChild(actionSep);
+
+		addCheckbox(controlsContent, 'features.actionProceed', 'action_proceed');
+		addCheckbox(controlsContent, 'features.actionBack', 'action_back');
+		addCheckbox(controlsContent, 'features.actionPressPresent', 'action_press_present');
+		addCheckbox(controlsContent, 'features.actionStatements', 'action_statements');
+		addCheckbox(controlsContent, 'features.optionNavigation', 'option_navigation');
 
 		controlsDetails.appendChild(controlsContent);
 		container.appendChild(controlsDetails);
