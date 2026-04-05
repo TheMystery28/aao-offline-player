@@ -433,13 +433,26 @@ export function initLibrary(ctx) {
         showConfirmModal(
           'Delete all ' + cases.length + ' parts of "' + title + '"?\nThis cannot be undone.',
           "Delete All",
-          function () {
-            const deletePromises = cases.map(function (c) {
-              return invoke("delete_case", { caseId: c.case_id });
-            });
-            Promise.all(deletePromises)
-              .then(function () { loadLibrary(); })
-              .catch(function (e) { statusMsg.textContent = "Error deleting: " + e; });
+          async function () {
+            ctx.progressContainer.classList.remove("hidden");
+            ctx.progressPhase.textContent = "Deleting sequence...";
+            ctx.progressBarInner.style.width = "0%";
+            ctx.progressText.textContent = "0 / " + cases.length;
+            let completed = 0;
+            try {
+              for (let i = 0; i < cases.length; i++) {
+                ctx.progressText.textContent = (i + 1) + " / " + cases.length + " — " + escapeHtml(cases[i].title);
+                await invoke("delete_case", { caseId: cases[i].case_id });
+                completed++;
+                ctx.progressBarInner.style.width = Math.round((completed / cases.length) * 100) + "%";
+              }
+              ctx.progressPhase.textContent = "Deleted!";
+              ctx.progressText.textContent = completed + " parts removed";
+              loadLibrary();
+            } catch (e) {
+              ctx.progressContainer.classList.add("hidden");
+              statusMsg.textContent = "Error deleting: " + e;
+            }
           }
         );
       };
@@ -599,9 +612,21 @@ export function initLibrary(ctx) {
       'Delete "' + title + '"?\nThis cannot be undone.',
       "Delete",
       function () {
+        ctx.progressContainer.classList.remove("hidden");
+        ctx.progressPhase.textContent = "Deleting...";
+        ctx.progressBarInner.style.width = "0%";
+        ctx.progressText.textContent = escapeHtml(title);
         invoke("delete_case", { caseId: caseId })
-          .then(function () { loadLibrary(); })
-          .catch(function (e) { statusMsg.textContent = "Error deleting case: " + e; });
+          .then(function () {
+            ctx.progressBarInner.style.width = "100%";
+            ctx.progressPhase.textContent = "Deleted!";
+            ctx.progressText.textContent = "";
+            loadLibrary();
+          })
+          .catch(function (e) {
+            ctx.progressContainer.classList.add("hidden");
+            statusMsg.textContent = "Error deleting case: " + e;
+          });
       }
     );
   }
