@@ -491,7 +491,7 @@ export function initLibrary(ctx) {
         const retryPartBtn = document.createElement("button");
         retryPartBtn.className = "retry-btn";
         retryPartBtn.textContent = "Retry (" + failedCount + ")";
-        retryPartBtn.title = "Retry failed assets (likely dead links — may not help)";
+        retryPartBtn.title = "Retry failed assets — some hosts are unreliable, it costs nothing to try";
         retryPartBtn.addEventListener("click", (function (c) {
           return function () { ctx.retryCase(c.case_id, c.failed_assets); };
         })(manifest));

@@ -297,19 +297,13 @@ export function initDownload(ctx) {
     }
 
     let msg = "Retry " + (failedAssets ? failedAssets.length : "") + " failed assets?\n\n";
-    if (aaoCount > 0 && externalCount > 0) {
+    if (aaoCount > 0) {
       msg += aaoCount + " failed from aaonline.fr — the site was probably temporarily down. " +
-        "Retrying these should work.\n\n" +
-        externalCount + " failed from external hosting — these are likely dead links " +
-        "(the author's hosting is down or the files were removed). " +
-        "Retrying will most likely fail again.\n\n";
-    } else if (aaoCount > 0) {
-      msg += "All failed assets are from aaonline.fr — the site was probably temporarily down. " +
-        "Retrying should work.\n\n";
-    } else {
-      msg += "Failed assets are from external hosting — these are likely dead links " +
-        "(the author's hosting is down or the files were removed). " +
-        "Retrying will most likely fail again.\n\n";
+        "Retrying these should work.\n\n";
+    }
+    if (externalCount > 0) {
+      msg += externalCount + " failed from external hosting — some providers (e.g. file.garden) " +
+        "are known to be problematic for downloads. It costs nothing to retry.\n\n";
     }
     msg += "Only previously failed assets will be retried — nothing already downloaded " +
       "will be re-downloaded.";
