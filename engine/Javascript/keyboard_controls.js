@@ -43,6 +43,7 @@ Modules.load(new Object({
 		// Escape key → click visible back button (#back or #examination-back)
 		document.addEventListener('keydown', function(e) {
 			if (InputManager.isModuleDisabled('keyboard_controls', 'keyboard')) return;
+			if (InputManager.isActionDisabled('back_escape')) return;
 			if (e.code === 'Escape' || e.key === 'Escape') {
 				if (clickFirstVisible(backButtonIds)) {
 					e.preventDefault();

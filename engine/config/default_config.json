@@ -44,6 +44,10 @@
         "debugPanel": false,
         "autoSave": true,
         "showHealthBar": true,
+        "actionProceed": true,
+        "actionBack": true,
+        "actionPressPresent": true,
+        "actionStatements": true,
         "optionNavigation": true
     },
     "accessibility": {

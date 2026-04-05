@@ -43,7 +43,11 @@
 "narrow_mode" : "Narrow mode",
 "hide_header" : "Hide header",
 "fullscreen" : "Fullscreen",
-"option_navigation" : "Option navigation (arrows/gamepad)",
+"action_proceed" : "Proceed",
+"action_back" : "Back",
+"action_press_present" : "Press / Present",
+"action_statements" : "Statement navigation",
+"option_navigation" : "Option navigation",
 
 "player_saves" : "Game saves",
 "save_new" : "New save",

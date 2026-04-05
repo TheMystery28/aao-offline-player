@@ -171,6 +171,7 @@ var InputManager = (function() {
 		if (!REPEAT_ACTIONS[action] && pressed[guardKey]) return;
 		pressed[guardKey] = true;
 
+		if (InputManager._disabledActions[action]) return;
 		EngineEvents.emitCancellable('input:action', { source: 'keyboard', action: action });
 	}
 
@@ -225,9 +226,12 @@ var InputManager = (function() {
 				if (gp.buttons[b] && gp.buttons[b].pressed) {
 					if (action && !gamepadWasPressed[key]) {
 						gamepadWasPressed[key] = true;
-						var specialHandler = GAMEPAD_SPECIAL_ACTIONS[action];
-						if (specialHandler) { specialHandler(); }
-						else { EngineEvents.emitCancellable('input:action', { source: 'gamepad', action: action }); }
+						if (InputManager._disabledActions[action]) { /* swallowed */ }
+						else {
+							var specialHandler = GAMEPAD_SPECIAL_ACTIONS[action];
+							if (specialHandler) { specialHandler(); }
+							else { EngineEvents.emitCancellable('input:action', { source: 'gamepad', action: action }); }
+						}
 					}
 				} else {
 					if (gamepadWasPressed[key]) {
@@ -254,12 +258,17 @@ var InputManager = (function() {
 		_init: function() {
 			buildLookups();
 
-			// Listen for config changes to rebuild lookups
+			// Listen for config changes to rebuild lookups and sync action toggles
 			EngineEvents.on('config:changed', function(data) {
 				if (!data.path || data.path.indexOf('controls') === 0) {
 					buildLookups();
 				}
+				if (data.path && data.path.indexOf('features.action') === 0) {
+					InputManager.syncActionToggles();
+				}
 			}, 0, 'engine');
+
+			InputManager.syncActionToggles();
 
 			// Register hardcoded shortcuts in the controls registry
 			InputRegistry.register({ action: 'save', label: 'save', keyboard: 'Ctrl+S', gamepad: 'RT', source: 'engine', module: 'input_manager' });
@@ -358,6 +367,47 @@ var InputManager = (function() {
 			// No source → true only if BOTH disabled (legacy compat)
 			if (!source) return entry.keyboard && entry.gamepad;
 			return !!entry[source];
+		},
+
+		/**
+		 * Per-action disable registry.
+		 * Actions disabled here are swallowed in onKeyDown/pollGamepads
+		 * before any event is emitted.
+		 */
+		_disabledActions: {},
+
+		disableAction: function(name) {
+			this._disabledActions[name] = true;
+			EngineEvents.emit('controls:action:changed', { action: name, disabled: true });
+		},
+
+		enableAction: function(name) {
+			delete this._disabledActions[name];
+			EngineEvents.emit('controls:action:changed', { action: name, disabled: false });
+		},
+
+		isActionDisabled: function(name) {
+			return !!this._disabledActions[name];
+		},
+
+		/**
+		 * Sync action toggles from EngineConfig features.action* keys.
+		 */
+		syncActionToggles: function() {
+			var map = {
+				'features.actionProceed': ['proceed'],
+				'features.actionBack': ['back_escape'],
+				'features.actionPressPresent': ['press', 'present'],
+				'features.actionStatements': ['back', 'forward']
+			};
+			for (var key in map) {
+				var enabled = EngineConfig.get(key);
+				var actions = map[key];
+				for (var i = 0; i < actions.length; i++) {
+					if (enabled === false) this.disableAction(actions[i]);
+					else this.enableAction(actions[i]);
+				}
+			}
 		}
 	};
 })();

@@ -356,8 +356,12 @@ var SettingsPanel = (function() {
 			var ac = document.createElement('td'); ac.textContent = e.label; row.appendChild(ac);
 			var kc = document.createElement('td'); kc.textContent = e.keyboard || ''; row.appendChild(kc);
 			var gc = document.createElement('td'); gc.textContent = e.gamepad || ''; row.appendChild(gc);
-			// Per-source grayout: full row if both disabled, single cell otherwise
-			if (e.module) {
+			// Action-level grayout (settings toggles)
+			if (InputManager.isActionDisabled(e.action)) {
+				row.classList.add('control-disabled');
+			}
+			// Per-source module grayout (plugin disable): full row or single cell
+			else if (e.module) {
 				var kbOff = InputManager.isModuleDisabled(e.module, 'keyboard');
 				var gpOff = InputManager.isModuleDisabled(e.module, 'gamepad');
 				if (kbOff && gpOff) {
@@ -387,6 +391,8 @@ var SettingsPanel = (function() {
 		EngineEvents.on('controls:registry:changed', refreshBindingsDisplay, 0, 'engine');
 		// Live-update when a module is disabled/enabled (per-source grayout)
 		EngineEvents.on('controls:module:changed', refreshBindingsDisplay, 0, 'engine');
+		// Live-update when an action is disabled/enabled (settings toggles)
+		EngineEvents.on('controls:action:changed', refreshBindingsDisplay, 0, 'engine');
 	}
 
 	function buildLayoutPicker(container, configPath) {
@@ -580,6 +586,16 @@ var SettingsPanel = (function() {
 		addCheckbox(displayContent, 'display.expandEvidenceDescriptions', 'expand_descriptions');
 		addCheckbox(displayContent, 'display.hideHeader', 'hide_header');
 		addCheckbox(displayContent, 'display.fullscreen', 'fullscreen');
+
+		var actionSep = document.createElement('hr');
+		actionSep.setAttribute('aria-hidden', 'true');
+		actionSep.className = 'settings-separator';
+		displayContent.appendChild(actionSep);
+
+		addCheckbox(displayContent, 'features.actionProceed', 'action_proceed');
+		addCheckbox(displayContent, 'features.actionBack', 'action_back');
+		addCheckbox(displayContent, 'features.actionPressPresent', 'action_press_present');
+		addCheckbox(displayContent, 'features.actionStatements', 'action_statements');
 		addCheckbox(displayContent, 'features.optionNavigation', 'option_navigation');
 
 		displayDetails.appendChild(displayContent);
