@@ -120,37 +120,44 @@ export function initImport(ctx) {
             html += missingInfo;
             importResult.innerHTML = html;
 
-            // Offer to create a collection from the imported batch
-            showPromptModal(
-              "Create a collection from these " + result.batch_manifests.length + " imported cases?",
-              "Collection name",
-              "Imported Cases",
-              "Create",
-              function (collectionName) {
-                const batchSeqGroups = {};
-                const batchStandalone = [];
-                for (let bi = 0; bi < result.batch_manifests.length; bi++) {
-                  const bm = result.batch_manifests[bi];
-                  const bseq = bm.sequence;
-                  if (bseq && bseq.title && bseq.list && bseq.list.length > 1) {
-                    if (!batchSeqGroups[bseq.title]) batchSeqGroups[bseq.title] = true;
-                  } else {
-                    batchStandalone.push(bm.case_id);
-                  }
-                }
-                const collItems = [];
-                const batchSeqKeys = Object.keys(batchSeqGroups);
-                for (let bsi = 0; bsi < batchSeqKeys.length; bsi++) {
-                  collItems.push({ type: "sequence", title: batchSeqKeys[bsi] });
-                }
-                for (let bci = 0; bci < batchStandalone.length; bci++) {
-                  collItems.push({ type: "case", case_id: batchStandalone[bci] });
-                }
-                invoke("create_collection", { title: collectionName, items: collItems })
-                  .then(function () { loadLibrary(); })
-                  .catch(function (e) { statusMsg.textContent = "Error creating collection: " + e; });
+            // Offer to create a collection — but only if the batch contains
+            // more than one sequence or has standalone cases.  A folder that
+            // only contains parts of a single sequence doesn't need a
+            // collection wrapper (the library already groups sequences).
+            const batchSeqGroups = {};
+            const batchStandalone = [];
+            for (let bi = 0; bi < result.batch_manifests.length; bi++) {
+              const bm = result.batch_manifests[bi];
+              const bseq = bm.sequence;
+              if (bseq && bseq.title && bseq.list && bseq.list.length > 1) {
+                if (!batchSeqGroups[bseq.title]) batchSeqGroups[bseq.title] = true;
+              } else {
+                batchStandalone.push(bm.case_id);
               }
-            );
+            }
+            const batchSeqKeys = Object.keys(batchSeqGroups);
+            const isSingleSequenceOnly = batchSeqKeys.length === 1 && batchStandalone.length === 0;
+
+            if (!isSingleSequenceOnly) {
+              showPromptModal(
+                "Create a collection from these " + result.batch_manifests.length + " imported cases?",
+                "Collection name",
+                "Imported Cases",
+                "Create",
+                function (collectionName) {
+                  const collItems = [];
+                  for (let bsi = 0; bsi < batchSeqKeys.length; bsi++) {
+                    collItems.push({ type: "sequence", title: batchSeqKeys[bsi] });
+                  }
+                  for (let bci = 0; bci < batchStandalone.length; bci++) {
+                    collItems.push({ type: "case", case_id: batchStandalone[bci] });
+                  }
+                  invoke("create_collection", { title: collectionName, items: collItems })
+                    .then(function () { loadLibrary(); })
+                    .catch(function (e) { statusMsg.textContent = "Error creating collection: " + e; });
+                }
+              );
+            }
           } else {
             // Single case import
             const singleDedupInfo = dedupSavedBytes > 0 ? ' — saved ' + formatBytes(dedupSavedBytes) + ' by dedup' : '';
