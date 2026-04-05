@@ -43,7 +43,8 @@
     "features": {
         "debugPanel": false,
         "autoSave": true,
-        "showHealthBar": true
+        "showHealthBar": true,
+        "optionNavigation": true
     },
     "accessibility": {
         "reduceMotion": false,

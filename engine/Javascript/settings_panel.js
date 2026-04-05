@@ -567,6 +567,7 @@ var SettingsPanel = (function() {
 		addCheckbox(displayContent, 'display.expandEvidenceDescriptions', 'expand_descriptions');
 		addCheckbox(displayContent, 'display.hideHeader', 'hide_header');
 		addCheckbox(displayContent, 'display.fullscreen', 'fullscreen');
+		addCheckbox(displayContent, 'features.optionNavigation', 'option_navigation');
 
 		displayDetails.appendChild(displayContent);
 		container.appendChild(displayDetails);

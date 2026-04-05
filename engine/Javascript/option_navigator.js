@@ -271,6 +271,20 @@ Modules.load(new Object({
 		// already fired before this module loaded.
 		requestAnimationFrame(pollGamepad);
 
+		// --- Config-driven enable/disable ---
+		function syncFromConfig() {
+			var enabled = EngineConfig.get('features.optionNavigation');
+			if (enabled === false) {
+				InputManager.disableModule('option_navigator');
+			} else {
+				InputManager.enableModule('option_navigator');
+			}
+		}
+		syncFromConfig();
+		EngineEvents.on('config:changed', function(e) {
+			if (e.path === 'features.optionNavigation') syncFromConfig();
+		}, 0, 'engine');
+
 		// --- Reset highlight on mode transitions ---
 
 		var lastMode = null;
