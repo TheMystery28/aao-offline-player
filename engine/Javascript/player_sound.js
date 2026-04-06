@@ -187,17 +187,28 @@ function _trackMusicPosition()
 		var howl = SoundHowler.getSoundById('music_' + current_music_id);
 		if(howl && howl.playing())
 		{
-			var pos = howl.seek();
+			// Cache position for recovery. Howler's seek() with no args reads
+			// _sounds[0] which may be a stale stopped node after loop transitions.
+			// Scan _sounds for the actively playing node if seek() returns 0.
+			// Note: relies on html5: true. Web Audio does not use _node.currentTime.
+			let pos = howl.seek();
+			if(typeof pos !== 'number' || pos <= 0)
+			{
+				const active = howl._sounds && howl._sounds.find(function(s) {
+					return !s._paused && s._node && s._node.currentTime > 0;
+				});
+				if(active) pos = active._node.currentTime;
+			}
 			if(typeof pos === 'number' && pos > 0) _musicPositionCache = pos;
 			_musicDeadFrames = 0;
 			_recoveryAttempts = 0;
 		}
-		else if(howl && !howl._playLock && !document.hidden)
+		else if(howl && !howl._playLock && !document.hidden && howl.state() === 'loaded')
 		{
 			// Audio is not playing, Howler has no pending play() attempt,
-			// and the app is in the foreground. The <audio> element has
-			// silently died (Android audio focus loss, system resource
-			// reclaim, rejected play() Promise, etc.).
+			// the app is in the foreground, and the sound has finished loading.
+			// The state() check prevents false positives during initial load
+			// (html5 + preload:false → state='loading' while fetching the file).
 			// Base grace period of 6 frames (~100ms at 60fps). After 5
 			// failed attempts, exponential backoff caps at 96 frames (~1.6s).
 			var gracePeriod = 6;
@@ -222,7 +233,7 @@ function _recoverMusic()
 	var music_id = current_music_id;
 	var pos = _musicPositionCache;
 	console.warn('[SOUND] Heartbeat recovery (attempt ' + _recoveryAttempts + '): restarting music_' + music_id + ' from ' + pos.toFixed(1) + 's');
-	stopMusic();
+	stopMusic(true);
 	var howler_id = 'music_' + music_id;
 	SoundHowler.setSoundVolume(howler_id, getRowById('music', music_id).volume);
 	var playId = SoundHowler.playSound(howler_id);
@@ -353,13 +364,15 @@ function fadeMusic(to_volume, duration, callback)
 	}
 }
 
-function stopMusic()
+function stopMusic(isRecovery)
 {
 	SoundHowler.stopSound('music_' + current_music_id);
 	current_music_id = MUSIC_STOP;
 	_musicPositionCache = 0;
 	_musicDeadFrames = 0;
-	_recoveryAttempts = 0;
+	// Only reset recovery attempts on intentional game-driven stops.
+	// During automated recovery, preserve the counter for exponential backoff.
+	if(!isRecovery) _recoveryAttempts = 0;
 	if(_musicPositionRAF) { cancelAnimationFrame(_musicPositionRAF); _musicPositionRAF = null; }
 	EngineEvents.emit('music:stop', {});
 }
