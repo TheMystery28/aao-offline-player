@@ -21,13 +21,13 @@ include!(concat!(env!("OUT_DIR"), "/engine_embed.rs"));
 /// This struct is created once during app initialization and is available
 /// to all commands via Tauri's `State` system.
 pub(crate) struct AppPaths {
-    /// Port the migration server is listening on, or 0 if it was not started
-    /// (migration already complete). Used by `get_migration_server_url`.
+    /// Port the localhost HTTP server is listening on, or 0 if not started.
+    /// On Android the server always runs (audio needs real HTTP to bypass a
+    /// Chromium custom-protocol Range-request bug). On desktop it only runs
+    /// during one-time localStorage migration.
     pub(crate) server_port: u16,
-    /// Migration server handle. `None` when `migration_complete = true`.
-    ///
-    /// Dropping this field (on app exit) calls `MigrationServer::stop()` automatically.
-    pub(crate) migration_server: Option<crate::server::MigrationServer>,
+    /// Localhost HTTP server handle. Dropping on app exit stops the thread.
+    pub(crate) localhost_server: Option<crate::server::LocalhostServer>,
     /// Static engine files (JS, CSS, HTML, img, Languages). Read-only on mobile.
     pub(crate) engine_dir: PathBuf,
     /// Writable data directory (case/, defaults/, config.json).

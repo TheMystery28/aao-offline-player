@@ -288,18 +288,18 @@ pub struct ServerConfig {
     pub data_dir: PathBuf,
 }
 
-/// Handle for the migration HTTP server.
+/// Handle for the localhost HTTP server (audio serving on Android, migration on desktop).
 ///
 /// Holds the shutdown flag so the server thread can be signalled to stop.
 /// Implements `Drop` so the thread is stopped automatically when this handle
 /// is dropped (e.g. when Tauri drops managed `AppPaths` state on exit).
-pub struct MigrationServer {
+pub struct LocalhostServer {
     port: u16,
     shutdown: Arc<AtomicBool>,
 }
 
-impl MigrationServer {
-    /// Return the port the migration server is listening on.
+impl LocalhostServer {
+    /// Return the port the localhost server is listening on.
     pub fn port(&self) -> u16 {
         self.port
     }
@@ -316,30 +316,31 @@ impl MigrationServer {
     }
 }
 
-impl Drop for MigrationServer {
+impl Drop for LocalhostServer {
     fn drop(&mut self) {
         self.stop();
     }
 }
 
-/// Start the migration HTTP server in a named background thread.
+/// Start the localhost HTTP server in a named background thread.
 ///
-/// Returns a `MigrationServer` handle whose `Drop` impl stops the thread.
-/// The server only serves `/localstorage_migrate.html` — all other paths 404.
-pub fn start_server(config: ServerConfig) -> Result<MigrationServer, crate::error::AppError> {
+/// Returns a `LocalhostServer` handle whose `Drop` impl stops the thread.
+/// Serves all files via `serve_file()` — used for audio on Android (bypasses
+/// Chromium custom-protocol Range bug) and localStorage migration on desktop.
+pub fn start_server(config: ServerConfig) -> Result<LocalhostServer, crate::error::AppError> {
     let port = portpicker::pick_unused_port()
-        .ok_or_else(|| "No available port found for migration server".to_string())?;
+        .ok_or_else(|| "No available port found for localhost server".to_string())?;
 
     // Explicit 127.0.0.1 avoids the localhost → [::1] resolution on some systems.
     let server = Server::http(format!("127.0.0.1:{}", port))
-        .map_err(|e| format!("Failed to start migration server on port {}: {}", port, e))?;
+        .map_err(|e| format!("Failed to start localhost server on port {}: {}", port, e))?;
 
     let config = Arc::new(config);
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = Arc::clone(&shutdown);
 
     std::thread::Builder::new()
-        .name("migration-server".into())
+        .name("localhost-server".into())
         .spawn(move || {
             loop {
                 if shutdown_clone.load(Ordering::Relaxed) {
@@ -356,11 +357,11 @@ pub fn start_server(config: ServerConfig) -> Result<MigrationServer, crate::erro
                     Err(_) => break, // Server closed or I/O error.
                 }
             }
-            log::debug!("Migration server stopped");
+            log::debug!("Localhost server stopped");
         })
-        .map_err(|e| format!("Failed to spawn migration server thread: {}", e))?;
+        .map_err(|e| format!("Failed to spawn localhost server thread: {}", e))?;
 
-    Ok(MigrationServer { port, shutdown })
+    Ok(LocalhostServer { port, shutdown })
 }
 
 /// General-purpose HTTP request handler for the tiny_http localhost server.
@@ -825,10 +826,10 @@ mod tests {
             .map(|(_, v)| v.as_str())
     }
 
-    /// Create a migration-only test server. Only localstorage_migrate.html exists.
-    /// Returns `(port, TempDir, MigrationServer)` — keep all three alive for the test
-    /// duration. Dropping `MigrationServer` stops the server thread cleanly.
-    fn setup_migration_server() -> (u16, tempfile::TempDir, MigrationServer) {
+    /// Create a test localhost server with minimal fixture files.
+    /// Returns `(port, TempDir, LocalhostServer)` — keep all three alive for the test
+    /// duration. Dropping `LocalhostServer` stops the server thread cleanly.
+    fn setup_localhost_server() -> (u16, tempfile::TempDir, LocalhostServer) {
         let dir = tempfile::tempdir().unwrap();
         // Create test fixture files — the server now serves all files via serve_file()
         std::fs::write(
@@ -848,12 +849,12 @@ mod tests {
     }
 
     // =================================================================
-    // Migration-only server integration tests
+    // Localhost server integration tests
     // =================================================================
 
     #[test]
-    fn test_migration_server_serves_migrate_html() {
-        let (port, _dir, _ms) = setup_migration_server();
+    fn test_localhost_server_serves_migrate_html() {
+        let (port, _dir, _ms) = setup_localhost_server();
         let (status, headers, body) = http_get(port, "/localstorage_migrate.html");
         assert_eq!(status, 200);
         assert!(String::from_utf8_lossy(&body).contains("migration"));
@@ -862,8 +863,8 @@ mod tests {
     }
 
     #[test]
-    fn test_migration_server_strips_query_string() {
-        let (port, _dir, _ms) = setup_migration_server();
+    fn test_localhost_server_strips_query_string() {
+        let (port, _dir, _ms) = setup_localhost_server();
         let (status, _, body) = http_get(port, "/localstorage_migrate.html?id=abc123");
         assert_eq!(status, 200);
         assert!(String::from_utf8_lossy(&body).contains("migration"));
@@ -871,7 +872,7 @@ mod tests {
 
     #[test]
     fn test_server_serves_player_html() {
-        let (port, _dir, _ms) = setup_migration_server();
+        let (port, _dir, _ms) = setup_localhost_server();
         // player.html exists in the test fixture (created by setup)
         let (status, _, _) = http_get(port, "/player.html");
         assert_eq!(status, 200);
@@ -879,7 +880,7 @@ mod tests {
 
     #[test]
     fn test_server_serves_root_as_player_html() {
-        let (port, _dir, _ms) = setup_migration_server();
+        let (port, _dir, _ms) = setup_localhost_server();
         // Root "/" resolves to player.html via serve_file()
         let (status, _, _) = http_get(port, "/");
         assert_eq!(status, 200);
@@ -887,29 +888,29 @@ mod tests {
 
     #[test]
     fn test_server_returns_404_for_missing_files() {
-        let (port, _dir, _ms) = setup_migration_server();
+        let (port, _dir, _ms) = setup_localhost_server();
         let (status, _, _) = http_get(port, "/Javascript/nonexistent.js");
         assert_eq!(status, 404);
     }
 
     #[test]
     fn test_server_returns_404_for_missing_case_assets() {
-        let (port, _dir, _ms) = setup_migration_server();
+        let (port, _dir, _ms) = setup_localhost_server();
         let (status, _, _) = http_get(port, "/case/123/trial_data.json");
         assert_eq!(status, 404);
     }
 
     #[test]
     fn test_server_returns_404_for_missing_defaults() {
-        let (port, _dir, _ms) = setup_migration_server();
+        let (port, _dir, _ms) = setup_localhost_server();
         let (status, _, _) = http_get(port, "/defaults/images/chars/Apollo/1.gif");
         assert_eq!(status, 404);
     }
 
-    /// Regression: MigrationServer::port() returns the port it is listening on.
+    /// Regression: LocalhostServer::port() returns the port it is listening on.
     #[test]
-    fn test_migration_server_port_matches() {
-        let (port, _dir, ms) = setup_migration_server();
+    fn test_localhost_server_port_matches() {
+        let (port, _dir, ms) = setup_localhost_server();
         assert_eq!(ms.port(), port);
         assert!(port > 0);
     }
@@ -919,8 +920,8 @@ mod tests {
     /// After stop(), a fresh TCP connect to the server port must fail (connection
     /// refused), verifying the thread has exited and the port is released.
     #[test]
-    fn test_migration_server_stop_releases_port() {
-        let (port, _dir, ms) = setup_migration_server();
+    fn test_localhost_server_stop_releases_port() {
+        let (port, _dir, ms) = setup_localhost_server();
         // Sanity-check: server is accepting before stop()
         let (status, _, _) = http_get(port, "/localstorage_migrate.html");
         assert_eq!(status, 200, "Server must be reachable before stop()");
@@ -939,13 +940,13 @@ mod tests {
         assert!(stopped, "Server must stop accepting connections after stop()");
     }
 
-    /// Regression: Drop calls stop() — no thread leak when MigrationServer is dropped.
+    /// Regression: Drop calls stop() — no thread leak when LocalhostServer is dropped.
     ///
     /// Verify the port is released after the handle goes out of scope.
     #[test]
-    fn test_migration_server_drop_stops_server() {
+    fn test_localhost_server_drop_stops_server() {
         let (port, _dir) = {
-            let (port, dir, ms) = setup_migration_server();
+            let (port, dir, ms) = setup_localhost_server();
             // Sanity-check: server is reachable inside scope
             let (status, _, _) = http_get(port, "/localstorage_migrate.html");
             assert_eq!(status, 200, "Server must be reachable before drop");
@@ -963,7 +964,7 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        assert!(stopped, "Server must stop when MigrationServer is dropped");
+        assert!(stopped, "Server must stop when LocalhostServer is dropped");
     }
 
     /// Test with the REAL engine directory to detect path issues.

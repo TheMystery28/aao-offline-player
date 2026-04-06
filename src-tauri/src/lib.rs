@@ -39,7 +39,7 @@ use app_state::{AppPaths, MutableConfig};
 ///     - Determines platform-specific paths for engine files and user data.
 ///     - Extracts bundled engine assets to the writable filesystem on mobile.
 ///     - Loads user configuration (`config.json`).
-///     - Starts a background `tiny_http` server for one-time localStorage migration.
+///     - Starts a background `tiny_http` localhost server (always on Android for audio, desktop for migration).
 ///     - Initializes the shared `reqwest` HTTP client.
 /// 5.  **State Management**: Registers `AppPaths` and `MutableConfig` as managed state.
 /// 6.  **Command Registration**: Exposes all functions in the `commands` module
@@ -209,8 +209,8 @@ pub fn run() {
             } else {
                 !app_config.migration_complete
             };
-            let migration_server = if !needs_server {
-                log::debug!("Migration already complete — skipping tiny_http server startup");
+            let localhost_server = if !needs_server {
+                log::debug!("Localhost server not needed — skipping startup");
                 None
             } else {
                 match server::start_server(server::ServerConfig {
@@ -218,20 +218,20 @@ pub fn run() {
                     data_dir: data_dir.clone(),
                 }) {
                     Ok(ms) => {
-                        log::info!("Migration server started on port {}", ms.port());
+                        log::info!("Localhost server started on port {}", ms.port());
                         // Write port file so the JS migration script can find the server URL.
                         let port_file = data_dir.join(".server_port");
                         let _ = fs::write(&port_file, ms.port().to_string());
                         Some(ms)
                     }
                     Err(e) => {
-                        log::warn!("Migration server failed to start: {} — migration will be skipped", e);
+                        log::warn!("Localhost server failed to start: {}", e);
                         None
                     }
                 }
             };
 
-            let server_port = migration_server.as_ref().map_or(0, |ms| ms.port());
+            let server_port = localhost_server.as_ref().map_or(0, |ms| ms.port());
 
             log::info!("Engine directory: {}", engine_dir.display());
             log::info!("Data directory: {}", data_dir.display());
@@ -246,7 +246,7 @@ pub fn run() {
             // Store immutable paths (no lock needed — Tauri wraps in Arc)
             app.manage(AppPaths {
                 server_port,
-                migration_server,
+                localhost_server,
                 engine_dir,
                 data_dir,
                 cancel_flag: Arc::new(AtomicBool::new(false)),
@@ -261,7 +261,7 @@ pub fn run() {
             // game
             commands::game::open_game,
             commands::game::get_server_url,
-            commands::game::get_migration_server_url,
+            commands::game::get_localhost_server_url,
             commands::game::debug_check_file,
             // download
             commands::download::fetch_case_info,

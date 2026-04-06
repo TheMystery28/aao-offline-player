@@ -88,8 +88,7 @@ Modules.load(new Object({
 			// Load all evidence icons
 			for(var i = 1; i < trial_data.evidence.length; i++)
 			{
-				var iconUrl = getEvidenceIconUrl(trial_data.evidence[i]);
-				if(iconUrl) preloadImage(iconUrl, `Evidence icon #${trial_data.evidence[i].id}`);
+				preloadImage(getEvidenceIconUrl(trial_data.evidence[i]), `Evidence icon #${trial_data.evidence[i].id}`);
 			}
 
 			// Load all profile images

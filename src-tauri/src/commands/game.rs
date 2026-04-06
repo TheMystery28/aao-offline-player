@@ -74,15 +74,14 @@ pub fn get_server_url() -> Result<String, AppError> {
     Ok(build_server_url())
 }
 
-/// Returns the old tiny_http server URL for one-time localStorage migration.
-/// This is the http://localhost:{port} URL that holds the user's old saves.
-/// Returns an error when the migration server was not started (migration_complete = true).
-/// Will be removed in a future release when tiny_http is fully deleted.
+/// Returns the localhost HTTP server URL.
+/// On Android this is always available (for audio serving).
+/// On desktop it's only available during localStorage migration.
 #[tauri::command]
-pub fn get_migration_server_url(paths: State<'_, AppPaths>) -> Result<String, AppError> {
+pub fn get_localhost_server_url(paths: State<'_, AppPaths>) -> Result<String, AppError> {
     if paths.server_port == 0 {
         return Err(AppError::Other(
-            "Migration server is not running (migration already complete)".to_string(),
+            "Localhost server is not running".to_string(),
         ));
     }
     Ok(format!("http://localhost:{}", paths.server_port))

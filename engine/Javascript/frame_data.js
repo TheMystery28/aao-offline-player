@@ -235,7 +235,10 @@ function getEvidenceIconUrl(evidence_data)
 {
 	if(evidence_data.icon_external)
 	{
-		return evidence_data.icon || '';
+		// Empty external icon URL (case author set icon_external=true but no URL)
+		// → fall through to default placeholder to avoid img.src="" → page URL error
+		if(!evidence_data.icon) return cfg['picture_dir'] + cfg['icon_subdir'] + 'Inconnu.png';
+		return evidence_data.icon;
 	}
 	else if(evidence_data.icon)
 	{
