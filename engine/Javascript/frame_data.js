@@ -235,7 +235,7 @@ function getEvidenceIconUrl(evidence_data)
 {
 	if(evidence_data.icon_external)
 	{
-		return evidence_data.icon;
+		return evidence_data.icon || '';
 	}
 	else if(evidence_data.icon)
 	{
