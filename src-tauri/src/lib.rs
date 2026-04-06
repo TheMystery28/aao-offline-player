@@ -199,9 +199,17 @@ pub fn run() {
             let app_config = config::load_config(&data_dir);
             log::info!("Loaded config: {:?}", app_config);
 
-            // Start the migration server only when needed.
-            // Once migration_complete = true the server is pure overhead — skip it.
-            let migration_server = if app_config.migration_complete {
+            // On Android, always start the localhost server: Chromium's custom
+            // protocol handler (shouldInterceptRequest) mangles Range responses
+            // for media files, so <audio> elements must load from real HTTP.
+            // See: https://issues.chromium.org/issues/40739128
+            // On desktop, only start when migration hasn't completed yet.
+            let needs_server = if cfg!(target_os = "android") {
+                true
+            } else {
+                !app_config.migration_complete
+            };
+            let migration_server = if !needs_server {
                 log::debug!("Migration already complete — skipping tiny_http server startup");
                 None
             } else {

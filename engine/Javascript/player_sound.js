@@ -68,13 +68,29 @@ Modules.load(new Object({
 				}
 			});
 
+			// On Android, audio must load from the real localhost HTTP server
+			// instead of the custom aao:// protocol. Chromium's shouldInterceptRequest
+			// mangles Range responses for media, causing net::ERR_FAILED on <audio>
+			// elements. See: https://issues.chromium.org/issues/40739128
+			// The audio_port query param is injected by open_game() on Android only.
+			const _audioBase = (function() {
+				const match = window.location.search.match(/[?&]audio_port=(\d+)/);
+				return match ? "http://localhost:" + match[1] + "/" : "";
+			})();
+			function _audioUrl(url) {
+				if (_audioBase && url.indexOf('://') === -1) {
+					return _audioBase + url;
+				}
+				return url;
+			}
+
 			// Register all music files with lazy loading (streams on-demand).
 			// The visibilitychange handler above suspends/resumes AudioContext
 			// to prevent the Android "Broken pipe" crash during background/foreground transitions.
 			for(let i = 1; i < trial_data.music.length; i++)
 			{
 				sounds_loading.addOne();
-				let url = getMusicUrl(trial_data.music[i]);
+				let url = _audioUrl(getMusicUrl(trial_data.music[i]));
 				let music_id = 'music_' + trial_data.music[i].id;
 				let howl = SoundHowler.registerSound(music_id, {
 					url: url,
@@ -98,10 +114,10 @@ Modules.load(new Object({
 			}
 			
 			// Load all sound files
-			for(var i = 1; i < trial_data.sounds.length; i++)
+			for(let i = 1; i < trial_data.sounds.length; i++)
 			{
 				sounds_loading.addOne();
-				var url = getSoundUrl(trial_data.sounds[i])
+				let url = _audioUrl(getSoundUrl(trial_data.sounds[i]))
 				var sound_id = 'sound_' + trial_data.sounds[i].id;
 				SoundHowler.registerSound(sound_id, {
 					url: url,
@@ -132,12 +148,12 @@ Modules.load(new Object({
 					usedVoices[-p.voice] = true;
 				}
 			}
-			for(var i = 1; i <= 3; i++)
+			for(let i = 1; i <= 3; i++)
 			{
 				if(!usedVoices[i]) continue;
 				sounds_loading.addOne();
-				var url = getVoiceUrls(-i)
-				var voice_id = 'voice_-' + i;
+				let url = getVoiceUrls(-i).map(_audioUrl);
+				let voice_id = 'voice_-' + i;
 				SoundHowler.registerSound(voice_id, {
 					urls: url,
 					loop: false,

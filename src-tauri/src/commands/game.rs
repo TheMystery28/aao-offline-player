@@ -22,13 +22,22 @@ pub(crate) fn protocol_base_url() -> &'static str {
 }
 
 /// Build the player URL for a given case using the custom protocol.
-pub(crate) fn build_game_url(case_id: u32, lang: &str) -> String {
-    format!(
+///
+/// When `audio_port` is non-zero, appends `&audio_port={port}` so the engine
+/// routes `<audio>` element requests through the real localhost HTTP server
+/// instead of the custom protocol (works around Chromium Android WebView bug
+/// where `shouldInterceptRequest` mangles Range responses for media files).
+pub(crate) fn build_game_url(case_id: u32, lang: &str, audio_port: u16) -> String {
+    let mut url = format!(
         "{}/player.html?trial_id={}&lang={}",
         protocol_base_url(),
         case_id,
         lang
-    )
+    );
+    if audio_port > 0 {
+        url.push_str(&format!("&audio_port={}", audio_port));
+    }
+    url
 }
 
 /// Build the server base URL using the custom protocol.
@@ -53,7 +62,7 @@ pub fn open_game(paths: State<'_, AppPaths>, config: State<'_, MutableConfig>, c
     let lang = config.0.lock().map_err(|e| e.to_string())?.language.clone();
     // Resolve which global plugins apply to this case (writes resolved_plugins.json)
     let _ = importer::resolve_plugins_for_case(case_id, &paths.data_dir);
-    Ok(build_game_url(case_id, &lang))
+    Ok(build_game_url(case_id, &lang, paths.server_port))
 }
 
 /// Returns the asset server's base URL (custom protocol).
@@ -138,7 +147,7 @@ mod tests {
 
     #[test]
     fn test_build_game_url_format() {
-        let url = build_game_url(69063, "en");
+        let url = build_game_url(69063, "en", 0);
         let expected = format!(
             "{}/player.html?trial_id=69063&lang=en",
             protocol_base_url()
@@ -148,10 +157,23 @@ mod tests {
 
     #[test]
     fn test_build_game_url_different_params() {
-        let url = build_game_url(42, "fr");
+        let url = build_game_url(42, "fr", 0);
         assert!(url.contains("trial_id=42"));
         assert!(url.contains("lang=fr"));
         assert!(url.starts_with(protocol_base_url()));
+    }
+
+    #[test]
+    fn test_build_game_url_with_audio_port() {
+        let url = build_game_url(100, "en", 54321);
+        assert!(url.contains("audio_port=54321"), "URL should include audio_port when port > 0");
+        assert!(url.contains("trial_id=100"));
+    }
+
+    #[test]
+    fn test_build_game_url_no_audio_port_when_zero() {
+        let url = build_game_url(100, "en", 0);
+        assert!(!url.contains("audio_port"), "URL should NOT include audio_port when port is 0");
     }
 
     #[test]
@@ -163,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_game_url_contains_expected_parts() {
-        let url = build_game_url(100, "de");
+        let url = build_game_url(100, "de", 0);
         assert!(url.starts_with(protocol_base_url()));
         assert!(url.contains("player.html"));
         assert!(url.contains("trial_id=100"));

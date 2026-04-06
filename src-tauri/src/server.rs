@@ -363,38 +363,44 @@ pub fn start_server(config: ServerConfig) -> Result<MigrationServer, crate::erro
     Ok(MigrationServer { port, shutdown })
 }
 
-/// Migration-only HTTP request handler.
-/// Only serves `localstorage_migrate.html` for the one-time localStorage migration.
-/// All other content is served by the `aao://` protocol handler.
-/// Will be removed entirely in the next release once migration period ends.
+/// General-purpose HTTP request handler for the tiny_http localhost server.
+///
+/// On desktop this server only runs during one-time localStorage migration.
+/// On Android it runs permanently to serve audio files, working around a
+/// Chromium WebView bug where `shouldInterceptRequest` (used by the custom
+/// `aao://` protocol) mangles Range responses for media, causing
+/// `net::ERR_FAILED` on `<audio>` element requests.
+/// See: <https://issues.chromium.org/issues/40739128>
+///
+/// Delegates to the same `serve_file()` used by the `aao://` protocol handler,
+/// so all file types, Range requests, CORS, and MIME types work identically.
 fn handle_request(request: tiny_http::Request, config: &ServerConfig) {
     let url_path = request.url().to_string();
-    let clean_path = url_path.split('?').next().unwrap_or(&url_path);
+    let method = request.method().as_str().to_string();
 
-    if clean_path == "/localstorage_migrate.html" {
-        let path = config.engine_dir.join("localstorage_migrate.html");
-        if let Ok(data) = std::fs::read(&path) {
-            let mut response = Response::from_data(data);
-            if let Ok(h) = Header::from_bytes(
-                "Content-Type".as_bytes(),
-                "text/html; charset=utf-8".as_bytes(),
-            ) {
-                response.add_header(h);
-            }
-            if let Ok(h) = Header::from_bytes(
-                "Access-Control-Allow-Origin".as_bytes(),
-                "*".as_bytes(),
-            ) {
-                response.add_header(h);
-            }
-            let _ = request.respond(response);
-            return;
+    // Extract Range header if present (for audio streaming).
+    let range = request.headers().iter()
+        .find(|h| h.field.as_str().to_ascii_lowercase() == "range")
+        .map(|h| h.value.as_str().to_string());
+
+    let result = serve_file(config, &url_path, &method, range.as_deref());
+
+    // Convert ServeResult → tiny_http::Response.
+    let data_len = result.data.len();
+    let mut headers = Vec::new();
+    for (key, value) in &result.headers {
+        if let Ok(h) = Header::from_bytes(key.as_bytes(), value.as_bytes()) {
+            headers.push(h);
         }
     }
-
-    let _ = request.respond(
-        Response::from_string("404 Not Found").with_status_code(404),
+    let response = Response::new(
+        tiny_http::StatusCode(result.status),
+        headers,
+        std::io::Cursor::new(result.data),
+        Some(data_len),
+        None,
     );
+    let _ = request.respond(response);
 }
 
 /// Resolve a URL path to a filesystem path.
@@ -824,12 +830,11 @@ mod tests {
     /// duration. Dropping `MigrationServer` stops the server thread cleanly.
     fn setup_migration_server() -> (u16, tempfile::TempDir, MigrationServer) {
         let dir = tempfile::tempdir().unwrap();
-        // Only the migration bridge page should be served
+        // Create test fixture files — the server now serves all files via serve_file()
         std::fs::write(
             dir.path().join("localstorage_migrate.html"),
             "<html><script>/* migration */</script></html>",
         ).unwrap();
-        // Create files the server should NOT serve (protocol handler serves these now)
         std::fs::write(dir.path().join("player.html"), "<html>player</html>").unwrap();
         let js_dir = dir.path().join("Javascript");
         std::fs::create_dir_all(&js_dir).unwrap();
@@ -865,35 +870,37 @@ mod tests {
     }
 
     #[test]
-    fn test_migration_server_rejects_player_html() {
+    fn test_server_serves_player_html() {
         let (port, _dir, _ms) = setup_migration_server();
+        // player.html exists in the test fixture (created by setup)
         let (status, _, _) = http_get(port, "/player.html");
-        assert_eq!(status, 404);
+        assert_eq!(status, 200);
     }
 
     #[test]
-    fn test_migration_server_rejects_root() {
+    fn test_server_serves_root_as_player_html() {
         let (port, _dir, _ms) = setup_migration_server();
+        // Root "/" resolves to player.html via serve_file()
         let (status, _, _) = http_get(port, "/");
-        assert_eq!(status, 404);
+        assert_eq!(status, 200);
     }
 
     #[test]
-    fn test_migration_server_rejects_js() {
+    fn test_server_returns_404_for_missing_files() {
         let (port, _dir, _ms) = setup_migration_server();
-        let (status, _, _) = http_get(port, "/Javascript/test.js");
+        let (status, _, _) = http_get(port, "/Javascript/nonexistent.js");
         assert_eq!(status, 404);
     }
 
     #[test]
-    fn test_migration_server_rejects_case_assets() {
+    fn test_server_returns_404_for_missing_case_assets() {
         let (port, _dir, _ms) = setup_migration_server();
         let (status, _, _) = http_get(port, "/case/123/trial_data.json");
         assert_eq!(status, 404);
     }
 
     #[test]
-    fn test_migration_server_rejects_defaults() {
+    fn test_server_returns_404_for_missing_defaults() {
         let (port, _dir, _ms) = setup_migration_server();
         let (status, _, _) = http_get(port, "/defaults/images/chars/Apollo/1.gif");
         assert_eq!(status, 404);
