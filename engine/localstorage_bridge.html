@@ -1,54 +1,108 @@
 <!DOCTYPE html>
 <html><head><title>Storage Bridge</title></head>
 <body><script>
-// Bridge page for cross-origin localStorage access between the launcher and the game server.
+// Bridge page for cross-origin IndexedDB access between the launcher and the game server.
 // Uses postMessage to communicate safely.
 //
-// On load: sends current game_saves to parent.
+// On load: reads game_saves from IndexedDB and sends to parent.
 // Listens for: { type: "write_saves", data: { caseId: { timestamp: saveJson, ... }, ... } }
-//   Merges incoming saves into localStorage's game_saves (won't overwrite existing timestamps).
-//   Responds with: { type: "write_saves_result", success: true/false }
+//   Merges incoming saves into IndexedDB game_saves (won't overwrite existing timestamps).
+//   Responds with: { type: "write_saves_result", success: true/false, merged: N }
 
-// Extract bridgeId from URL for message routing (prevents cross-talk between concurrent iframes)
+var DB_NAME = 'aao_saves';
+var DB_VERSION = 1;
+var STORE_NAME = 'saves';
+var KEY = 'game_saves';
+
 var bridgeId = (function() {
-  var match = window.location.search.match(/[?&]id=([^&]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+    var match = window.location.search.match(/[?&]id=([^&]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
 })();
 
-// 1. Send current game_saves on load (backward compatible)
-try {
-  var raw = localStorage.getItem("game_saves");
-  window.parent.postMessage({ type: "game_saves", data: raw, bridgeId: bridgeId }, "*");
-} catch (e) {
-  window.parent.postMessage({ type: "game_saves", data: null, error: e.message, bridgeId: bridgeId }, "*");
+function openDB(callback) {
+    var req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = function(e) {
+        var db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+        }
+    };
+    req.onsuccess = function(e) { callback(null, e.target.result); };
+    req.onerror = function(e) { callback(e.target.error, null); };
 }
 
-// 2. Listen for write_saves messages from the launcher
-window.addEventListener("message", function(event) {
-  if (!event.data || event.data.type !== "write_saves") return;
-  // Only handle messages meant for this bridge instance
-  if (event.data.bridgeId && bridgeId && event.data.bridgeId !== bridgeId) return;
-  try {
-    var incoming = event.data.data;
-    if (!incoming || typeof incoming !== "object") {
-      window.parent.postMessage({ type: "write_saves_result", success: false, error: "Invalid data", bridgeId: bridgeId }, "*");
-      return;
+function readSaves(db, callback) {
+    var tx = db.transaction(STORE_NAME, 'readonly');
+    var req = tx.objectStore(STORE_NAME).get(KEY);
+    req.onsuccess = function(e) { callback(null, e.target.result || null); };
+    req.onerror = function(e) { callback(e.target.error, null); };
+}
+
+function writeSaves(db, data, callback) {
+    var tx = db.transaction(STORE_NAME, 'readwrite');
+    var req = tx.objectStore(STORE_NAME).put(data, KEY);
+    req.onsuccess = function() { callback(null); };
+    req.onerror = function(e) { callback(e.target.error); };
+}
+
+// 1. Send current game_saves on load
+openDB(function(err, db) {
+    if (err) {
+        window.parent.postMessage({ type: 'game_saves', data: null, error: err.message, bridgeId: bridgeId }, '*');
+        return;
     }
-    var existing = JSON.parse(localStorage.getItem("game_saves") || "{}");
-    var merged = 0;
-    for (var caseId in incoming) {
-      if (!existing[caseId]) existing[caseId] = {};
-      for (var ts in incoming[caseId]) {
-        if (!(ts in existing[caseId])) {
-          existing[caseId][ts] = incoming[caseId][ts];
-          merged++;
+    readSaves(db, function(err2, raw) {
+        if (err2) {
+            window.parent.postMessage({ type: 'game_saves', data: null, error: err2.message, bridgeId: bridgeId }, '*');
+            return;
         }
-      }
+        window.parent.postMessage({ type: 'game_saves', data: raw, bridgeId: bridgeId }, '*');
+    });
+});
+
+// 2. Listen for write_saves messages from the launcher
+window.addEventListener('message', function(event) {
+    if (!event.data || event.data.type !== 'write_saves') return;
+    if (event.data.bridgeId && bridgeId && event.data.bridgeId !== bridgeId) return;
+
+    var incoming = event.data.data;
+    if (!incoming || typeof incoming !== 'object') {
+        window.parent.postMessage({ type: 'write_saves_result', success: false, error: 'Invalid data', bridgeId: bridgeId }, '*');
+        return;
     }
-    localStorage.setItem("game_saves", JSON.stringify(existing));
-    window.parent.postMessage({ type: "write_saves_result", success: true, merged: merged, bridgeId: bridgeId }, "*");
-  } catch (e) {
-    window.parent.postMessage({ type: "write_saves_result", success: false, error: e.message, bridgeId: bridgeId }, "*");
-  }
+
+    openDB(function(err, db) {
+        if (err) {
+            window.parent.postMessage({ type: 'write_saves_result', success: false, error: err.message, bridgeId: bridgeId }, '*');
+            return;
+        }
+        readSaves(db, function(err2, raw) {
+            if (err2) {
+                window.parent.postMessage({ type: 'write_saves_result', success: false, error: err2.message, bridgeId: bridgeId }, '*');
+                return;
+            }
+            var existing = {};
+            if (raw) {
+                try { existing = JSON.parse(raw); } catch(ex) { existing = {}; }
+            }
+            var merged = 0;
+            for (var caseId in incoming) {
+                if (!existing[caseId]) existing[caseId] = {};
+                for (var ts in incoming[caseId]) {
+                    if (!(ts in existing[caseId])) {
+                        existing[caseId][ts] = incoming[caseId][ts];
+                        merged++;
+                    }
+                }
+            }
+            writeSaves(db, JSON.stringify(existing), function(err3) {
+                if (err3) {
+                    window.parent.postMessage({ type: 'write_saves_result', success: false, error: err3.message, bridgeId: bridgeId }, '*');
+                } else {
+                    window.parent.postMessage({ type: 'write_saves_result', success: true, merged: merged, bridgeId: bridgeId }, '*');
+                }
+            });
+        });
+    });
 });
 </script></body></html>

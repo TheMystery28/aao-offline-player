@@ -21,6 +21,58 @@ var trial_data_base_dates = {};
 
 
 //EXPORTED FUNCTIONS
+// IndexedDB wrapper replacing localStorage for game saves (no 5 MB quota limit).
+var GameSavesDB = (function() {
+	var DB_NAME   = 'aao_saves';
+	var DB_VERSION = 1;
+	var STORE_NAME = 'saves';
+	var KEY        = 'game_saves';
+
+	function openDB(callback) {
+		var req = indexedDB.open(DB_NAME, DB_VERSION);
+		req.onupgradeneeded = function(e) {
+			var db = e.target.result;
+			if (!db.objectStoreNames.contains(STORE_NAME)) {
+				db.createObjectStore(STORE_NAME);
+			}
+		};
+		req.onsuccess = function(e) { callback(null, e.target.result); };
+		req.onerror   = function(e) { callback(e.target.error, null); };
+	}
+
+	// Read game_saves JSON string. Falls back to localStorage once for one-time migration.
+	function get(callback) {
+		openDB(function(err, db) {
+			if (err) { callback(null); return; }
+			var tx  = db.transaction(STORE_NAME, 'readonly');
+			var req = tx.objectStore(STORE_NAME).get(KEY);
+			req.onsuccess = function(e) {
+				var data = e.target.result || null;
+				if (data !== null) { callback(data); return; }
+				// One-time migration from localStorage (old versions stored saves there)
+				var legacy = null;
+				try { legacy = window.localStorage ? window.localStorage.getItem('game_saves') : null; } catch (ex) {}
+				if (legacy) { set(legacy, function() {}); }
+				callback(legacy);
+			};
+			req.onerror = function() { callback(null); };
+		});
+	}
+
+	// Write game_saves JSON string. Always calls callback(true/false).
+	function set(value, callback) {
+		openDB(function(err, db) {
+			if (err) { if (callback) callback(false); return; }
+			var tx  = db.transaction(STORE_NAME, 'readwrite');
+			var req = tx.objectStore(STORE_NAME).put(value, KEY);
+			req.onsuccess = function() { if (callback) callback(true); };
+			req.onerror   = function() { if (callback) callback(false); };
+		});
+	}
+
+	return { get: get, set: set };
+})();
+
 function getSaveData()
 {
 	trial_data_diffs[trial_information.id] = getDiff(initial_trial_data, trial_data);
@@ -189,9 +241,8 @@ function refreshSavesList()
 
 	emptyNode(container);
 
-	if(window.localStorage)
-	{
-		var game_saves = JSON.parse(window.localStorage.getItem('game_saves'));
+	GameSavesDB.get(function(raw) {
+		var game_saves = raw ? JSON.parse(raw) : null;
 
 		// --- Save + Load buttons outside the scroll area (always visible) ---
 		if (btnContainer) { emptyNode(btnContainer); }
@@ -217,26 +268,29 @@ function refreshSavesList()
 			}
 			else
 			{
-				var gs = JSON.parse(window.localStorage.getItem('game_saves'));
-				if(!gs)
-				{
-					alert(l('save_explain'));
-					gs = {};
-				}
-				if(!gs[trial_information.id])
-				{
-					gs[trial_information.id] = {};
-				}
-				var saveStr = getSaveString();
-				gs[trial_information.id][(new Date()).getTime()] = saveStr;
-				var finalSaveData = JSON.stringify(gs);
-				window.localStorage.setItem('game_saves', finalSaveData);
-				EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
-				// Immediately back up to launcher (bypasses localStorage flush race on Android)
-				if (window.parent && window.parent !== window) {
-					window.parent.postMessage({ type: 'save_data_changed', data: finalSaveData }, '*');
-				}
-				refreshSavesList();
+				GameSavesDB.get(function(raw2) {
+					var gs = raw2 ? JSON.parse(raw2) : null;
+					if(!gs)
+					{
+						alert(l('save_explain'));
+						gs = {};
+					}
+					if(!gs[trial_information.id])
+					{
+						gs[trial_information.id] = {};
+					}
+					var saveStr = getSaveString();
+					gs[trial_information.id][(new Date()).getTime()] = saveStr;
+					var finalSaveData = JSON.stringify(gs);
+					GameSavesDB.set(finalSaveData, function() {
+						EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
+						// Immediately back up to launcher (bypasses localStorage flush race on Android)
+						if (window.parent && window.parent !== window) {
+							window.parent.postMessage({ type: 'save_data_changed', data: finalSaveData }, '*');
+						}
+						refreshSavesList();
+					});
+				});
 			}
 		}, false);
 		btnRow.appendChild(save_button);
@@ -245,51 +299,52 @@ function refreshSavesList()
 		load_button.textContent = l('load_latest') || 'Load latest';
 		load_button.style.cssText = 'flex:1;padding:6px 8px;';
 		registerEventHandler(load_button, 'click', function(){
-			var gs = JSON.parse(window.localStorage.getItem('game_saves'));
-			if(!gs) return;
-			// Find the latest save across ALL sequence parts
-			var latestDate = 0;
-			var latestPartId = null;
-			var latestStr = null;
-			var partsToCheck = [trial_information.id];
-			if (trial_information.sequence && trial_information.sequence.list) {
-				for (var si = 0; si < trial_information.sequence.list.length; si++) {
-					partsToCheck.push(trial_information.sequence.list[si].id);
-				}
-			}
-			for (var pi = 0; pi < partsToCheck.length; pi++) {
-				var pid = partsToCheck[pi];
-				if (!gs[pid]) continue;
-				var dates = Object.keys(gs[pid]).map(Number);
-				for (var di = 0; di < dates.length; di++) {
-					if (dates[di] > latestDate) {
-						latestDate = dates[di];
-						latestPartId = pid;
-						latestStr = gs[pid][String(dates[di])];
+			GameSavesDB.get(function(raw3) {
+				var gs = raw3 ? JSON.parse(raw3) : null;
+				if(!gs) return;
+				// Find the latest save across ALL sequence parts
+				var latestDate = 0;
+				var latestPartId = null;
+				var latestStr = null;
+				var partsToCheck = [trial_information.id];
+				if (trial_information.sequence && trial_information.sequence.list) {
+					for (var si = 0; si < trial_information.sequence.list.length; si++) {
+						partsToCheck.push(trial_information.sequence.list[si].id);
 					}
 				}
-			}
-			if (!latestStr) return;
-			// Instant load: no restriction on timer/typing state
-			if (latestPartId == trial_information.id) {
-				loadSaveString(latestStr);
-			} else {
-				// Redirect to the other part with save data
-				var url = new URL(window.location.href);
-				url.searchParams.set('trial_id', latestPartId);
-				url.searchParams.set('save_data', Base64.encode(latestStr));
-				window.location.href = url.toString();
-			}
+				for (var pi = 0; pi < partsToCheck.length; pi++) {
+					var pid = partsToCheck[pi];
+					if (!gs[pid]) continue;
+					var dates = Object.keys(gs[pid]).map(Number);
+					for (var di = 0; di < dates.length; di++) {
+						if (dates[di] > latestDate) {
+							latestDate = dates[di];
+							latestPartId = pid;
+							latestStr = gs[pid][String(dates[di])];
+						}
+					}
+				}
+				if (!latestStr) return;
+				// Instant load: no restriction on timer/typing state
+				if (latestPartId == trial_information.id) {
+					loadSaveString(latestStr);
+				} else {
+					// Redirect to the other part with save data
+					var url = new URL(window.location.href);
+					url.searchParams.set('trial_id', latestPartId);
+					url.searchParams.set('save_data', Base64.encode(latestStr));
+					window.location.href = url.toString();
+				}
+			});
 		}, false);
 		btnRow.appendChild(load_button);
 
 		(btnContainer || container).appendChild(btnRow);
 
 		// --- Unified save list: merge all parts, sort by date, show headers on part change ---
-		// Build a flat array of { date, partId, saveString, title, isCurrent }
 		var allSaves = [];
 		var partTitles = {};
-		partTitles[trial_information.id] = null; // current part = no header
+		partTitles[trial_information.id] = null;
 
 		// Collect current part saves
 		if (game_saves && game_saves[trial_information.id]) {
@@ -320,7 +375,7 @@ function refreshSavesList()
 		var lastPartId = null;
 		for (var ai = 0; ai < allSaves.length; ai++) {
 			(function(entry) {
-				// Show part header when part changes (skip header for current part at the very top)
+				// Show part header when part changes
 				if (entry.partId !== lastPartId && !(lastPartId === null && entry.isCurrent)) {
 					var title = entry.isCurrent ? (trial_information.title || 'Current part') : (partTitles[entry.partId] || ('Part ' + entry.partId));
 					var divider = document.createElement('div');
@@ -334,15 +389,20 @@ function refreshSavesList()
 				if (entry.isCurrent) {
 					var del = document.createElement('button');
 					registerEventHandler(del, 'click', function() {
-						delete game_saves[entry.partId][String(entry.date)];
-						if (Object.keys(game_saves[entry.partId]).length === 0) delete game_saves[entry.partId];
-						var finalSaveData = JSON.stringify(game_saves);
-						window.localStorage.setItem('game_saves', finalSaveData);
-						// Immediately back up to launcher (bypasses localStorage flush race on Android)
-						if (window.parent && window.parent !== window) {
-							window.parent.postMessage({ type: 'save_data_changed', data: finalSaveData }, '*');
-						}
-						refreshSavesList();
+						GameSavesDB.get(function(rawDel) {
+							var currentSaves = rawDel ? JSON.parse(rawDel) : {};
+							if (!currentSaves[entry.partId]) return;
+							delete currentSaves[entry.partId][String(entry.date)];
+							if (Object.keys(currentSaves[entry.partId]).length === 0) delete currentSaves[entry.partId];
+							var finalSaveData = JSON.stringify(currentSaves);
+							GameSavesDB.set(finalSaveData, function() {
+								// Immediately back up to launcher (bypasses localStorage flush race on Android)
+								if (window.parent && window.parent !== window) {
+									window.parent.postMessage({ type: 'save_data_changed', data: finalSaveData }, '*');
+								}
+								refreshSavesList();
+							});
+						});
 					}, false);
 					setNodeTextContents(del, '×');
 					container.appendChild(del);
@@ -369,7 +429,7 @@ function refreshSavesList()
 		}
 
 		translateNode(container);
-	}
+	});
 }
 
 // Auto-save via postMessage from the launcher (triggered when quitting)
@@ -380,23 +440,28 @@ window.addEventListener('message', function(event) {
 			&& !(player_status.proceed_timer && !player_status.proceed_timer_met)
 			&& !(player_status.proceed_typing && !player_status.proceed_typing_met))
 		{
-			try {
-				var game_saves = JSON.parse(window.localStorage.getItem('game_saves')) || {};
-				if (!game_saves[trial_information.id]) {
-					game_saves[trial_information.id] = {};
+			GameSavesDB.get(function(raw) {
+				try {
+					var game_saves = raw ? (JSON.parse(raw) || {}) : {};
+					if (!game_saves[trial_information.id]) {
+						game_saves[trial_information.id] = {};
+					}
+					var saveStr = getSaveString();
+					game_saves[trial_information.id][(new Date()).getTime()] = saveStr;
+					var finalSaveData = JSON.stringify(game_saves);
+					GameSavesDB.set(finalSaveData, function(success) {
+						if (success) {
+							EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
+							console.log('[SAVE] Auto-saved on quit');
+						}
+						// Hand save data directly to the launcher (bypasses localStorage flush race on Android)
+						window.parent.postMessage({ type: 'auto_save_complete', data: success ? finalSaveData : null }, '*');
+					});
+				} catch (e) {
+					console.warn('[SAVE] Auto-save error:', e.message);
+					window.parent.postMessage({ type: 'auto_save_complete', data: null }, '*');
 				}
-				var saveStr = getSaveString();
-				game_saves[trial_information.id][(new Date()).getTime()] = saveStr;
-				var finalSaveData = JSON.stringify(game_saves);
-				window.localStorage.setItem('game_saves', finalSaveData);
-				EngineEvents.emit('save:created', { saveData: JSON.parse(saveStr) });
-				console.log('[SAVE] Auto-saved on quit');
-				// Hand save data directly to the launcher (bypasses localStorage flush race on Android)
-				window.parent.postMessage({ type: 'auto_save_complete', data: finalSaveData }, '*');
-			} catch (e) {
-				console.warn('[SAVE] Auto-save error:', e.message);
-				window.parent.postMessage({ type: 'auto_save_complete', data: null }, '*');
-			}
+			});
 		} else {
 			// Not in a saveable state — unblock the launcher
 			window.parent.postMessage({ type: 'auto_save_complete', data: null }, '*');
