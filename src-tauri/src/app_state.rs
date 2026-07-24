@@ -27,6 +27,7 @@ pub(crate) struct AppPaths {
     /// during one-time localStorage migration.
     pub(crate) server_port: u16,
     /// Localhost HTTP server handle. Dropping on app exit stops the thread.
+    #[allow(dead_code)]
     pub(crate) localhost_server: Option<crate::server::LocalhostServer>,
     /// Static engine files (JS, CSS, HTML, img, Languages). Read-only on mobile.
     pub(crate) engine_dir: PathBuf,
