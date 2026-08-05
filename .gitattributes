@@ -1,0 +1,37 @@
+# Normalize line endings: LF everywhere.
+# text=auto → text files are normalized to LF in the repository.
+# eol=lf   → checkouts get LF on every platform (Windows included).
+* text=auto eol=lf
+
+# Binary files: never subject to line-ending conversion or normalization.
+*.png binary
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.bmp binary
+*.webp binary
+*.svg binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.mp3 binary
+*.ogg binary
+*.oga binary
+*.opus binary
+*.wav binary
+*.m4a binary
+*.aac binary
+*.flac binary
+*.mid binary
+*.midi binary
+*.webm binary
+*.mp4 binary
+*.m4v binary
+*.zip binary
+*.apk binary
+*.exe binary
+*.keystore binary
+*.redb binary
