@@ -182,11 +182,7 @@ pub(crate) fn parse_bridge_js_response(text: &str) -> Result<SitePaths, AppError
     })
 }
 
-/// Fetch site paths (cfg) from bridge.js.php on aaonline.fr.
-pub async fn fetch_site_paths(client: &Client) -> Result<SitePaths, AppError> {
-    fetch_site_paths_from(client, AAONLINE_BASE).await
-}
-
+/// Fetch site paths (cfg) from bridge.js.php at a given base URL.
 pub(crate) async fn fetch_site_paths_from(client: &Client, base: &str) -> Result<SitePaths, AppError> {
     let url = format!("{}/bridge.js.php", base);
     let text = client
