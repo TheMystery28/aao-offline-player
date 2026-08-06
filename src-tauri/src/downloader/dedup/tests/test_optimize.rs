@@ -10,7 +10,7 @@ fn test_optimize_all_cases_promotes_shared() {
     make_case_with_asset(data_dir, 100, "bg-aaa.jpg", content);
     make_case_with_asset(data_dir, 200, "bg-bbb.jpg", content);
 
-    let (count, bytes) = optimize_all_cases(data_dir, None).unwrap();
+    let (count, bytes) = optimize_all_cases(data_dir, None, None).unwrap();
     assert!(count >= 2, "Should dedup at least 2 files, got {}", count);
     // Net savings: deleted 2 case copies, created 1 shared copy → net = 1x file size
     assert_eq!(bytes, content.len() as u64, "Net savings should be 1x file size (2 deleted - 1 created)");
@@ -47,7 +47,7 @@ fn test_optimize_all_cases_skips_singletons() {
     // One case with unique asset (no duplicate anywhere)
     make_case_with_asset(data_dir, 300, "unique-xyz.gif", b"unique content");
 
-    let (count, _) = optimize_all_cases(data_dir, None).unwrap();
+    let (count, _) = optimize_all_cases(data_dir, None, None).unwrap();
     assert_eq!(count, 0, "Singleton should not be promoted or deduped");
     assert!(data_dir.join("case/300/assets/unique-xyz.gif").exists(), "File should still exist");
 }
@@ -56,7 +56,7 @@ fn test_optimize_all_cases_skips_singletons() {
 fn test_optimize_all_cases_empty_no_crash() {
     let dir = tempfile::tempdir().unwrap();
     // No case/ dir at all
-    let (count, bytes) = optimize_all_cases(dir.path(), None).unwrap();
+    let (count, bytes) = optimize_all_cases(dir.path(), None, None).unwrap();
     assert_eq!(count, 0);
     assert_eq!(bytes, 0);
 }
@@ -69,11 +69,11 @@ fn test_optimize_all_cases_idempotent() {
     make_case_with_asset(data_dir, 400, "sprite-a.gif", b"identical content");
     make_case_with_asset(data_dir, 500, "sprite-b.gif", b"identical content");
 
-    let (count1, _) = optimize_all_cases(data_dir, None).unwrap();
+    let (count1, _) = optimize_all_cases(data_dir, None, None).unwrap();
     assert!(count1 >= 2);
 
     // Run again — should do nothing
-    let (count2, bytes2) = optimize_all_cases(data_dir, None).unwrap();
+    let (count2, bytes2) = optimize_all_cases(data_dir, None, None).unwrap();
     assert_eq!(count2, 0, "Second run should find nothing to dedup");
     assert_eq!(bytes2, 0);
 }
@@ -98,7 +98,8 @@ fn test_optimize_reads_from_index() {
     assert_eq!(assets.len(), 2, "Should have 2 entries in index");
 
     // Run optimize — should read from index, not disk
-    let (count, _) = optimize_all_cases(data_dir, None).unwrap();
+    drop(index);
+    let (count, _) = optimize_all_cases(data_dir, None, None).unwrap();
     assert!(count >= 2, "Should dedup at least 2 files, got {}", count);
 
     // Verify shared file created
@@ -121,7 +122,7 @@ fn test_optimize_multiple_cases_share_same_promoted_default() {
     make_case_with_asset(data_dir, 900, "bg-bbb.jpg", content);
     make_case_with_asset(data_dir, 1000, "bg-ccc.jpg", content);
 
-    let (count, _) = optimize_all_cases(data_dir, None).unwrap();
+    let (count, _) = optimize_all_cases(data_dir, None, None).unwrap();
     assert!(count >= 3, "Should dedup 3 files, got {}", count);
 
     // Verify all 3 manifests point to the same shared path

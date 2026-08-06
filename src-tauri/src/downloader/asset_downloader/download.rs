@@ -12,6 +12,7 @@ use super::log::DownloadLog;
 use super::url_encoding::encode_url;
 use super::utils::{check_skip_existing, generate_filename};
 use super::{DownloadEvent, DownloadResult, DownloadedAsset};
+use crate::downloader::cancel::Cancellation;
 use crate::downloader::dedup::{DedupIndex, check_and_promote};
 use crate::downloader::manifest::FailedAsset;
 use crate::downloader::AssetRef;
@@ -32,7 +33,8 @@ pub async fn download_assets(
     dedup_index: Option<&DedupIndex>,
     on_event: &Channel<DownloadEvent>,
     concurrency: usize,
-    cancel_flag: Arc<std::sync::atomic::AtomicBool>,
+    cancellation: &Cancellation,
+    snapshot: u64,
 ) -> Result<DownloadResult, AppError> {
     let total = assets.len();
     let concurrency = if concurrency == 0 { DEFAULT_CONCURRENCY } else { concurrency };
@@ -75,7 +77,7 @@ pub async fn download_assets(
             let failed = failed.clone();
             let on_event = on_event.clone();
             let log = log.clone();
-            let cancel_flag = cancel_flag.clone();
+            let cancellation = cancellation.clone();
             // Move owned AssetRef fields directly — avoids 3 String clones per asset
             let url = asset.url;
             let asset_type = asset.asset_type;
@@ -83,7 +85,7 @@ pub async fn download_assets(
 
             async move {
                 // Check cancel before each asset
-                if cancel_flag.load(Ordering::Relaxed) {
+                if cancellation.is_cancelled(snapshot) {
                     let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                     on_event.send(DownloadEvent::Progress {
                         completed: done, total, current_url: url.clone(),

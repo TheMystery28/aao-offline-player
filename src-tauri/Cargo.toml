@@ -50,7 +50,6 @@ strip = true
 lto = true
 codegen-units = 1
 opt-level = "s"
-panic = "abort"
 
 [dev-dependencies]
 tempfile = "3"

@@ -70,7 +70,7 @@ return 'data:image/gif;base64,'
     fs::write(assets_dir.join("1-bbb.gif"), b"still1").unwrap();
     fs::write(assets_dir.join("2-ccc.gif"), b"talking2").unwrap();
 
-    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap().manifest;
+    let manifest = import_aaoffline(source.path(), engine.path(), None, None).unwrap().manifest;
     assert_eq!(manifest.case_id, 77777);
     assert_eq!(manifest.assets.shared_defaults, 3, "Should have 3 default sprites");
     assert_eq!(manifest.assets.case_specific, 4); // icon + 3 sprite files in assets/
@@ -87,7 +87,7 @@ return 'data:image/gif;base64,'
 #[test]
 fn test_import_aaoffline_missing_index() {
     let dir = tempfile::tempdir().unwrap();
-    let result = import_aaoffline(dir.path(), dir.path(), None);
+    let result = import_aaoffline(dir.path(), dir.path(), None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("No index.html found"));
 }
@@ -112,7 +112,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
     fs::write(assets_dir.join("icon.png"), "fake png data").unwrap();
     fs::write(assets_dir.join("bg.jpg"), "fake jpg data").unwrap();
 
-    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap().manifest;
+    let manifest = import_aaoffline(source.path(), engine.path(), None, None).unwrap().manifest;
 
     assert_eq!(manifest.case_id, 99999);
     assert_eq!(manifest.title, "Import Test");
@@ -181,7 +181,7 @@ fn test_parse_real_aaoffline_download() {
 
     // Full import test into a temp dir
     let engine = tempfile::tempdir().unwrap();
-    let manifest = import_aaoffline(&source_dir, engine.path(), None).unwrap().manifest;
+    let manifest = import_aaoffline(&source_dir, engine.path(), None, None).unwrap().manifest;
     assert_eq!(manifest.case_id, 102059);
     assert!(manifest.assets.total_downloaded > 300, "Expected 300+ assets, got {}", manifest.assets.total_downloaded);
     assert!(manifest.assets.total_size_bytes > 10_000_000, "Expected 10MB+ of assets");
@@ -207,10 +207,10 @@ var initial_trial_data = {"frames":[0]};
     fs::write(source.path().join("index.html"), html).unwrap();
 
     // First import succeeds
-    let _ = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let _ = import_aaoffline(source.path(), engine.path(), None, None).unwrap();
 
     // Second import should fail (duplicate)
-    let result = import_aaoffline(source.path(), engine.path(), None);
+    let result = import_aaoffline(source.path(), engine.path(), None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("already exists"));
 }
@@ -237,7 +237,7 @@ var initial_trial_data = {"frames":[0],"profiles":[0,{"icon":"assets/pioggia+car
     fs::write(assets_dir.join("file#with&special-456.mp3"), "audio data").unwrap();
     fs::write(assets_dir.join("normal-file-789.gif"), "gif data").unwrap();
 
-    let manifest = import_aaoffline(source.path(), engine.path(), None).unwrap().manifest;
+    let manifest = import_aaoffline(source.path(), engine.path(), None, None).unwrap().manifest;
     let case_dir = engine.path().join("case/55555");
 
     // Sanitized files should exist (+ -> -, # -> -, & -> -)
@@ -442,7 +442,7 @@ fn test_import_aaoffline_batch_multiple_subfolders() {
     make_aaoffline_case(&source.path().join("case2"), 70002, "Batch Part 2");
     make_aaoffline_case(&source.path().join("case3"), 70003, "Batch Part 3");
 
-    let result = import_aaoffline_batch(source.path(), engine.path(), None, None).unwrap();
+    let result = import_aaoffline_batch(source.path(), engine.path(), None, None, None).unwrap();
     assert_eq!(result.batch_manifests.len(), 3, "Should import 3 cases");
 
     let ids: Vec<u32> = result.batch_manifests.iter().map(|m| m.case_id).collect();
@@ -458,11 +458,11 @@ fn test_import_aaoffline_batch_skips_existing() {
 
     // Import case1 first
     make_aaoffline_case(&source.path().join("case1"), 70010, "Already There");
-    let _ = import_aaoffline(&source.path().join("case1"), engine.path(), None).unwrap();
+    let _ = import_aaoffline(&source.path().join("case1"), engine.path(), None, None).unwrap();
 
     // Now batch import case1 + case2
     make_aaoffline_case(&source.path().join("case2"), 70011, "New Case");
-    let result = import_aaoffline_batch(source.path(), engine.path(), None, None).unwrap();
+    let result = import_aaoffline_batch(source.path(), engine.path(), None, None, None).unwrap();
 
     // case1 silently skipped (already exists), case2 succeeds
     assert_eq!(result.batch_manifests.len(), 1, "Only new case should be in manifests");
@@ -479,7 +479,7 @@ fn test_import_aaoffline_batch_with_root_and_subfolders() {
     // Subfolder case
     make_aaoffline_case(&source.path().join("sub1"), 70021, "Sub Case");
 
-    let result = import_aaoffline_batch(source.path(), engine.path(), None, None).unwrap();
+    let result = import_aaoffline_batch(source.path(), engine.path(), None, None, None).unwrap();
     assert_eq!(result.batch_manifests.len(), 2, "Root + subfolder should both import");
 
     let ids: Vec<u32> = result.batch_manifests.iter().map(|m| m.case_id).collect();
@@ -492,7 +492,7 @@ fn test_import_aaoffline_batch_empty_folder() {
     let source = tempfile::tempdir().unwrap();
     let engine = tempfile::tempdir().unwrap();
 
-    let result = import_aaoffline_batch(source.path(), engine.path(), None, None);
+    let result = import_aaoffline_batch(source.path(), engine.path(), None, None, None);
     assert!(result.is_err(), "Empty folder should return error");
     assert!(result.unwrap_err().to_string().contains("No index.html found"));
 }
@@ -639,7 +639,7 @@ fn test_export_import_collections_roundtrip() {
         assert!(size > 0, "{} export should have non-zero size", folder);
 
         // Import
-        let manifest = import_aaocase_zip(&export_path, engine_import.path(), None).unwrap().manifest;
+        let manifest = import_aaocase_zip(&export_path, engine_import.path(), None, None).unwrap().manifest;
         assert_eq!(manifest.case_id, ids[0], "{} first case should match", folder);
 
         // Verify all parts present
@@ -708,7 +708,7 @@ var initial_trial_data = {
     fs::write(assets_dir.join("sfx-jkl.wav"), b"fake wav data 4").unwrap();
 
     // Import
-    let output = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let output = import_aaoffline(source.path(), engine.path(), None, None).unwrap();
     assert_eq!(output.manifest.case_id, 80001);
     assert_eq!(output.manifest.assets.total_downloaded, 4);
 
@@ -799,7 +799,7 @@ var initial_trial_data = {
     fs::write(assets_dir.join("shared-sound.mp3"), existing_content).unwrap();
 
     // Import — should trigger dedup (same content as existing case)
-    let output = import_aaoffline(source.path(), engine.path(), None).unwrap();
+    let output = import_aaoffline(source.path(), engine.path(), None, None).unwrap();
     assert_eq!(output.manifest.case_id, 80002);
     assert!(output.dedup_saved_bytes > 0, "Should have deduped at least 1 file");
 

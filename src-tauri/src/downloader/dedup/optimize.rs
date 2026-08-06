@@ -15,6 +15,7 @@ use crate::downloader::manifest::{read_manifest, write_manifest};
 /// Returns total files deduplicated and bytes saved.
 pub fn optimize_all_cases(
     data_dir: &Path,
+    index: Option<&DedupIndex>,
     on_progress: Option<&dyn Fn(usize, usize, &str)>,
 ) -> Result<(usize, u64), AppError> {
     let case_dirs = list_case_dirs(data_dir)?;
@@ -27,7 +28,14 @@ pub fn optimize_all_cases(
 
     // Phase 1: Build content map from the persistent index (no file I/O)
     // Ensure index is populated for pre-existing downloads (migration)
-    let index = DedupIndex::open(data_dir)?;
+    let fallback_index: DedupIndex;
+    let index: &DedupIndex = match index {
+        Some(idx) => idx,
+        None => {
+            fallback_index = DedupIndex::open(data_dir)?;
+            &fallback_index
+        }
+    };
     index.scan_and_register(data_dir, "defaults")?;
     index.scan_and_register_cases(data_dir)?;
 

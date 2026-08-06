@@ -127,7 +127,7 @@ fn test_dedup_empty_file() {
     };
     write_manifest(&manifest, &case_dir).unwrap();
 
-    let (count, _) = dedup_case_assets(1, data_dir).unwrap();
+    let (count, _) = dedup_case_assets(1, data_dir, None).unwrap();
     assert_eq!(count, 1, "Empty files with same hash should dedup");
     assert!(!assets_dir.join("empty-abc.gif").exists(), "Empty case file should be deleted");
 }

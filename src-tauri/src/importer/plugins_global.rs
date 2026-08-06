@@ -269,7 +269,7 @@ pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, AppError
         let local_manifest_path = local_plugins_dir.join("manifest.json");
         if !local_manifest_path.exists() { continue; }
 
-        eprintln!("[MIGRATE] Found case-local plugins in case {}", case_id);
+        log::info!("[MIGRATE] Found case-local plugins in case {}", case_id);
 
         // Read the case-local manifest
         let scripts: Vec<String> = match fs::read_to_string(&local_manifest_path) {
@@ -280,13 +280,13 @@ pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, AppError
                         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
                         .unwrap_or_default(),
                     Err(e) => {
-                        eprintln!("[MIGRATE] Failed to parse manifest for case {}: {}", case_id, e);
+                        log::warn!("[MIGRATE] Failed to parse manifest for case {}: {}", case_id, e);
                         continue;
                     }
                 }
             }
             Err(e) => {
-                eprintln!("[MIGRATE] Failed to read manifest for case {}: {}", case_id, e);
+                log::warn!("[MIGRATE] Failed to read manifest for case {}: {}", case_id, e);
                 continue;
             }
         };
@@ -297,7 +297,7 @@ pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, AppError
             let dest = global_plugins_dir.join(script);
             if src.is_file() && !dest.exists() {
                 if let Err(e) = fs::copy(&src, &dest) {
-                    eprintln!("[MIGRATE] Failed to copy {} for case {}: {}", script, case_id, e);
+                    log::warn!("[MIGRATE] Failed to copy {} for case {}: {}", script, case_id, e);
                     continue;
                 }
             }
@@ -308,7 +308,7 @@ pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, AppError
 
             // Update global manifest with scope
             if let Err(e) = upsert_plugin_manifest(data_dir, script, "case", &[case_id], descriptors) {
-                eprintln!("[MIGRATE] Failed to update manifest for {}: {}", script, e);
+                log::warn!("[MIGRATE] Failed to update manifest for {}: {}", script, e);
                 continue;
             }
             migrated_count += 1;
@@ -334,9 +334,9 @@ pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, AppError
 
         // Delete the case-local plugins/ directory
         if let Err(e) = fs::remove_dir_all(&local_plugins_dir) {
-            eprintln!("[MIGRATE] Failed to delete case/{}/plugins/: {}", case_id, e);
+            log::warn!("[MIGRATE] Failed to delete case/{}/plugins/: {}", case_id, e);
         } else {
-            eprintln!("[MIGRATE] Migrated {} scripts from case {} to global", scripts.len(), case_id);
+            log::info!("[MIGRATE] Migrated {} scripts from case {} to global", scripts.len(), case_id);
         }
 
         // Update case manifest: has_plugins = false (now global)
@@ -347,7 +347,7 @@ pub fn migrate_case_plugins_to_global(data_dir: &Path) -> Result<usize, AppError
     }
 
     if migrated_count > 0 {
-        eprintln!("[MIGRATE] Total: migrated {} plugin scripts to global pool", migrated_count);
+        log::info!("[MIGRATE] Total: migrated {} plugin scripts to global pool", migrated_count);
     }
 
     Ok(migrated_count)
@@ -395,10 +395,10 @@ pub fn resolve_plugins_for_case(case_id: u32, data_dir: &Path) -> Result<serde_j
             match serde_json::to_string_pretty(&resolved) {
                 Ok(json) => {
                     if let Err(e) = fs::write(case_dir.join("resolved_plugins.json"), json) {
-                        eprintln!("[PLUGINS] Failed to write resolved_plugins.json: {}", e);
+                        log::warn!("[PLUGINS] Failed to write resolved_plugins.json: {}", e);
                     }
                 }
-                Err(e) => eprintln!("[PLUGINS] Failed to serialize resolved_plugins.json: {}", e),
+                Err(e) => log::warn!("[PLUGINS] Failed to serialize resolved_plugins.json: {}", e),
             }
         }
         return Ok(resolved);
@@ -582,9 +582,9 @@ pub(super) fn merge_plugin_param_overrides(overrides: &serde_json::Value, engine
     match serde_json::to_string_pretty(&manifest) {
         Ok(json) => {
             if let Err(e) = fs::write(&manifest_path, json) {
-                eprintln!("[PLUGINS] Failed to write manifest: {}", e);
+                log::warn!("[PLUGINS] Failed to write manifest: {}", e);
             }
         }
-        Err(e) => eprintln!("[PLUGINS] Failed to serialize manifest: {}", e),
+        Err(e) => log::warn!("[PLUGINS] Failed to serialize manifest: {}", e),
     }
 }

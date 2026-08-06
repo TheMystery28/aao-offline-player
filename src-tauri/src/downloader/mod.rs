@@ -7,6 +7,7 @@
 pub mod asset_downloader;
 pub mod asset_paths;
 pub mod asset_resolver;
+pub mod cancel;
 pub mod case_fetcher;
 pub mod dedup;
 pub mod manifest;

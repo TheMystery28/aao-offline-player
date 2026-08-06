@@ -27,12 +27,19 @@ pub struct DedupIndex {
 impl DedupIndex {
     /// Open or create the index database at `data_dir/dedup_index.redb`.
     /// If the db file is corrupt, deletes and recreates it.
+    /// A second in-process open fails with an error — redb allows only one
+    /// `Database` instance per file per process, and deleting the file here
+    /// would corrupt the already-mapped instance.
     pub fn open(data_dir: &Path) -> Result<Self, AppError> {
         let db_path = data_dir.join("dedup_index.redb");
         match Database::create(&db_path) {
             Ok(db) => Ok(DedupIndex { db }),
+            Err(redb::DatabaseError::DatabaseAlreadyOpen) => Err(AppError::Other(format!(
+                "Dedup index already open in this process: {}",
+                db_path.display()
+            ))),
             Err(_) => {
-                // Corrupt db — delete and retry
+                // Corrupt db (not already-open) — delete and retry
                 let _ = fs::remove_file(&db_path);
                 let db = Database::create(&db_path)
                     .map_err(|e| format!("Failed to create dedup index: {}", e))?;

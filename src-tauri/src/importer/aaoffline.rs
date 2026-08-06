@@ -32,6 +32,7 @@ use super::aaoffline_helpers::*;
 pub fn import_aaoffline(
     source_dir: &Path,
     engine_dir: &Path,
+    dedup_index: Option<&DedupIndex>,
     on_progress: Option<&dyn Fn(usize, usize)>,
 ) -> Result<super::shared::ImportOutput, AppError> {
     let index_path = source_dir.join("index.html");
@@ -66,8 +67,15 @@ pub fn import_aaoffline(
     fs::create_dir_all(&case_dir)
         .map_err(|e| format!("Failed to create case directory: {}", e))?;
 
-    // Open dedup index for pre-copy dedup checks
-    let dedup_index = DedupIndex::open(engine_dir).ok();
+    // Use the shared instance when provided; otherwise open one (test/legacy path).
+    let fallback_index: Option<DedupIndex>;
+    let dedup_index: Option<&DedupIndex> = match dedup_index {
+        Some(idx) => Some(idx),
+        None => {
+            fallback_index = DedupIndex::open(engine_dir).ok();
+            fallback_index.as_ref()
+        }
+    };
 
     // 3. Copy assets and rewrite paths
     let source_assets = source_dir.join("assets");
@@ -135,7 +143,7 @@ pub fn import_aaoffline(
                     }
                 }
                 Err(e) => {
-                    eprintln!(
+                    log::warn!(
                         "Warning: failed to copy {}: {}",
                         src_path.display(),
                         e
@@ -280,6 +288,7 @@ pub fn find_aaoffline_subfolders(parent_dir: &Path) -> Vec<std::path::PathBuf> {
 pub fn import_aaoffline_batch(
     parent_dir: &Path,
     engine_dir: &Path,
+    dedup_index: Option<&DedupIndex>,
     on_case_progress: Option<&dyn Fn(usize, usize, &str)>,
     on_asset_progress: Option<&dyn Fn(usize, usize)>,
 ) -> Result<ImportResult, AppError> {
@@ -316,7 +325,7 @@ pub fn import_aaoffline_batch(
             cb(i + 1, total_cases, &folder_name);
         }
 
-        match import_aaoffline(case_dir, engine_dir, on_asset_progress) {
+        match import_aaoffline(case_dir, engine_dir, dedup_index, on_asset_progress) {
             Ok(output) => {
                 imported_ids.push(output.manifest.case_id);
                 total_dedup_saved += output.dedup_saved_bytes;

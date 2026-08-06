@@ -18,7 +18,6 @@ pub mod utils;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -243,14 +242,26 @@ pub fn run() {
                 .build()
                 .unwrap_or_default();
 
+            let dedup_index = match downloader::dedup::DedupIndex::open(&data_dir) {
+                Ok(idx) => {
+                    log::info!("Dedup index opened");
+                    Some(Arc::new(idx))
+                }
+                Err(e) => {
+                    log::warn!("Dedup index unavailable (dedup disabled): {}", e);
+                    None
+                }
+            };
+
             // Store immutable paths (no lock needed — Tauri wraps in Arc)
             app.manage(AppPaths {
                 server_port,
                 localhost_server,
                 engine_dir,
                 data_dir,
-                cancel_flag: Arc::new(AtomicBool::new(false)),
+                cancellation: downloader::cancel::Cancellation::new(),
                 http_client,
+                dedup_index,
             });
             // Store mutable config (locked only by settings commands)
             app.manage(MutableConfig(Mutex::new(app_config)));

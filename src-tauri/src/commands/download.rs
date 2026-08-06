@@ -5,7 +5,6 @@
 //! It uses a channel-based event system to stream progress updates to the frontend.
 
 use std::fs;
-use std::sync::atomic::Ordering;
 use tauri::ipc::Channel;
 use tauri::State;
 
@@ -19,7 +18,7 @@ use crate::error::AppError;
 /// Sets a shared atomic flag that the download pipeline checks periodically.
 #[tauri::command]
 pub fn cancel_download(paths: State<'_, AppPaths>) -> Result<(), AppError> {
-    paths.cancel_flag.store(true, Ordering::Relaxed);
+    paths.cancellation.cancel();
     log::debug!("Download cancellation requested");
     Ok(())
 }
@@ -71,10 +70,10 @@ pub async fn download_sequence(
 ) -> Result<Vec<downloader::manifest::CaseManifest>, AppError> {
     let engine_dir = paths.engine_dir.clone();
     let data_dir = paths.data_dir.clone();
-    let cancel_flag = paths.cancel_flag.clone();
     let client = paths.http_client.clone();
     let concurrency = config.0.lock().map_err(|e| e.to_string())?.concurrent_downloads;
-    cancel_flag.store(false, Ordering::Relaxed);
+    let cancellation = paths.cancellation.share();
+    let snapshot = cancellation.snapshot();
 
     let total_parts = case_ids.len();
     let mut manifests = Vec::new();
@@ -84,7 +83,7 @@ pub async fn download_sequence(
 
     // Open dedup index once for the whole sequence. Reopening per-part causes
     // concurrent redb::Database instances on the same file, which corrupts mmap on Android.
-    let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
+    let dedup_index = paths.dedup_index.clone();
 
     for (idx, &case_id) in case_ids.iter().enumerate() {
         // Check if already downloaded
@@ -116,7 +115,7 @@ pub async fn download_sequence(
 
         let manifest = downloader::pipeline::download_single_case(
             case_id, &client, &site_paths, &engine_dir, &data_dir,
-            dedup_index.as_ref(), &on_event, concurrency, cancel_flag.clone(),
+            dedup_index.as_deref(), &on_event, concurrency, &cancellation, snapshot,
         ).await?;
 
         // Update sequence progress with actual title
@@ -165,17 +164,17 @@ pub async fn download_case(
 ) -> Result<downloader::manifest::CaseManifest, AppError> {
     let engine_dir = paths.engine_dir.clone();
     let data_dir = paths.data_dir.clone();
-    let cancel_flag = paths.cancel_flag.clone();
     let client = paths.http_client.clone();
     let concurrency = config.0.lock().map_err(|e| e.to_string())?.concurrent_downloads;
-    cancel_flag.store(false, Ordering::Relaxed);
+    let cancellation = paths.cancellation.share();
+    let snapshot = cancellation.snapshot();
 
     let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
-    let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
+    let dedup_index = paths.dedup_index.clone();
 
     Ok(downloader::pipeline::download_single_case(
         case_id, &client, &site_paths, &engine_dir, &data_dir,
-        dedup_index.as_ref(), &on_event, concurrency, cancel_flag,
+        dedup_index.as_deref(), &on_event, concurrency, &cancellation, snapshot,
     ).await?)
 }
 
@@ -200,10 +199,10 @@ pub async fn retry_failed_assets(
     on_event: Channel<DownloadEvent>,
 ) -> Result<downloader::manifest::CaseManifest, AppError> {
     let data_dir = paths.data_dir.clone();
-    let cancel_flag = paths.cancel_flag.clone();
     let client = paths.http_client.clone();
     let concurrency = config.0.lock().map_err(|e| e.to_string())?.concurrent_downloads;
-    cancel_flag.store(false, Ordering::Relaxed);
+    let cancellation = paths.cancellation.share();
+    let snapshot = cancellation.snapshot();
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
@@ -247,16 +246,17 @@ pub async fn retry_failed_assets(
         }
     }
 
-    let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
+    let dedup_index = paths.dedup_index.clone();
     let result = downloader::asset_downloader::download_assets(
         &client,
         assets_to_retry,
         &case_dir,
         &data_dir,
-        dedup_index.as_ref(),
+        dedup_index.as_deref(),
         &on_event,
         concurrency,
-        cancel_flag.clone(),
+        &cancellation,
+        snapshot,
     )
     .await?;
 
@@ -330,10 +330,10 @@ pub async fn update_case(
 ) -> Result<downloader::manifest::CaseManifest, AppError> {
     let engine_dir = paths.engine_dir.clone();
     let data_dir = paths.data_dir.clone();
-    let cancel_flag = paths.cancel_flag.clone();
     let client = paths.http_client.clone();
     let concurrency = config.0.lock().map_err(|e| e.to_string())?.concurrent_downloads;
-    cancel_flag.store(false, Ordering::Relaxed);
+    let cancellation = paths.cancellation.share();
+    let snapshot = cancellation.snapshot();
 
     let case_dir = data_dir.join("case").join(case_id.to_string());
     if !case_dir.exists() {
@@ -405,16 +405,17 @@ pub async fn update_case(
     );
 
     // 6. Download assets
-    let dedup_index = downloader::dedup::DedupIndex::open(&data_dir).ok();
+    let dedup_index = paths.dedup_index.clone();
     let result = downloader::asset_downloader::download_assets(
         &client,
         to_download,
         &case_dir,
         &data_dir,
-        dedup_index.as_ref(),
+        dedup_index.as_deref(),
         &on_event,
         concurrency,
-        cancel_flag.clone(),
+        &cancellation,
+        snapshot,
     )
     .await?;
 

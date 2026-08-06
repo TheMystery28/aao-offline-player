@@ -122,7 +122,7 @@ fn test_dedup_index_populated_after_dedup() {
     write_manifest(&manifest, &case_dir).unwrap();
 
     // Run dedup — this calls scan_and_register internally
-    let _ = dedup_case_assets(42, data_dir).unwrap();
+    let _ = dedup_case_assets(42, data_dir, None).unwrap();
 
     // Open a FRESH index and verify the defaults/ file was registered
     let fresh_index = DedupIndex::open(data_dir).unwrap();
@@ -266,7 +266,8 @@ fn test_dedup_stale_index_entry_file_deleted() {
     write_manifest(&manifest, &case_dir).unwrap();
 
     // Should NOT dedup because the default file doesn't exist on disk
-    let (count, _) = dedup_case_assets(5, data_dir).unwrap();
+    drop(index);
+    let (count, _) = dedup_case_assets(5, data_dir, None).unwrap();
     assert_eq!(count, 0, "Should not dedup against stale index entry (file missing on disk)");
     assert!(assets_dir.join("sprite-x.gif").exists(), "Case file should still exist");
 }
@@ -379,7 +380,7 @@ fn test_dedup_case_assets_no_trial_data() {
     write_manifest(&manifest, &case_dir).unwrap();
     // Intentionally NO trial_data.json
 
-    let (count, bytes) = dedup_case_assets(33, data_dir).unwrap();
+    let (count, bytes) = dedup_case_assets(33, data_dir, None).unwrap();
     assert_eq!(count, 1, "Should dedup even without trial_data.json");
     assert_eq!(bytes, 13);
     assert!(!assets_dir.join("sprite-abc.gif").exists());
@@ -412,4 +413,59 @@ fn test_register_batch_empty_slice_succeeds() {
     let index = DedupIndex::open(dir.path()).unwrap();
     let result = index.register_batch(&[]);
     assert!(result.is_ok(), "Empty batch should succeed");
+}
+
+#[test]
+fn test_open_recovers_corrupt_db() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("dedup_index.redb"), "not a redb file").unwrap();
+    let index = DedupIndex::open(dir.path()).unwrap();
+    index.register("defaults/sounds/beep.mp3", 10, 0xAB).unwrap();
+    assert_eq!(
+        index.find_by_hash(0xAB, None).as_deref(),
+        Some("defaults/sounds/beep.mp3")
+    );
+}
+
+#[test]
+fn test_second_open_fails_without_deleting_live_db() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = DedupIndex::open(dir.path()).unwrap();
+    index.register("defaults/images/chars/Apollo/1.gif", 100, 0xDEAD).unwrap();
+
+    let second = DedupIndex::open(dir.path());
+    assert!(
+        second.is_err(),
+        "second in-process open must fail with DatabaseAlreadyOpen"
+    );
+
+    // The live db must still work after the failed second open
+    assert_eq!(
+        index.find_by_hash(0xDEAD, None).as_deref(),
+        Some("defaults/images/chars/Apollo/1.gif")
+    );
+}
+
+use std::sync::Arc;
+
+#[test]
+fn test_shared_index_reused_across_passes() {
+    let dir = tempfile::tempdir().unwrap();
+    let shared = Arc::new(DedupIndex::open(dir.path()).unwrap());
+
+    shared.register("defaults/sounds/beep.mp3", 200, 0x1111).unwrap();
+    assert_eq!(
+        shared.find_by_hash(0x1111, None).as_deref(),
+        Some("defaults/sounds/beep.mp3")
+    );
+
+    // Second pass through the SAME instance — no reopen, no error
+    shared.register("case/42/assets/photo.png", 400, 0x2222).unwrap();
+    assert_eq!(
+        shared.find_by_hash(0x2222, None).as_deref(),
+        Some("case/42/assets/photo.png")
+    );
+
+    // Reopening while the shared instance is alive must fail (single-instance contract)
+    assert!(DedupIndex::open(dir.path()).is_err());
 }

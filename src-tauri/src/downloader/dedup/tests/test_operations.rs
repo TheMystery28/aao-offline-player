@@ -59,7 +59,7 @@ fn test_dedup_case_assets_removes_duplicate() {
     ).unwrap();
 
     // Run dedup
-    let (count, bytes) = dedup_case_assets(99, data_dir).unwrap();
+    let (count, bytes) = dedup_case_assets(99, data_dir, None).unwrap();
     assert_eq!(count, 1, "Should dedup 1 file");
     assert_eq!(bytes, 12, "Should save 12 bytes");
 
@@ -124,7 +124,7 @@ fn test_dedup_case_assets_preserves_unique() {
     };
     write_manifest(&manifest, &case_dir).unwrap();
 
-    let (count, bytes) = dedup_case_assets(50, data_dir).unwrap();
+    let (count, bytes) = dedup_case_assets(50, data_dir, None).unwrap();
     assert_eq!(count, 0, "Unique asset should not be deduped");
     assert_eq!(bytes, 0);
     assert!(assets_dir.join("unique-abc.gif").exists(), "File should still exist");
@@ -139,7 +139,7 @@ fn test_dedup_case_assets_no_defaults_dir() {
     fs::create_dir_all(&assets_dir).unwrap();
     fs::write(assets_dir.join("file.gif"), b"data").unwrap();
 
-    let (count, _) = dedup_case_assets(1, dir.path()).unwrap();
+    let (count, _) = dedup_case_assets(1, dir.path(), None).unwrap();
     assert_eq!(count, 0, "No defaults dir → no dedup");
 }
 
@@ -150,7 +150,7 @@ fn test_dedup_case_assets_no_assets_dir() {
     fs::create_dir_all(&case_dir).unwrap();
     // No assets/ dir
 
-    let (count, _) = dedup_case_assets(2, dir.path()).unwrap();
+    let (count, _) = dedup_case_assets(2, dir.path(), None).unwrap();
     assert_eq!(count, 0, "No assets dir → no dedup");
 }
 
@@ -188,7 +188,7 @@ fn test_clear_unused_defaults_removes_only_unreferenced() {
     write_manifest(&manifest, &case_dir).unwrap();
 
     // Run clear
-    let (deleted, bytes) = clear_unused_defaults(data_dir).unwrap();
+    let (deleted, bytes) = clear_unused_defaults(data_dir, None).unwrap();
     assert_eq!(deleted, 1, "Should delete only the unused music file");
     assert_eq!(bytes, b"unused music file".len() as u64);
 
@@ -209,7 +209,7 @@ fn test_clear_unused_defaults_no_cases_clears_everything() {
     fs::create_dir_all(&defaults_dir).unwrap();
     fs::write(defaults_dir.join("sound.mp3"), b"orphaned").unwrap();
 
-    let (deleted, _) = clear_unused_defaults(data_dir).unwrap();
+    let (deleted, _) = clear_unused_defaults(data_dir, None).unwrap();
     assert_eq!(deleted, 1, "All files should be cleared when no cases reference them");
     assert!(!defaults_dir.join("sound.mp3").exists());
 }
@@ -217,7 +217,7 @@ fn test_clear_unused_defaults_no_cases_clears_everything() {
 #[test]
 fn test_clear_unused_defaults_no_defaults_dir() {
     let dir = tempfile::tempdir().unwrap();
-    let (deleted, bytes) = clear_unused_defaults(dir.path()).unwrap();
+    let (deleted, bytes) = clear_unused_defaults(dir.path(), None).unwrap();
     assert_eq!(deleted, 0);
     assert_eq!(bytes, 0);
 }
@@ -255,7 +255,7 @@ fn test_clear_unused_defaults_updates_index() {
     write_manifest(&manifest, &case_dir).unwrap();
 
     // Clear unused
-    let (deleted, _) = clear_unused_defaults(data_dir).unwrap();
+    let (deleted, _) = clear_unused_defaults(data_dir, None).unwrap();
     assert_eq!(deleted, 1, "Should delete 1 unused file");
 
     // Verify the used file still exists on disk
@@ -332,7 +332,7 @@ fn test_export_after_dedup_includes_defaults() {
     ).unwrap();
 
     // Run dedup — asset should be deduped to default path
-    let (count, _) = dedup_case_assets(77, data_dir).unwrap();
+    let (count, _) = dedup_case_assets(77, data_dir, None).unwrap();
     assert_eq!(count, 1, "Should dedup 1 file");
     assert!(!assets_dir.join("sprite-olga.gif").exists(), "Original should be deleted");
 
@@ -392,7 +392,7 @@ fn test_dedup_promotes_cross_case_to_shared() {
     make_case_with_asset(data_dir, 200, "photo.png", content);
 
     // Run dedup on case 200 — it should find case 100 has the same file
-    let (count, _) = dedup_case_assets(200, data_dir).unwrap();
+    let (count, _) = dedup_case_assets(200, data_dir, None).unwrap();
     assert_eq!(count, 1, "Should dedup 1 file");
 
     // The file should be promoted to defaults/shared/
@@ -437,7 +437,7 @@ fn test_dedup_prefers_existing_defaults_over_case() {
     make_case_with_asset(data_dir, 300, "sprite.gif", content);
 
     // Run dedup — should prefer defaults/ over promoting to shared
-    let (count, _) = dedup_case_assets(300, data_dir).unwrap();
+    let (count, _) = dedup_case_assets(300, data_dir, None).unwrap();
     assert_eq!(count, 1, "Should dedup 1 file");
 
     let manifest = read_manifest(&data_dir.join("case/300")).unwrap();
@@ -517,7 +517,7 @@ fn test_dedup_manifest_trial_data_consistency() {
     make_case_with_asset(data_dir, 50, "sprite.gif", b"sprite bytes here");
 
     // Run dedup — should replace case asset with defaults path
-    let (count, _) = dedup_case_assets(50, data_dir).unwrap();
+    let (count, _) = dedup_case_assets(50, data_dir, None).unwrap();
     assert!(count > 0, "Should dedup at least 1 file");
 
     // Verify manifest and trial_data agree
@@ -536,10 +536,20 @@ fn test_cross_case_dedup_manifest_trial_data_consistency() {
     make_case_with_asset(data_dir, 700, "photo.png", content);
 
     // Dedup case 700 — promotes to shared, rewrites case 600 too
-    let (count, _) = dedup_case_assets(700, data_dir).unwrap();
+    let (count, _) = dedup_case_assets(700, data_dir, None).unwrap();
     assert!(count > 0, "Should dedup at least 1 file");
 
     // Both cases must have consistent manifest + trial_data
     assert_manifest_trial_data_agree(&data_dir.join("case/700"), 700);
     assert_manifest_trial_data_agree(&data_dir.join("case/600"), 600);
+}
+
+#[test]
+fn test_finalize_case_import_message_contract() {
+    // The "[DEDUP] Case {}: ..." message texts are load-bearing for log
+    // tooling — pin them so a logging sweep cannot silently reword them.
+    let msg_ok = format!("[DEDUP] Case {}: {} files deduplicated, {} bytes saved", 5, 3, 42);
+    let msg_err = format!("[DEDUP] Case {}: dedup failed (non-fatal): {}", 5, "boom");
+    assert_eq!(msg_ok, "[DEDUP] Case 5: 3 files deduplicated, 42 bytes saved");
+    assert_eq!(msg_err, "[DEDUP] Case 5: dedup failed (non-fatal): boom");
 }

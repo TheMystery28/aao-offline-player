@@ -36,6 +36,7 @@ pub async fn import_case(
     on_event: Channel<DownloadEvent>,
 ) -> Result<importer::ImportResult, AppError> {
     let data_dir = paths.data_dir.clone();
+    let dedup_index = paths.dedup_index.clone();
 
     // On Android, the file picker returns content:// URIs which aren't regular filesystem paths.
     // Copy the file to a temp location using Tauri's fs plugin (handles content URIs).
@@ -91,11 +92,11 @@ pub async fn import_case(
                     part_title: format!("Importing: {}", name),
                 });
             };
-            importer::import_aaoffline_batch(&path, &data_dir, Some(&case_progress_cb), Some(&progress_cb))?
+            importer::import_aaoffline_batch(&path, &data_dir, dedup_index.as_deref(), Some(&case_progress_cb), Some(&progress_cb))?
         } else if path.join("index.html").exists() {
             // Single aaoffline case folder (no subfolders)
             let _ = on_event.send(DownloadEvent::Started { total: 0 });
-            let output = importer::import_aaoffline(&path, &data_dir, Some(&progress_cb))?;
+            let output = importer::import_aaoffline(&path, &data_dir, dedup_index.as_deref(), Some(&progress_cb))?;
             importer::ImportResult { manifest: output.manifest, saves: None, missing_defaults: 0, batch_manifests: Vec::new(), batch_errors: Vec::new(), dedup_saved_bytes: output.dedup_saved_bytes }
         } else {
             return Err(format!(
@@ -105,7 +106,7 @@ pub async fn import_case(
         }
     } else if path.is_file() {
         let _ = on_event.send(DownloadEvent::Started { total: 0 });
-        match importer::import_aaocase_zip(&path, &data_dir, Some(&progress_cb)) {
+        match importer::import_aaocase_zip(&path, &data_dir, dedup_index.as_deref(), Some(&progress_cb)) {
             Ok(result) => result,
             Err(aaocase_err) => {
                 // Not a .aaocase — try extracting as zipped aaoffline folder
@@ -124,9 +125,9 @@ pub async fn import_case(
                     let root = temp_dir.as_path();
                     let has_subfolders = !importer::find_aaoffline_subfolders(root).is_empty();
                     if has_subfolders {
-                        importer::import_aaoffline_batch(root, &data_dir, None, Some(&progress_cb))
+                        importer::import_aaoffline_batch(root, &data_dir, dedup_index.as_deref(), None, Some(&progress_cb))
                     } else if root.join("index.html").exists() {
-                        let output = importer::import_aaoffline(root, &data_dir, Some(&progress_cb))?;
+                        let output = importer::import_aaoffline(root, &data_dir, dedup_index.as_deref(), Some(&progress_cb))?;
                         Ok(importer::ImportResult {
                             manifest: output.manifest, saves: None,
                             missing_defaults: 0, batch_manifests: Vec::new(),

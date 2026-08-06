@@ -7,7 +7,7 @@ fn test_import_aaocase_zip_basic() {
     let engine = tempfile::tempdir().unwrap();
 
     let zip_path = create_test_aaocase(tmp.path(), 77777);
-    let manifest = import_aaocase_zip(&zip_path, engine.path(), None).unwrap().manifest;
+    let manifest = import_aaocase_zip(&zip_path, engine.path(), None, None).unwrap().manifest;
 
     assert_eq!(manifest.case_id, 77777);
     assert_eq!(manifest.title, "ZIP Test Case");
@@ -36,10 +36,10 @@ fn test_import_aaocase_zip_duplicate_rejected() {
     let zip_path = create_test_aaocase(tmp.path(), 88888);
 
     // First import succeeds
-    import_aaocase_zip(&zip_path, engine.path(), None).unwrap();
+    import_aaocase_zip(&zip_path, engine.path(), None, None).unwrap();
 
     // Second import should fail
-    let result = import_aaocase_zip(&zip_path, engine.path(), None);
+    let result = import_aaocase_zip(&zip_path, engine.path(), None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("already exists"));
 }
@@ -53,7 +53,7 @@ fn test_import_aaocase_zip_invalid_file() {
     let bad_path = tmp.path().join("bad.aaocase");
     fs::write(&bad_path, "this is not a zip file").unwrap();
 
-    let result = import_aaocase_zip(&bad_path, engine.path(), None);
+    let result = import_aaocase_zip(&bad_path, engine.path(), None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("Invalid ZIP file"));
 }
@@ -74,7 +74,7 @@ fn test_import_aaocase_zip_missing_manifest() {
     zip.write_all(b"{}").unwrap();
     zip.finish().unwrap();
 
-    let result = import_aaocase_zip(&zip_path, engine.path(), None);
+    let result = import_aaocase_zip(&zip_path, engine.path(), None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("manifest.json"));
 }
@@ -87,7 +87,7 @@ fn test_import_single_case_still_works_after_multi_support() {
 
     // Create a classic single-case ZIP (no sequence.json)
     let zip_path = create_test_aaocase(tmp.path(), 11111);
-    let manifest = import_aaocase_zip(&zip_path, engine.path(), None).unwrap().manifest;
+    let manifest = import_aaocase_zip(&zip_path, engine.path(), None, None).unwrap().manifest;
 
     assert_eq!(manifest.case_id, 11111);
     assert_eq!(manifest.title, "ZIP Test Case");
@@ -156,7 +156,7 @@ fn test_import_single_case_backward_compat_with_failed_assets() {
 
     zip.finish().unwrap();
 
-    let imported = import_aaocase_zip(&zip_path, engine.path(), None).unwrap().manifest;
+    let imported = import_aaocase_zip(&zip_path, engine.path(), None, None).unwrap().manifest;
     assert_eq!(imported.case_id, 88001);
     assert_eq!(imported.failed_assets.len(), 1, "failed_assets should roundtrip");
     assert_eq!(imported.failed_assets[0].url, "http://dead.com/music.mp3");
@@ -219,7 +219,7 @@ fn test_import_multi_case_zip() {
     ).unwrap();
 
     // Import into fresh engine dir
-    let manifest = import_aaocase_zip(&export_path, engine_import.path(), None).unwrap().manifest;
+    let manifest = import_aaocase_zip(&export_path, engine_import.path(), None, None).unwrap().manifest;
     assert_eq!(manifest.case_id, 69063); // First case's manifest
 
     // Both cases should be imported
@@ -294,7 +294,7 @@ fn test_import_multi_case_skips_existing() {
     write_manifest(&pre_manifest, &pre_case_dir).unwrap();
 
     // Import -- should skip 69063 and import 69064
-    let manifest = import_aaocase_zip(&export_path, engine_import.path(), None).unwrap().manifest;
+    let manifest = import_aaocase_zip(&export_path, engine_import.path(), None, None).unwrap().manifest;
     // First manifest should be the pre-existing one
     assert_eq!(manifest.case_id, 69063);
     assert_eq!(manifest.title, "Already Here"); // wasn't overwritten
@@ -325,7 +325,7 @@ fn test_import_multi_case_empty_sequence_list() {
     zip.write_all(serde_json::to_string(&seq).unwrap().as_bytes()).unwrap();
     zip.finish().unwrap();
 
-    let result = import_aaocase_zip(&zip_path, engine.path(), None);
+    let result = import_aaocase_zip(&zip_path, engine.path(), None, None);
     assert!(result.is_err(), "Should fail with empty sequence list");
     assert!(
         result.unwrap_err().to_string().contains("empty list"),
@@ -340,7 +340,7 @@ fn test_import_aaocase_without_saves_returns_manifest() {
     let engine = tempfile::tempdir().unwrap();
 
     let zip_path = create_test_aaocase(tmp.path(), 77004);
-    let manifest = import_aaocase_zip(&zip_path, engine.path(), None).unwrap().manifest;
+    let manifest = import_aaocase_zip(&zip_path, engine.path(), None, None).unwrap().manifest;
     assert_eq!(manifest.case_id, 77004);
     assert_eq!(manifest.title, "ZIP Test Case");
     // Verify case files were properly installed
@@ -400,7 +400,7 @@ fn test_import_aaocase_with_saves() {
     zip.finish().unwrap();
 
     // Import
-    let result = import_aaocase_zip(&zip_path, engine.path(), None).unwrap();
+    let result = import_aaocase_zip(&zip_path, engine.path(), None, None).unwrap();
     assert_eq!(result.manifest.case_id, 78002);
     assert!(result.saves.is_some(), "Import result should contain saves");
 
@@ -417,7 +417,7 @@ fn test_import_aaocase_without_saves_returns_none() {
     let engine = tempfile::tempdir().unwrap();
 
     let zip_path = create_test_aaocase(tmp.path(), 78003);
-    let result = import_aaocase_zip(&zip_path, engine.path(), None).unwrap();
+    let result = import_aaocase_zip(&zip_path, engine.path(), None, None).unwrap();
     assert_eq!(result.manifest.case_id, 78003);
     assert!(result.saves.is_none(), "Import without saves.json should have saves=None");
 }
@@ -461,7 +461,7 @@ fn test_export_import_saves_roundtrip() {
     export_aaocase(78004, engine1.path(), &zip_path, None, Some(&saves), true).unwrap();
 
     // Import
-    let result = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap();
+    let result = import_aaocase_zip(&zip_path, engine2.path(), None, None).unwrap();
     assert_eq!(result.manifest.case_id, 78004);
     assert!(result.saves.is_some(), "Saves should survive roundtrip");
 
@@ -481,7 +481,7 @@ fn test_regression_aaocase_import_still_works() {
     let engine = tempfile::tempdir().unwrap();
 
     let zip_path = create_test_aaocase(tmp.path(), 90001);
-    let result = import_aaocase_zip(&zip_path, engine.path(), None).unwrap();
+    let result = import_aaocase_zip(&zip_path, engine.path(), None, None).unwrap();
     assert_eq!(result.manifest.case_id, 90001);
     assert_eq!(result.manifest.title, "ZIP Test Case");
     assert!(engine.path().join("case/90001/manifest.json").exists());
@@ -498,7 +498,7 @@ fn test_regression_invalid_zip_still_errors() {
     let bad_path = tmp.path().join("garbage.zip");
     fs::write(&bad_path, "not a zip file at all").unwrap();
 
-    let result = import_aaocase_zip(&bad_path, engine.path(), None);
+    let result = import_aaocase_zip(&bad_path, engine.path(), None, None);
     assert!(result.is_err());
 }
 
@@ -518,7 +518,7 @@ fn test_regression_zip_without_manifest_errors() {
     zip.write_all(b"hello").unwrap();
     zip.finish().unwrap();
 
-    let result = import_aaocase_zip(&zip_path, engine.path(), None);
+    let result = import_aaocase_zip(&zip_path, engine.path(), None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("manifest.json"));
 }

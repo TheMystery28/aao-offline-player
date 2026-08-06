@@ -44,7 +44,7 @@ fn extract_and_dedup(
     }
     // Reject VFS pointer files from ZIP imports (defensive — shouldn't happen with fixed exporter)
     if let Some(target) = crate::downloader::vfs::read_vfs_pointer(dest_path) {
-        eprintln!(
+        log::warn!(
             "[IMPORT WARN] Rejected VFS pointer in ZIP: {} -> {}. Asset may be missing.",
             dest_path.display(), target
         );
@@ -88,7 +88,7 @@ fn extract_and_dedup(
 /// # Returns
 ///
 /// An `ImportResult` containing the manifest and metadata.
-pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, on_progress: Option<&dyn Fn(usize, usize)>) -> Result<ImportResult, AppError> {
+pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, dedup_index: Option<&DedupIndex>, on_progress: Option<&dyn Fn(usize, usize)>) -> Result<ImportResult, AppError> {
     let file = fs::File::open(zip_path)
         .map_err(|e| format!("Failed to open ZIP file: {}", e))?;
     let mut archive = zip::ZipArchive::new(file)
@@ -100,24 +100,24 @@ pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, on_progress: Optio
     // Read saves.json if present (before consuming archive for case extraction)
     let saves = match read_zip_text(&mut archive, "saves.json") {
         Ok(text) => {
-            eprintln!("[IMPORT] Found saves.json ({} bytes)", text.len());
+            log::info!("[IMPORT] Found saves.json ({} bytes)", text.len());
             match serde_json::from_str::<Value>(&text) {
                 Ok(val) => Some(val),
                 Err(e) => {
-                    eprintln!("[IMPORT] Failed to parse saves.json: {}", e);
+                    log::warn!("[IMPORT] Failed to parse saves.json: {}", e);
                     None
                 }
             }
         }
         Err(e) => {
-            eprintln!("[IMPORT] No saves.json in ZIP: {}", e);
+            log::warn!("[IMPORT] No saves.json in ZIP: {}", e);
             None
         }
     };
 
     // Check for collection format: presence of collection.json
     if let Ok(coll_json) = read_zip_text(&mut archive, "collection.json") {
-        let output = import_collection_zip(&mut archive, &coll_json, engine_dir, on_progress)?;
+        let output = import_collection_zip(&mut archive, &coll_json, engine_dir, dedup_index, on_progress)?;
 
         // Create the collection in the collections store
         if let Some(collection) = output.collection {
@@ -135,10 +135,10 @@ pub fn import_aaocase_zip(zip_path: &Path, engine_dir: &Path, on_progress: Optio
 
     // Check for multi-case format: presence of sequence.json
     let output = if let Ok(seq_json) = read_zip_text(&mut archive, "sequence.json") {
-        import_multi_case_zip(&mut archive, &seq_json, engine_dir, on_progress)?
+        import_multi_case_zip(&mut archive, &seq_json, engine_dir, dedup_index, on_progress)?
     } else {
         // Single-case format (legacy)
-        import_single_case_zip(&mut archive, engine_dir, on_progress)?
+        import_single_case_zip(&mut archive, engine_dir, dedup_index, on_progress)?
     };
 
     // Count missing defaults from manifest's asset_map.
@@ -155,6 +155,7 @@ fn import_multi_case_zip(
     archive: &mut zip::ZipArchive<fs::File>,
     seq_json: &str,
     engine_dir: &Path,
+    dedup_index: Option<&DedupIndex>,
     on_progress: Option<&dyn Fn(usize, usize)>,
 ) -> Result<super::shared::ImportOutput, AppError> {
     let seq_value: Value = serde_json::from_str(seq_json)
@@ -177,8 +178,15 @@ fn import_multi_case_zip(
     let total_entries = archive.len();
     let mut progress_count: usize = 0;
 
-    // Open dedup index for inline dedup during extraction
-    let dedup_index = crate::downloader::dedup::DedupIndex::open(engine_dir).ok();
+    // Use the shared instance when provided; otherwise open one (test/legacy path).
+    let fallback_index: Option<DedupIndex>;
+    let dedup_index: Option<&DedupIndex> = match dedup_index {
+        Some(idx) => Some(idx),
+        None => {
+            fallback_index = crate::downloader::dedup::DedupIndex::open(engine_dir).ok();
+            fallback_index.as_ref()
+        }
+    };
     let mut dedup_saved_bytes: u64 = 0;
     // Track deduped assets per case for manifest rewriting: (case_id, old_index_key, new_dedup_path)
     let mut deduped_assets: Vec<(u32, String, String)> = Vec::new();
@@ -234,7 +242,7 @@ fn import_multi_case_zip(
             let index_key = crate::downloader::paths::normalize_path(
                 &crate::downloader::asset_paths::case_relative(case_id, relative)
             );
-            match extract_and_dedup(&dest_path, relative, &index_key, dedup_index.as_ref(), engine_dir) {
+            match extract_and_dedup(&dest_path, relative, &index_key, dedup_index, engine_dir) {
                 ExtractResult::Deduped { index_key, existing_path, size } => {
                     dedup_saved_bytes += size;
                     deduped_assets.push((case_id, index_key, existing_path));
@@ -321,7 +329,7 @@ fn import_multi_case_zip(
             }
             manifest.assets.total_downloaded = manifest.asset_map.len();
             if let Err(e) = write_manifest(&manifest, &case_dir) {
-                eprintln!("[IMPORT] Failed to write manifest: {}", e);
+                log::warn!("[IMPORT] Failed to write manifest: {}", e);
             }
 
             let td_path = case_dir.join("trial_data.json");
@@ -336,7 +344,7 @@ fn import_multi_case_zip(
                         }
                         if let Ok(json) = serde_json::to_string_pretty(&td) {
                             if let Err(e) = fs::write(&td_path, json) {
-                                eprintln!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
+                                log::warn!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
                             }
                         }
                     }
@@ -362,6 +370,7 @@ fn import_collection_zip(
     archive: &mut zip::ZipArchive<fs::File>,
     coll_json: &str,
     engine_dir: &Path,
+    dedup_index: Option<&DedupIndex>,
     on_progress: Option<&dyn Fn(usize, usize)>,
 ) -> Result<super::shared::ImportOutput, AppError> {
     let coll_value: Value = serde_json::from_str(coll_json)
@@ -401,8 +410,15 @@ fn import_collection_zip(
     let total_entries = archive.len();
     let mut progress_count: usize = 0;
 
-    // Open dedup index for inline dedup during extraction
-    let dedup_index = crate::downloader::dedup::DedupIndex::open(engine_dir).ok();
+    // Use the shared instance when provided; otherwise open one (test/legacy path).
+    let fallback_index: Option<DedupIndex>;
+    let dedup_index: Option<&DedupIndex> = match dedup_index {
+        Some(idx) => Some(idx),
+        None => {
+            fallback_index = crate::downloader::dedup::DedupIndex::open(engine_dir).ok();
+            fallback_index.as_ref()
+        }
+    };
     let mut dedup_saved_bytes: u64 = 0;
     let mut deduped_assets: Vec<(u32, String, String)> = Vec::new();
 
@@ -457,7 +473,7 @@ fn import_collection_zip(
             let index_key = crate::downloader::paths::normalize_path(
                 &crate::downloader::asset_paths::case_relative(case_id, relative)
             );
-            match extract_and_dedup(&dest_path, relative, &index_key, dedup_index.as_ref(), engine_dir) {
+            match extract_and_dedup(&dest_path, relative, &index_key, dedup_index, engine_dir) {
                 ExtractResult::Deduped { index_key, existing_path, size } => {
                     dedup_saved_bytes += size;
                     deduped_assets.push((case_id, index_key, existing_path));
@@ -547,7 +563,7 @@ fn import_collection_zip(
             }
             manifest.assets.total_downloaded = manifest.asset_map.len();
             if let Err(e) = write_manifest(&manifest, &case_dir) {
-                eprintln!("[IMPORT] Failed to write manifest: {}", e);
+                log::warn!("[IMPORT] Failed to write manifest: {}", e);
             }
 
             let td_path = case_dir.join("trial_data.json");
@@ -562,7 +578,7 @@ fn import_collection_zip(
                         }
                         if let Ok(json) = serde_json::to_string_pretty(&td) {
                             if let Err(e) = fs::write(&td_path, json) {
-                                eprintln!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
+                                log::warn!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
                             }
                         }
                     }
@@ -596,6 +612,7 @@ fn import_collection_zip(
 fn import_single_case_zip(
     archive: &mut zip::ZipArchive<fs::File>,
     engine_dir: &Path,
+    dedup_index: Option<&DedupIndex>,
     on_progress: Option<&dyn Fn(usize, usize)>,
 ) -> Result<super::shared::ImportOutput, AppError> {
     // 1. Read manifest.json from ZIP to get case_id
@@ -616,8 +633,15 @@ fn import_single_case_zip(
     fs::create_dir_all(&case_dir)
         .map_err(|e| format!("Failed to create case directory: {}", e))?;
 
-    // Open dedup index for inline dedup during extraction
-    let dedup_index = crate::downloader::dedup::DedupIndex::open(engine_dir).ok();
+    // Use the shared instance when provided; otherwise open one (test/legacy path).
+    let fallback_index: Option<DedupIndex>;
+    let dedup_index: Option<&DedupIndex> = match dedup_index {
+        Some(idx) => Some(idx),
+        None => {
+            fallback_index = crate::downloader::dedup::DedupIndex::open(engine_dir).ok();
+            fallback_index.as_ref()
+        }
+    };
     let mut dedup_saved_bytes: u64 = 0;
 
     // 2. Extract all files from ZIP
@@ -672,7 +696,7 @@ fn import_single_case_zip(
         } else {
             crate::downloader::paths::normalize_path(&crate::downloader::asset_paths::case_relative(case_id, &entry_name))
         };
-        match extract_and_dedup(&dest_path, &entry_name, &index_key, dedup_index.as_ref(), engine_dir) {
+        match extract_and_dedup(&dest_path, &entry_name, &index_key, dedup_index, engine_dir) {
             ExtractResult::Deduped { index_key, existing_path, size } => {
                 dedup_saved_bytes += size;
                 deduped_assets.push((index_key, existing_path));
@@ -763,7 +787,7 @@ fn import_single_case_zip(
                     }
                     if let Ok(json) = serde_json::to_string_pretty(&td) {
                         if let Err(e) = fs::write(&td_path, json) {
-                            eprintln!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
+                            log::warn!("[IMPORT] Failed to write {}: {}", td_path.display(), e);
                         }
                     }
                 }

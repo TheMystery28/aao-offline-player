@@ -57,8 +57,10 @@ pub async fn optimize_storage(
     on_event: Channel<DownloadEvent>,
 ) -> Result<serde_json::Value, AppError> {
     let data_dir = &paths.data_dir;
+    let dedup_index = paths.dedup_index.clone();
     let (deduped, bytes_saved) = downloader::dedup::optimize_all_cases(
         data_dir,
+        dedup_index.as_deref(),
         Some(&|completed, total, current_path| {
             let _ = on_event.send(DownloadEvent::Progress {
                 completed,

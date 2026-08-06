@@ -21,36 +21,58 @@ use crate::downloader::paths::normalize_path;
 /// 3. Deduplicate: replace case assets identical to shared defaults with references
 ///
 /// Returns (dedup_count, bytes_saved). Errors are non-fatal — import succeeds even if dedup fails.
-pub fn finalize_case_import(case_id: u32, data_dir: &Path) -> (usize, u64) {
+pub fn finalize_case_import(
+    case_id: u32,
+    data_dir: &Path,
+    index: Option<&DedupIndex>,
+) -> (usize, u64) {
     // Register in index + dedup — both handled by dedup_case_assets which
     // internally opens the index, scans defaults, and performs dedup.
-    match dedup_case_assets(case_id, data_dir) {
+    match dedup_case_assets(case_id, data_dir, index) {
         Ok((count, bytes)) => {
             if count > 0 {
-                eprintln!("[DEDUP] Case {}: {} files deduplicated, {} bytes saved", case_id, count, bytes);
+                log::info!("[DEDUP] Case {}: {} files deduplicated, {} bytes saved", case_id, count, bytes);
             }
             (count, bytes)
         }
         Err(e) => {
-            eprintln!("[DEDUP] Case {}: dedup failed (non-fatal): {}", case_id, e);
+            log::warn!("[DEDUP] Case {}: dedup failed (non-fatal): {}", case_id, e);
             (0, 0)
         }
     }
 }
 
 /// Dedup a single case's assets against all indexed files (defaults + other cases).
-/// Opens its own DedupIndex. For use from download/import pipelines.
-pub fn dedup_case_assets(case_id: u32, data_dir: &Path) -> Result<(usize, u64), DownloaderError> {
+/// Opens its own DedupIndex when no shared instance is provided.
+/// For use from download/import pipelines.
+pub fn dedup_case_assets(
+    case_id: u32,
+    data_dir: &Path,
+    index: Option<&DedupIndex>,
+) -> Result<(usize, u64), DownloaderError> {
     let case_dir = data_dir.join("case").join(case_id.to_string());
     let assets_dir = case_dir.join("assets");
     if !assets_dir.is_dir() {
         return Ok((0, 0));
     }
-    let index = DedupIndex::open(data_dir).map_err(|e| DownloaderError::Other(e.to_string()))?;
+    // Use the shared instance when provided; otherwise open one (test/legacy path).
+    // Shadow the owned fallback so the borrow lives for the whole function.
+    let fallback_index: Option<DedupIndex>;
+    let index: Option<&DedupIndex> = match index {
+        Some(idx) => Some(idx),
+        None => {
+            fallback_index = DedupIndex::open(data_dir).map_err(|e| DownloaderError::Other(e.to_string())).ok();
+            fallback_index.as_ref()
+        }
+    };
+    let index = match index {
+        Some(idx) => idx,
+        None => return Ok((0, 0)), // fallback open failed — dedup is a cache, degrade gracefully
+    };
     // Scan both defaults and case assets so cross-case lookups work
     index.scan_and_register(data_dir, "defaults")?;
     index.scan_and_register_cases(data_dir)?;
-    dedup_case_assets_with_index(case_id, data_dir, &index)
+    dedup_case_assets_with_index(case_id, data_dir, index)
 }
 
 /// Dedup a single case's assets using a pre-opened index.
@@ -333,7 +355,7 @@ pub(crate) fn rewrite_other_case(
 /// Clear default assets that are not referenced by any case manifest.
 /// Scans all manifests to build a set of used defaults/ paths, then deletes the rest.
 /// Returns (files_deleted, bytes_freed).
-pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), AppError> {
+pub fn clear_unused_defaults(data_dir: &Path, index: Option<&DedupIndex>) -> Result<(usize, u64), AppError> {
     // Collect all defaults/ paths referenced by any case manifest
     let mut used_defaults: std::collections::HashSet<String> = std::collections::HashSet::new();
     let cases_dir = data_dir.join("case");
@@ -388,8 +410,15 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), AppError> 
         }
     }
 
-    // Open index to unregister deleted files
-    let index = DedupIndex::open(data_dir).ok();
+    // Use the shared instance when provided; otherwise open one (test/legacy path).
+    let fallback_index: Option<DedupIndex>;
+    let index: Option<&DedupIndex> = match index {
+        Some(idx) => Some(idx),
+        None => {
+            fallback_index = DedupIndex::open(data_dir).ok();
+            fallback_index.as_ref()
+        }
+    };
 
     let mut deleted_count = 0usize;
     let mut bytes_freed = 0u64;
@@ -438,7 +467,7 @@ pub fn clear_unused_defaults(data_dir: &Path) -> Result<(usize, u64), AppError> 
         }
     }
 
-    walk_and_clean(&defaults_dir, data_dir, &used_defaults, index.as_ref(), &mut deleted_count, &mut bytes_freed);
+    walk_and_clean(&defaults_dir, data_dir, &used_defaults, index, &mut deleted_count, &mut bytes_freed);
 
     Ok((deleted_count, bytes_freed))
 }

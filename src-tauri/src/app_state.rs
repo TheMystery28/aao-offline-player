@@ -7,9 +7,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 
 use crate::config;
+use crate::downloader::cancel::Cancellation;
+use crate::downloader::dedup::DedupIndex;
 
 // Engine files embedded at compile time by build.rs via include_bytes!.
 // Used on Android to extract engine files to the writable filesystem.
@@ -21,6 +22,7 @@ include!(concat!(env!("OUT_DIR"), "/engine_embed.rs"));
 /// This struct is created once during app initialization and is available
 /// to all commands via Tauri's `State` system.
 pub(crate) struct AppPaths {
+    // --- Server ---
     /// Port the localhost HTTP server is listening on, or 0 if not started.
     /// On Android the server always runs (audio needs real HTTP to bypass a
     /// Chromium custom-protocol Range-request bug). On desktop it only runs
@@ -29,16 +31,21 @@ pub(crate) struct AppPaths {
     /// Localhost HTTP server handle. Dropping on app exit stops the thread.
     #[allow(dead_code)]
     pub(crate) localhost_server: Option<crate::server::LocalhostServer>,
+    // --- Directories ---
     /// Static engine files (JS, CSS, HTML, img, Languages). Read-only on mobile.
     pub(crate) engine_dir: PathBuf,
     /// Writable data directory (case/, defaults/, config.json).
     ///
     /// On desktop this equals engine_dir. On Android/iOS it's the app's private data dir.
     pub(crate) data_dir: PathBuf,
-    /// Cancel flag for in-progress downloads. Checked per-asset in the download loop.
-    pub(crate) cancel_flag: Arc<AtomicBool>,
+    // --- Downloads ---
+    /// Per-operation cancellation (generation counter). Each operation
+    /// snapshots the current generation at start and checks it per asset.
+    pub(crate) cancellation: Cancellation,
     /// Shared HTTP client — reuses connection pool across all download commands.
     pub(crate) http_client: reqwest::Client,
+    /// Single shared dedup index. `None` = index unavailable (dedup disabled, non-fatal).
+    pub(crate) dedup_index: Option<Arc<DedupIndex>>,
 }
 
 /// Shared application configuration (mutable).

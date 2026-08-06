@@ -36,19 +36,19 @@ pub async fn download_plugin_assets(
                     match resp.bytes().await {
                         Ok(bytes) => {
                             if fs::write(&dest, &bytes).is_ok() {
-                                eprintln!("[PLUGIN_ASSETS] Downloaded: {} → {}", url, dest.display());
+                                log::info!("[PLUGIN_ASSETS] Downloaded: {} → {}", url, dest.display());
                                 count += 1;
                             } else {
-                                eprintln!("[PLUGIN_ASSETS] Failed to write {}: I/O error", dest.display());
+                                log::warn!("[PLUGIN_ASSETS] Failed to write {}: I/O error", dest.display());
                             }
                         }
-                        Err(e) => eprintln!("[PLUGIN_ASSETS] Failed to read response for {}: {}", url, e),
+                        Err(e) => log::warn!("[PLUGIN_ASSETS] Failed to read response for {}: {}", url, e),
                     }
                 } else {
-                    eprintln!("[PLUGIN_ASSETS] Failed to download {}: HTTP {}", url, resp.status());
+                    log::warn!("[PLUGIN_ASSETS] Failed to download {}: HTTP {}", url, resp.status());
                 }
             }
-            Err(e) => eprintln!("[PLUGIN_ASSETS] Failed to download {}: {}", url, e),
+            Err(e) => log::warn!("[PLUGIN_ASSETS] Failed to download {}: {}", url, e),
         }
     }
     count
@@ -152,16 +152,16 @@ pub async fn import_aaoplug(
                         if resp.status().is_success() {
                             if let Ok(bytes) = resp.bytes().await {
                                 if let Err(e) = fs::write(&dest, &bytes) {
-                                    eprintln!("[PLUGINS] Failed to write {}: {}", dest.display(), e);
+                                    log::warn!("[PLUGINS] Failed to write {}: {}", dest.display(), e);
                                 }
-                                eprintln!("[IMPORT_PLUGIN] Downloaded external asset: {} → {}", url, dest.display());
+                                log::info!("[IMPORT_PLUGIN] Downloaded external asset: {} → {}", url, dest.display());
                             }
                         } else {
-                            eprintln!("[IMPORT_PLUGIN] Failed to download {}: HTTP {}", url, resp.status());
+                            log::warn!("[IMPORT_PLUGIN] Failed to download {}: HTTP {}", url, resp.status());
                         }
                     }
                     Err(e) => {
-                        eprintln!("[IMPORT_PLUGIN] Failed to download {}: {}", url, e);
+                        log::warn!("[IMPORT_PLUGIN] Failed to download {}: {}", url, e);
                     }
                 }
             }
@@ -185,12 +185,12 @@ pub async fn import_aaoplug(
             if case_dir.exists() {
                 if let Some(ref text) = config_text {
                     if let Err(e) = fs::write(case_dir.join("case_config.json"), text) {
-                        eprintln!("[PLUGINS] Failed to write case_config.json: {}", e);
+                        log::warn!("[PLUGINS] Failed to write case_config.json: {}", e);
                     }
                     if let Ok(mut manifest) = read_manifest(&case_dir) {
                         manifest.has_case_config = true;
                         if let Err(e) = write_manifest(&manifest, &case_dir) {
-                            eprintln!("[PLUGINS] Failed to write manifest: {}", e);
+                            log::warn!("[PLUGINS] Failed to write manifest: {}", e);
                         }
                     }
                 }
@@ -336,10 +336,10 @@ pub fn remove_plugin(case_id: u32, filename: &str, engine_dir: &Path) -> Result<
                 match serde_json::to_string_pretty(&config) {
                     Ok(json) => {
                         if let Err(e) = fs::write(&config_path, json) {
-                            eprintln!("[PLUGINS] Failed to write {}: {}", config_path.display(), e);
+                            log::warn!("[PLUGINS] Failed to write {}: {}", config_path.display(), e);
                         }
                     }
-                    Err(e) => eprintln!("[PLUGINS] Failed to serialize case_config.json: {}", e),
+                    Err(e) => log::warn!("[PLUGINS] Failed to serialize case_config.json: {}", e),
                 }
             }
         }
@@ -784,10 +784,10 @@ pub(super) fn check_auto_promote(filename: &str, engine_dir: &Path) {
         match serde_json::to_string_pretty(&manifest) {
             Ok(json) => {
                 if let Err(e) = fs::write(&manifest_path, json) {
-                    eprintln!("[PLUGINS] Failed to write manifest: {}", e);
+                    log::warn!("[PLUGINS] Failed to write manifest: {}", e);
                 }
             }
-            Err(e) => eprintln!("[PLUGINS] Failed to serialize manifest: {}", e),
+            Err(e) => log::warn!("[PLUGINS] Failed to serialize manifest: {}", e),
         }
     }
 
@@ -923,10 +923,10 @@ pub(super) fn consolidate_scopes(filename: &str, engine_dir: &Path) {
         match serde_json::to_string_pretty(&manifest) {
             Ok(json) => {
                 if let Err(e) = fs::write(&manifest_path, json) {
-                    eprintln!("[PLUGINS] Failed to write manifest: {}", e);
+                    log::warn!("[PLUGINS] Failed to write manifest: {}", e);
                 }
             }
-            Err(e) => eprintln!("[PLUGINS] Failed to serialize manifest: {}", e),
+            Err(e) => log::warn!("[PLUGINS] Failed to serialize manifest: {}", e),
         }
     }
 }

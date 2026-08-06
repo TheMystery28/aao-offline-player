@@ -182,6 +182,7 @@ pub async fn get_missing_assets(
 #[tauri::command]
 pub async fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(), AppError> {
     let data_dir = paths.data_dir.clone();
+    let dedup_index = paths.dedup_index.clone();
 
     tokio::task::spawn_blocking(move || {
         let case_dir = data_dir.join("case").join(case_id.to_string());
@@ -190,7 +191,7 @@ pub async fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(),
         }
 
         // Remove case entries from the persistent hash index before deleting files
-        if let Ok(index) = downloader::dedup::DedupIndex::open(&data_dir) {
+        if let Some(ref index) = dedup_index {
             let _ = index.unregister_prefix(&downloader::asset_paths::case_prefix(case_id));
         }
 
@@ -200,7 +201,7 @@ pub async fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(),
         log::info!("Deleted case {} at {}", case_id, case_dir.display());
 
         // Auto-clean unused shared defaults
-        let _ = downloader::dedup::clear_unused_defaults(&data_dir);
+        let _ = downloader::dedup::clear_unused_defaults(&data_dir, dedup_index.as_deref());
 
         Ok(())
     })

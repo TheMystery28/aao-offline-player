@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::Arc;
 use crate::downloader::AssetRef;
 use reqwest::Client;
 
@@ -371,11 +370,12 @@ async fn test_mock_concurrent_all_succeed() {
 
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        None, &tx, 3, cancel,
+        None, &tx, 3, &cancellation, snapshot,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 5);
@@ -406,11 +406,12 @@ async fn test_mock_concurrent_mixed_results() {
 
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        None, &tx, 3, cancel,
+        None, &tx, 3, &cancellation, snapshot,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 2, "2 should succeed");
@@ -425,11 +426,12 @@ async fn test_download_assets_empty_list() {
     std::fs::create_dir_all(dir.path().join("assets")).unwrap();
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
 
     let result = download_assets(
         &client, Vec::new(), &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        None, &tx, 3, cancel,
+        None, &tx, 3, &cancellation, snapshot,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 0);
@@ -456,18 +458,19 @@ async fn test_download_assets_all_fail() {
 
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        None, &tx, 3, cancel,
+        None, &tx, 3, &cancellation, snapshot,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 0, "None should succeed");
     assert_eq!(result.failed.len(), 3, "All 3 should fail");
 }
 
-// --- Cancel flag tests ---
+// --- Cancel tests ---
 
 #[tokio::test]
 async fn test_cancel_flag_before_start() {
@@ -475,7 +478,6 @@ async fn test_cancel_flag_before_start() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("assets")).unwrap();
 
-    // Set up 5 assets that would succeed
     for i in 0..5 {
         Mock::given(method("GET")).and(path(format!("/asset{}.png", i)))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![1, 2, 3]))
@@ -491,11 +493,13 @@ async fn test_cancel_flag_before_start() {
 
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(true)); // Already cancelled!
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
+    cancellation.cancel(); // Already cancelled before the operation starts
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        None, &tx, 3, cancel,
+        None, &tx, 3, &cancellation, snapshot,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 0, "All should be cancelled, none downloaded");
@@ -511,7 +515,6 @@ async fn test_cancel_flag_stops_midway() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("assets")).unwrap();
 
-    // Set up 10 assets, each with a 50ms delay
     for i in 0..10 {
         Mock::given(method("GET")).and(path(format!("/slow{}.png", i)))
             .respond_with(
@@ -531,18 +534,19 @@ async fn test_cancel_flag_stops_midway() {
 
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
 
     // Cancel after 150ms (should get ~1-3 assets through with concurrency=1)
-    let cancel_clone = cancel.clone();
+    let cancel_clone = cancellation.share();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-        cancel_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+        cancel_clone.cancel();
     });
 
     let result = download_assets(
         &client, assets, &dir.path().to_path_buf(), &dir.path().to_path_buf(),
-        None, &tx, 1, cancel, // concurrency=1 so assets are sequential
+        None, &tx, 1, &cancellation, snapshot, // concurrency=1 so assets are sequential
     ).await.unwrap();
 
     assert!(
@@ -554,11 +558,10 @@ async fn test_cancel_flag_stops_midway() {
         result.downloaded.len() > 0,
         "Should have downloaded at least 1 before cancel"
     );
-    // The rest should be cancelled
     let cancelled: Vec<_> = result.failed.iter().filter(|f| f.error == "Cancelled").collect();
     assert!(
         !cancelled.is_empty(),
-        "Some assets should have 'Cancelled' error"
+        "At least one asset must be cancelled"
     );
 }
 
@@ -663,12 +666,13 @@ async fn test_download_dedup_skips_existing_in_index() {
 
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
 
     let result = download_assets(
         &client, assets,
         &data_dir.to_path_buf(), &data_dir.to_path_buf(),
-        Some(&index), &tx, 3, cancel,
+        Some(&index), &tx, 3, &cancellation, snapshot,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 1);
@@ -719,12 +723,13 @@ async fn test_download_dedup_preserves_canonical_defaults() {
 
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
 
     let result = download_assets(
         &client, assets,
         &data_dir.to_path_buf(), &data_dir.to_path_buf(),
-        Some(&index), &tx, 3, cancel,
+        Some(&index), &tx, 3, &cancellation, snapshot,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 1);
@@ -797,12 +802,13 @@ async fn test_download_dedup_still_works_for_case_assets() {
 
     let client = test_client();
     let tx = tauri::ipc::Channel::new(|_| Ok(()));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
 
     let result = download_assets(
         &client, assets,
         &data_dir.to_path_buf(), &data_dir.to_path_buf(),
-        Some(&index), &tx, 3, cancel,
+        Some(&index), &tx, 3, &cancellation, snapshot,
     ).await.unwrap();
 
     assert_eq!(result.downloaded.len(), 1);

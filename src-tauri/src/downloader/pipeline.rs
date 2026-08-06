@@ -11,8 +11,6 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use tauri::ipc::Channel;
 
@@ -133,7 +131,8 @@ pub fn save_trial_info(case_dir: &Path, info_json: &str) -> Result<(), AppError>
 /// * `site_paths` - Site configuration (asset directory structure).
 /// * `on_event` - Channel for streaming progress updates to the UI.
 /// * `concurrency` - Number of simultaneous asset downloads allowed.
-/// * `cancel_flag` - Atomic flag for aborting the download.
+/// * `cancellation` - Generation-counter handle; the operation checks `snapshot` per asset.
+/// * `snapshot` - Generation captured at operation start; a mismatch means cancelled.
 ///
 /// # Returns
 ///
@@ -147,7 +146,8 @@ pub(crate) async fn download_single_case(
     dedup_index: Option<&super::dedup::DedupIndex>,
     on_event: &Channel<DownloadEvent>,
     concurrency: usize,
-    cancel_flag: Arc<AtomicBool>,
+    cancellation: &super::cancel::Cancellation,
+    snapshot: u64,
 ) -> Result<CaseManifest, AppError> {
     // 1. Fetch case data
     let (case_info, trial_data, info_json, data_json) =
@@ -180,7 +180,8 @@ pub(crate) async fn download_single_case(
         dedup_index,
         on_event,
         concurrency,
-        cancel_flag,
+        cancellation,
+        snapshot,
     )
     .await?;
 
@@ -232,7 +233,7 @@ pub(crate) async fn download_single_case(
             bytes_downloaded: 0,
             elapsed_ms: 0,
         });
-        let (dedup_count, _) = super::dedup::finalize_case_import(case_id, data_dir);
+        let (dedup_count, _) = super::dedup::finalize_case_import(case_id, data_dir, dedup_index);
         if dedup_count > 0 {
             return super::manifest::read_manifest(&case_dir);
         }

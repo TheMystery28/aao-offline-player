@@ -231,7 +231,7 @@ pub fn import_aaosave(
             let _ = fs::create_dir_all(parent);
         }
         if let Err(e) = fs::write(&dest, data) {
-            eprintln!("[SAVES] Failed to write {}: {}", dest.display(), e);
+            log::warn!("[SAVES] Failed to write {}: {}", dest.display(), e);
         }
 
         if !plugins_installed.contains(&case_id) {
@@ -245,7 +245,7 @@ pub fn import_aaosave(
         if let Ok(mut manifest) = read_manifest(&case_dir) {
             manifest.has_plugins = true;
             if let Err(e) = write_manifest(&manifest, &case_dir) {
-                eprintln!("[SAVES] Failed to write manifest: {}", e);
+                log::warn!("[SAVES] Failed to write manifest: {}", e);
             }
         }
     }
@@ -258,7 +258,7 @@ pub fn import_aaosave(
         let case_dir = engine_dir.join("case").join(case_id_str);
         if case_dir.exists() {
             if let Err(e) = fs::write(case_dir.join("case_config.json"), data) {
-                eprintln!("[SAVES] Failed to write case_config.json: {}", e);
+                log::warn!("[SAVES] Failed to write case_config.json: {}", e);
             }
         }
     }

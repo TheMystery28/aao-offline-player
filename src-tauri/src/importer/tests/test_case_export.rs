@@ -19,7 +19,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
     fs::write(assets_dir.join("icon.png"), "fake png data").unwrap();
     fs::write(assets_dir.join("music.mp3"), "fake mp3 data").unwrap();
 
-    import_aaoffline(source.path(), engine.path(), None).unwrap();
+    import_aaoffline(source.path(), engine.path(), None, None).unwrap();
 
     // Now export it
     let export_path = source.path().join("test.aaocase");
@@ -29,7 +29,7 @@ var initial_trial_data = {"profiles":[0,{"icon":"assets/icon.png","short_name":"
 
     // Verify we can reimport the exported file into a fresh engine dir
     let engine2 = tempfile::tempdir().unwrap();
-    let manifest = import_aaocase_zip(&export_path, engine2.path(), None).unwrap().manifest;
+    let manifest = import_aaocase_zip(&export_path, engine2.path(), None, None).unwrap().manifest;
     assert_eq!(manifest.case_id, 44444);
     assert_eq!(manifest.title, "Export Test");
 
@@ -432,7 +432,7 @@ fn test_export_with_none_saves_is_backward_compatible() {
 
     // Import should have saves=None
     let engine2 = tempfile::tempdir().unwrap();
-    let result = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap();
+    let result = import_aaocase_zip(&zip_path, engine2.path(), None, None).unwrap();
     assert!(result.saves.is_none());
 }
 
@@ -443,7 +443,7 @@ fn test_export_roundtrip_preserves_data() {
     let engine1 = tempfile::tempdir().unwrap();
 
     let zip_path = create_test_aaocase(tmp.path(), 66666);
-    let manifest1 = import_aaocase_zip(&zip_path, engine1.path(), None).unwrap().manifest;
+    let manifest1 = import_aaocase_zip(&zip_path, engine1.path(), None, None).unwrap().manifest;
 
     // Export
     let export_path = tmp.path().join("roundtrip.aaocase");
@@ -451,7 +451,7 @@ fn test_export_roundtrip_preserves_data() {
 
     // Reimport into fresh dir
     let engine2 = tempfile::tempdir().unwrap();
-    let manifest2 = import_aaocase_zip(&export_path, engine2.path(), None).unwrap().manifest;
+    let manifest2 = import_aaocase_zip(&export_path, engine2.path(), None, None).unwrap().manifest;
 
     assert_eq!(manifest1.case_id, manifest2.case_id);
     assert_eq!(manifest1.title, manifest2.title);
@@ -500,7 +500,7 @@ fn test_export_import_roundtrip_metadata_preserved() {
     export_aaocase(77005, engine1.path(), &zip_path, None, None, true).unwrap();
 
     // Import into fresh engine
-    let imported = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap().manifest;
+    let imported = import_aaocase_zip(&zip_path, engine2.path(), None, None).unwrap().manifest;
     assert_eq!(imported.case_id, original.case_id);
     assert_eq!(imported.title, original.title);
     assert_eq!(imported.author, original.author);
@@ -547,7 +547,7 @@ fn test_export_import_sequence_roundtrip_data_preserved() {
     let zip_path = tmp.path().join("seq_roundtrip.aaocase");
     export_sequence(&[77006, 77007], "Seq Test", &seq_list, engine1.path(), &zip_path, None, None, true).unwrap();
 
-    let manifest = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap().manifest;
+    let manifest = import_aaocase_zip(&zip_path, engine2.path(), None, None).unwrap().manifest;
     assert_eq!(manifest.case_id, 77006);
 
     // Verify both cases present with correct data
@@ -600,7 +600,7 @@ fn test_export_import_sequence_saves_roundtrip() {
     export_sequence(&[78007, 78008], "Seq Saves RT", &seq_list, engine1.path(), &zip_path, None, Some(&saves), true).unwrap();
 
     // Import
-    let result = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap();
+    let result = import_aaocase_zip(&zip_path, engine2.path(), None, None).unwrap();
     assert_eq!(result.manifest.case_id, 78007);
     assert!(result.saves.is_some(), "Sequence saves should survive roundtrip");
 
@@ -695,7 +695,7 @@ fn test_export_import_plugin_params_with_sequence() {
         })
     ).unwrap()).unwrap();
 
-    import_aaocase_zip(&export_path, engine2_dir, None).unwrap();
+    import_aaocase_zip(&export_path, engine2_dir, None, None).unwrap();
 
     let gm_text = fs::read_to_string(plugins_dir2.join("manifest.json")).unwrap();
     let gm: serde_json::Value = serde_json::from_str(&gm_text).unwrap();
@@ -805,7 +805,7 @@ fn test_export_import_plugin_params_with_collection() {
         })
     ).unwrap()).unwrap();
 
-    import_aaocase_zip(&export_path, engine2_dir, None).unwrap();
+    import_aaocase_zip(&export_path, engine2_dir, None, None).unwrap();
 
     let gm_text = fs::read_to_string(plugins_dir2.join("manifest.json")).unwrap();
     let gm: serde_json::Value = serde_json::from_str(&gm_text).unwrap();
@@ -944,7 +944,7 @@ fn test_export_import_roundtrip_vfs_sprites() {
     // Export → Import
     let zip_path = tmp.path().join("roundtrip_vfs.aaocase");
     export_aaocase(99002, engine1.path(), &zip_path, None, None, false).unwrap();
-    let result = import_aaocase_zip(&zip_path, engine2.path(), None).unwrap();
+    let result = import_aaocase_zip(&zip_path, engine2.path(), None, None).unwrap();
     assert_eq!(result.manifest.case_id, 99002);
 
     // Both sprites should be resolvable after import.
