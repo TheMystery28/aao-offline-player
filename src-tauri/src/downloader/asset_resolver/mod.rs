@@ -16,15 +16,19 @@ pub use rewriter::rewrite_external_urls;
 
 use serde_json::Value;
 use std::collections::HashSet;
-use std::path::Path;
 
+use super::default_data::DefaultData;
 use super::{AssetRef, SitePaths};
 
 /// Extract all asset URLs from the given trial data.
 ///
 /// This is the primary entry point for asset discovery. It uses various
 /// specialized extractors to find URLs in different parts of the trial data.
-pub fn extract_asset_urls(trial_data: &Value, site_paths: &SitePaths, engine_dir: &Path) -> Vec<AssetRef> {
+pub fn extract_asset_urls(
+    trial_data: &Value,
+    site_paths: &SitePaths,
+    default_data: &DefaultData,
+) -> Vec<AssetRef> {
     let mut assets: Vec<AssetRef> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
@@ -34,7 +38,7 @@ pub fn extract_asset_urls(trial_data: &Value, site_paths: &SitePaths, engine_dir
     extract_music(&mut assets, &mut seen, trial_data, site_paths);
     extract_sounds(&mut assets, &mut seen, trial_data, site_paths);
     extract_popups(&mut assets, &mut seen, trial_data, site_paths);
-    extract_sprites_from_frames(&mut assets, &mut seen, trial_data, site_paths, engine_dir);
+    extract_sprites_from_frames(&mut assets, &mut seen, trial_data, site_paths, default_data);
     extract_voices(&mut assets, &mut seen, site_paths);
     extract_psyche_locks(&mut assets, &mut seen, trial_data, site_paths);
 

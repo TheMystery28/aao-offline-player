@@ -1,30 +1,7 @@
 use super::*;
+use std::path::PathBuf;
 
-// --- parse_js_object_assignment ---
-
-#[test]
-fn test_parse_js_object_assignment_simple() {
-    let src = r#"var foo = {"a": 1, "b": 2};"#;
-    let result = parse_js_object_assignment(src, "foo");
-    assert_eq!(result.unwrap(), r#"{"a": 1, "b": 2}"#);
-}
-
-#[test]
-fn test_parse_js_object_assignment_not_found() {
-    let src = "var foo = 42;";
-    assert!(parse_js_object_assignment(src, "bar").is_none());
-}
-
-#[test]
-fn test_parse_default_profiles_nb_from_real_format() {
-    let src = r#"var default_profiles_nb = {"Juge2": 6, "Phoenix": 20, "Inconnu": 0};"#;
-    let json_str = parse_js_object_assignment(src, "default_profiles_nb").unwrap();
-    let map: HashMap<String, u32> = serde_json::from_str(&json_str).unwrap();
-    assert_eq!(map["Juge2"], 6);
-    assert_eq!(map["Phoenix"], 20);
-    assert_eq!(map["Inconnu"], 0);
-}
-
+// --- extract_default_sprite_assets ---
 // --- extract_default_sprite_assets ---
 
 #[test]
@@ -42,7 +19,7 @@ var default_profiles_startup = {"Juge2/2": 880};"#,
         "profiles": [null, {"base": "Juge2", "icon": "", "custom_sprites": []}]
     });
     let paths = test_site_paths();
-    let assets = extract_default_sprite_assets(&data, &paths, dir.path());
+    let assets = extract_default_sprite_assets(&data, &paths, &DefaultData::load(dir.path()));
 
     let talking: Vec<_> = assets.iter().filter(|a| a.asset_type == "default_sprite_talking").collect();
     let still: Vec<_> = assets.iter().filter(|a| a.asset_type == "default_sprite_still").collect();
@@ -71,7 +48,7 @@ var default_profiles_startup = {};"#,
     let data = json!({
         "profiles": [null, {"base": "Inconnu", "icon": "", "custom_sprites": []}]
     });
-    let assets = extract_default_sprite_assets(&data, &test_site_paths(), dir.path());
+    let assets = extract_default_sprite_assets(&data, &test_site_paths(), &DefaultData::load(dir.path()));
     assert!(assets.is_empty());
 }
 
@@ -86,7 +63,7 @@ fn test_extract_default_place_assets_from_real_data() {
     }
 
     let paths = test_site_paths();
-    let assets = extract_default_place_assets(&engine_dir, &paths);
+    let assets = extract_default_place_assets(&DefaultData::load(&engine_dir), &paths);
 
     assert!(assets.len() >= 20,
         "Expected at least 20 default place assets, got {}",

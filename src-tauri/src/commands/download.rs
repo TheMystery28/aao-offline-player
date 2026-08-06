@@ -41,11 +41,8 @@ pub async fn fetch_case_info(
     case_id: u32,
 ) -> Result<downloader::CaseInfo, AppError> {
     let client = paths.http_client.clone();
-
-    let (case_info, _trial_data, _info_json, _data_json) =
-        downloader::case_fetcher::fetch_case(&client, case_id).await?;
-
-    Ok(case_info)
+    let fetched = downloader::fetch_cache::fetch_case_cached(&client, case_id).await?;
+    Ok(fetched.case_info)
 }
 
 /// Download a sequence of cases in order.
@@ -79,7 +76,7 @@ pub async fn download_sequence(
     let mut manifests = Vec::new();
 
     // Fetch site paths once (static config, same for all parts)
-    let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
+    let site_paths = downloader::site_paths::fetch_site_paths_cached(&client).await?;
 
     // Open dedup index once for the whole sequence. Reopening per-part causes
     // concurrent redb::Database instances on the same file, which corrupts mmap on Android.
@@ -169,7 +166,7 @@ pub async fn download_case(
     let cancellation = paths.cancellation.share();
     let snapshot = cancellation.snapshot();
 
-    let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
+    let site_paths = downloader::site_paths::fetch_site_paths_cached(&client).await?;
     let dedup_index = paths.dedup_index.clone();
 
     Ok(downloader::pipeline::download_single_case(
@@ -285,12 +282,7 @@ pub async fn retry_failed_assets(
             let mut data_value: serde_json::Value = serde_json::from_str(&data_str)
                 .map_err(|e| format!("Failed to parse trial_data.json: {}", e))?;
             downloader::asset_resolver::rewrite_external_urls(&mut data_value, case_id, &new_externals);
-            fs::write(
-                &data_path,
-                serde_json::to_string_pretty(&data_value)
-                    .map_err(|e| format!("Failed to serialize trial_data: {}", e))?,
-            )
-            .map_err(|e| format!("Failed to write trial_data.json: {}", e))?;
+            downloader::pipeline::write_trial_data(&case_dir, &data_value)?;
         }
     }
 
@@ -345,11 +337,12 @@ pub async fn update_case(
 
     // 1. Fetch site paths
     log::debug!("Update: fetching site paths...");
-    let site_paths = downloader::case_fetcher::fetch_site_paths(&client).await?;
+    let site_paths = downloader::site_paths::fetch_site_paths_cached(&client).await?;
 
     // 2. Fetch case data
+    // 2. Fetch case data — fresh, never from the cache: update exists for freshness
     log::debug!("Update: fetching case {} data...", case_id);
-    let (case_info, trial_data, info_json, data_json) =
+    let (case_info, trial_data, info_json, _data_json) =
         downloader::case_fetcher::fetch_case(&client, case_id).await?;
 
     // 3. Save updated trial_info.json
@@ -431,9 +424,8 @@ pub async fn update_case(
         asset_map.insert(asset.original_url.clone(), asset.local_path.clone());
     }
 
-    // 8. Rewrite external URLs in trial_data then save
-    let mut data_value: serde_json::Value = serde_json::from_str(&data_json)
-        .map_err(|e| format!("Failed to reparse data JSON: {}", e))?;
+    // 8. Rewrite external URLs in trial_data (already parsed) then save compact
+    let mut data_value = trial_data;
     // Rewrite using ALL known asset mappings (old + new)
     let all_downloaded: Vec<downloader::asset_downloader::DownloadedAsset> = asset_map
         .iter()
@@ -446,12 +438,7 @@ pub async fn update_case(
         })
         .collect();
     downloader::asset_resolver::rewrite_external_urls(&mut data_value, case_id, &all_downloaded);
-    fs::write(
-        case_dir.join("trial_data.json"),
-        serde_json::to_string_pretty(&data_value)
-            .map_err(|e| format!("Failed to serialize trial_data: {}", e))?,
-    )
-    .map_err(|e| format!("Failed to write trial_data.json: {}", e))?;
+    downloader::pipeline::write_trial_data(&case_dir, &data_value)?;
 
     // 9. Build and save manifest
     let total_bytes: u64 = if redownload_assets {

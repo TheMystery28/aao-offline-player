@@ -9,10 +9,14 @@ pub mod asset_paths;
 pub mod asset_resolver;
 pub mod cancel;
 pub mod case_fetcher;
+pub mod cleanup;
+pub mod default_data;
+pub mod fetch_cache;
 pub mod dedup;
 pub mod manifest;
 pub mod paths;
 pub mod pipeline;
+pub mod site_paths;
 pub mod vfs;
 
 use serde::{Deserialize, Serialize};

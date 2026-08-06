@@ -130,3 +130,56 @@ pub(super) fn is_external(val: &serde_json::Value) -> bool {
         .or_else(|| val.as_i64().map(|n| n != 0))
         .unwrap_or(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression guard: the offline cfg in engine/bridge.js must stay in
+    /// lockstep with Rust-side LocalPaths. If this test fails, update BOTH
+    /// sides — never just the test.
+    #[test]
+    fn test_bridge_js_cfg_matches_local_paths() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let bridge = manifest_dir.parent().unwrap().join("engine").join("bridge.js");
+        if !bridge.exists() {
+            return; // Skip if engine dir doesn't exist (CI)
+        }
+        let text = std::fs::read_to_string(&bridge).unwrap();
+        let cfg = crate::downloader::case_fetcher::parse_bridge_js_response(&text)
+            .expect("bridge.js must contain a parseable `var cfg = {...}`");
+
+        assert_eq!(cfg.picture_dir, "defaults/images/");
+        assert_eq!(cfg.icon_subdir, "chars/");
+        assert_eq!(cfg.talking_subdir, "chars/");
+        assert_eq!(cfg.still_subdir, "charsStill/");
+        assert_eq!(cfg.startup_subdir, "charsStartup/");
+        assert_eq!(cfg.evidence_subdir, "evidence/");
+        assert_eq!(cfg.bg_subdir, "backgrounds/");
+        assert_eq!(cfg.defaultplaces_subdir, "defaultplaces/");
+        assert_eq!(cfg.popups_subdir, "popups/");
+        assert_eq!(cfg.locks_subdir, "psycheLocks/");
+        assert_eq!(cfg.music_dir, "defaults/music/");
+        assert_eq!(cfg.sounds_dir, "defaults/sounds/");
+        assert_eq!(cfg.voices_dir, "defaults/voices/");
+
+        assert_eq!(
+            format!("{}{}", cfg.picture_dir, cfg.icon_subdir),
+            LocalPaths::icon(),
+            "icon dir drift"
+        );
+        assert_eq!(
+            format!("{}{}", cfg.picture_dir, cfg.still_subdir),
+            LocalPaths::still(),
+            "still dir drift"
+        );
+        assert_eq!(
+            format!("{}{}", cfg.picture_dir, cfg.bg_subdir),
+            LocalPaths::bg(),
+            "background dir drift"
+        );
+        assert_eq!(cfg.music_dir, LocalPaths::music());
+        assert_eq!(cfg.sounds_dir, LocalPaths::sounds());
+        assert_eq!(cfg.voices_dir, LocalPaths::voices());
+    }
+}

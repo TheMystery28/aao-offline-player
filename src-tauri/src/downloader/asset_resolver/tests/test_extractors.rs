@@ -5,7 +5,7 @@ fn test_extract_profiles_default_icon() {
     let data = json!({
         "profiles": [null, {"base": "Phoenix", "icon": "", "custom_sprites": []}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let icons: Vec<_> = assets.iter().filter(|a| a.asset_type == "profile_icon").collect();
     assert_eq!(icons.len(), 1);
     assert!(icons[0].url.contains("persos/Phoenix.png"));
@@ -18,7 +18,7 @@ fn test_extract_profiles_external_icon() {
     let data = json!({
         "profiles": [null, {"base": "Phoenix", "icon": "http://i.imgur.com/abc.png", "custom_sprites": []}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let icons: Vec<_> = assets.iter().filter(|a| a.asset_type == "profile_icon").collect();
     assert_eq!(icons.len(), 1);
     assert_eq!(icons[0].url, "http://i.imgur.com/abc.png");
@@ -34,7 +34,7 @@ fn test_extract_custom_sprites() {
             "custom_sprites": [{"talking": "http://x.com/t.gif", "still": "http://x.com/s.gif", "startup": ""}]
         }]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let sprites: Vec<_> = assets.iter().filter(|a| a.asset_type.starts_with("custom_sprite")).collect();
     assert_eq!(sprites.len(), 2);
     assert!(sprites.iter().any(|s| s.url == "http://x.com/t.gif"));
@@ -46,7 +46,7 @@ fn test_extract_evidence_internal() {
     let data = json!({
         "evidence": [null, {"icon": "badge", "icon_external": false, "check_button_data": []}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let ev: Vec<_> = assets.iter().filter(|a| a.asset_type == "evidence_icon").collect();
     assert_eq!(ev.len(), 1);
     assert!(ev[0].url.contains("dossier/badge.png"));
@@ -58,7 +58,7 @@ fn test_extract_evidence_external() {
     let data = json!({
         "evidence": [null, {"icon": "http://i.imgur.com/ev.png", "icon_external": true, "check_button_data": []}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let ev: Vec<_> = assets.iter().filter(|a| a.asset_type == "evidence_icon").collect();
     assert_eq!(ev.len(), 1);
     assert_eq!(ev[0].url, "http://i.imgur.com/ev.png");
@@ -74,7 +74,7 @@ fn test_extract_background_internal() {
             "foreground_objects": []
         }]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let bgs: Vec<_> = assets.iter().filter(|a| a.asset_type == "background").collect();
     assert_eq!(bgs.len(), 1);
     assert!(bgs[0].url.contains("cinematiques/Court.jpg"));
@@ -90,7 +90,7 @@ fn test_extract_background_external() {
             "foreground_objects": []
         }]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let bgs: Vec<_> = assets.iter().filter(|a| a.asset_type == "background").collect();
     assert_eq!(bgs.len(), 1);
     assert_eq!(bgs[0].url, "http://i.imgur.com/bg.png");
@@ -102,7 +102,7 @@ fn test_extract_music_internal_with_colon() {
     let data = json!({
         "music": [null, {"path": "Ace Attorney Investigations : ME2/song", "external": false}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let music: Vec<_> = assets.iter().filter(|a| a.asset_type == "music").collect();
     assert_eq!(music.len(), 1);
     assert!(music[0].local_path.contains("Investigations _ ME2"));
@@ -114,7 +114,7 @@ fn test_extract_music_external() {
     let data = json!({
         "music": [null, {"path": "http://example.com/song.mp3", "external": true}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let music: Vec<_> = assets.iter().filter(|a| a.asset_type == "music").collect();
     assert_eq!(music.len(), 1);
     assert_eq!(music[0].url, "http://example.com/song.mp3");
@@ -127,7 +127,7 @@ fn test_extract_default_sprites() {
         "profiles": [null, {"base": "Phoenix", "icon": "", "custom_sprites": []}],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -3}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let talking: Vec<_> = assets.iter().filter(|a| a.asset_type == "default_sprite_talking").collect();
     let still: Vec<_> = assets.iter().filter(|a| a.asset_type == "default_sprite_still").collect();
     assert_eq!(talking.len(), 1);
@@ -140,7 +140,7 @@ fn test_extract_default_sprites() {
 #[test]
 fn test_extract_voices() {
     let data = json!({});
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let voices: Vec<_> = assets.iter().filter(|a| a.asset_type == "voice").collect();
     assert_eq!(voices.len(), 9);
     assert!(voices.iter().all(|v| v.is_default));
@@ -155,7 +155,7 @@ fn test_extract_deduplicates() {
             {"base": "Phoenix", "icon": "", "custom_sprites": []}
         ]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let icons: Vec<_> = assets.iter().filter(|a| a.asset_type == "profile_icon").collect();
     assert_eq!(icons.len(), 1);
 }
@@ -221,7 +221,7 @@ fn test_extract_psyche_locks() {
             "dialogues": [{"locks": {"locks_to_display": 3}}]
         }]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let locks: Vec<_> = assets.iter().filter(|a| a.asset_type == "psyche_lock").collect();
     assert_eq!(locks.len(), 4);
     let names: Vec<&str> = locks.iter().map(|l| l.local_path.as_str()).collect();
@@ -239,7 +239,7 @@ fn test_extract_no_psyche_locks_when_absent() {
             "dialogues": [{"locks": null}]
         }]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let locks: Vec<_> = assets.iter().filter(|a| a.asset_type == "psyche_lock").collect();
     assert_eq!(locks.len(), 0);
 }
@@ -255,7 +255,7 @@ fn test_extract_foreground_objects() {
             "foreground_objects": [{"image": "http://i.imgur.com/fg.gif", "external": true}]
         }]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let fg: Vec<_> = assets.iter().filter(|a| a.asset_type == "foreground_object").collect();
     assert_eq!(fg.len(), 1);
     assert_eq!(fg[0].url, "http://i.imgur.com/fg.gif");
@@ -269,7 +269,7 @@ fn test_internal_music_with_colon_gets_sanitized_local_path() {
     let data = json!({
         "music": [null, {"path": "Ace Attorney Investigations : Miles Edgeworth 2/117 Lamenting People", "external": false}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let music: Vec<_> = assets.iter().filter(|a| a.asset_type == "music").collect();
     assert_eq!(music.len(), 1);
     assert_eq!(
@@ -289,7 +289,7 @@ fn test_default_sprite_paths_correct_format() {
             {"profile_id": 1, "sprite_id": -5}
         ]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
 
     let talking: Vec<_> = assets.iter().filter(|a| a.asset_type == "default_sprite_talking").collect();
     assert_eq!(talking.len(), 1);
@@ -315,7 +315,7 @@ fn test_extract_multiple_sprites_same_character() {
             {"characters": [{"profile_id": 1, "sprite_id": -1}]}
         ]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let talking: Vec<_> = assets.iter().filter(|a| a.asset_type == "default_sprite_talking").collect();
     assert_eq!(talking.len(), 2);
     let paths: Vec<&str> = talking.iter().map(|t| t.local_path.as_str()).collect();
@@ -331,7 +331,7 @@ fn test_extract_sprites_skips_inconnu_base() {
         "profiles": [null, {"base": "Inconnu", "icon": "", "custom_sprites": []}],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -2}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let default_sprites: Vec<_> = assets.iter()
         .filter(|a| a.asset_type.starts_with("default_sprite"))
         .collect();
@@ -346,7 +346,7 @@ fn test_extract_sprites_skips_empty_base() {
         "profiles": [null, {"base": "", "icon": "", "custom_sprites": []}],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -1}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let default_sprites: Vec<_> = assets.iter()
         .filter(|a| a.asset_type.starts_with("default_sprite"))
         .collect();
@@ -362,7 +362,7 @@ fn test_extract_sprites_no_startup_without_data() {
         "profiles": [null, {"base": "Phoenix", "icon": "", "custom_sprites": []}],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -1}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), dir.path());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::load(dir.path()));
     let startup: Vec<_> = assets.iter()
         .filter(|a| a.asset_type == "default_sprite_startup")
         .collect();
@@ -391,7 +391,7 @@ var default_profiles_startup = {"Phoenix/3": 880};"#,
             {"characters": [{"profile_id": 1, "sprite_id": -3}]}
         ]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), dir.path());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::load(dir.path()));
     let startup: Vec<_> = assets.iter()
         .filter(|a| a.asset_type == "default_sprite_startup")
         .collect();
@@ -407,7 +407,7 @@ fn test_extract_no_sprites_for_custom_only() {
         ]}],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": 1}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let default_sprites: Vec<_> = assets.iter()
         .filter(|a| a.asset_type.starts_with("default_sprite"))
         .collect();
@@ -427,7 +427,7 @@ fn test_extract_deduplicates_same_sprite_across_frames() {
             {"characters": [{"profile_id": 1, "sprite_id": -2}]}
         ]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let talking: Vec<_> = assets.iter()
         .filter(|a| a.asset_type == "default_sprite_talking")
         .collect();
@@ -442,7 +442,7 @@ fn test_extract_deduplicates_same_sprite_across_frames() {
 #[test]
 fn test_extract_empty_trial_data() {
     let data = json!({});
-    let assets = extract_asset_urls(&data, &test_site_paths(), &test_engine_dir());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::default());
     let non_voice: Vec<_> = assets.iter()
         .filter(|a| a.asset_type != "voice")
         .collect();
@@ -463,7 +463,7 @@ fn test_extract_sprites_skips_out_of_range_default_sprite() {
         "profiles": [null, {"base": "TestChar", "icon": "", "custom_sprites": []}],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -8}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), engine.path());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::load(engine.path()));
     let talking: Vec<_> = assets.iter()
         .filter(|a| a.asset_type == "default_sprite_talking")
         .collect();
@@ -481,7 +481,7 @@ fn test_extract_sprites_includes_in_range_default_sprite() {
         "profiles": [null, {"base": "TestChar", "icon": "", "custom_sprites": []}],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -3}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), engine.path());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::load(engine.path()));
     let talking: Vec<_> = assets.iter()
         .filter(|a| a.asset_type == "default_sprite_talking")
         .collect();
@@ -499,7 +499,7 @@ fn test_extract_sprites_skips_unknown_base_not_in_profiles_nb() {
         "profiles": [null, {"base": "UnknownChar", "icon": "", "custom_sprites": []}],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -1}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), engine.path());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::load(engine.path()));
     let default_sprites: Vec<_> = assets.iter()
         .filter(|a| a.asset_type.starts_with("default_sprite"))
         .collect();
@@ -526,7 +526,7 @@ fn test_custom_sprite_same_url_as_default_gets_default_path() {
         }],
         "frames": [null, {"characters": [{"profile_id": 1, "sprite_id": -1}]}]
     });
-    let assets = extract_asset_urls(&data, &test_site_paths(), engine.path());
+    let assets = extract_asset_urls(&data, &test_site_paths(), &DefaultData::load(engine.path()));
     let talking_url_suffix = "persos/TestChar/1.gif";
     let matching: Vec<_> = assets.iter()
         .filter(|a| a.url.contains(talking_url_suffix))

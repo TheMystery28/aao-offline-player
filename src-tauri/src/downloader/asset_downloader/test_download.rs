@@ -1,6 +1,7 @@
 use super::*;
 use crate::downloader::AssetRef;
 use reqwest::Client;
+use std::io::{Read, Write};
 
 
 // --- DownloadEvent serialization regression tests ---
@@ -828,4 +829,122 @@ fn test_imgur_removed_hash_constant() {
     assert_eq!(bytes.len(), 503, "imgur removed.png should be exactly 503 bytes");
     let hash = xxhash_rust::xxh3::xxh3_64(bytes);
     assert_eq!(hash, 0x38da9bd2e10a4bc8, "IMGUR_REMOVED_HASH must match imgur_removed.png");
+}
+
+// --- Streaming download pins + tests ---
+
+#[tokio::test]
+async fn test_download_streams_large_file() {
+    let server = MockServer::start().await;
+    let body = vec![0xABu8; 1024 * 1024 + 13];
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body.clone(), "audio/mpeg"))
+        .expect(1)
+        .mount(&server).await;
+
+    let client = test_client();
+    let dir = tempfile::tempdir().unwrap();
+    let log = DownloadLog::new(&dir.path().join("dl.log")).unwrap();
+    let url = format!("{}/song.mp3", server.uri());
+
+    let asset = download_single_asset(
+        &client, &url, &dir.path().to_path_buf(), "song.mp3", &log, "music",
+    ).await.unwrap();
+
+    assert_eq!(asset.size, body.len() as u64);
+    assert_eq!(asset.content_hash, xxhash_rust::xxh3::xxh3_64(&body));
+    let saved = dir.path().join("song.mp3");
+    assert_eq!(std::fs::read(&saved).unwrap(), body);
+}
+
+/// A raw TCP server that declares Content-Length: 1000 but sends only 500
+/// bytes and closes — the connection is cut mid-body, which hyper surfaces
+/// as a stream error. The downloader must error out and leave no files behind.
+#[tokio::test]
+async fn test_download_truncated_body_cleans_part_file() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let body = vec![0xDDu8; 500];
+
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let mut buf = [0u8; 2048];
+            let _ = stream.read(&mut buf); // read the request head
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n";
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&body); // 500 of the declared 1000
+            // dropping the stream closes the connection mid-body
+        }
+    });
+
+    let client = test_client();
+    let dir = tempfile::tempdir().unwrap();
+    let log = DownloadLog::new(&dir.path().join("dl.log")).unwrap();
+    let url = format!("http://127.0.0.1:{}/trunc.mp3", port);
+
+    let err = download_single_asset(
+        &client, &url, &dir.path().to_path_buf(), "trunc.mp3", &log, "music",
+    ).await.unwrap_err();
+
+    assert!(!err.to_string().is_empty(), "download must fail");
+    assert!(
+        !dir.path().join("trunc.mp3.part").exists(),
+        "no .part file may remain after a truncated download"
+    );
+    assert!(
+        !dir.path().join("trunc.mp3").exists(),
+        "no final file may exist after a truncated download"
+    );
+}
+
+#[test]
+fn test_body_too_large_guard() {
+    assert!(!body_too_large(None, 0));
+    assert!(!body_too_large(None, 1_000_000), "no declared length → never 'too large'");
+    assert!(!body_too_large(Some(1000), 999));
+    assert!(!body_too_large(Some(1000), 1000), "exactly equal is not too large");
+    assert!(body_too_large(Some(1000), 1001));
+    assert!(body_too_large(Some(10), 1000));
+}
+
+#[tokio::test]
+async fn test_skip_existing_large_file_returns_zero_hash() {
+    let server = MockServer::start().await;
+    let body = vec![0xEEu8; 16 * 1024 * 1024]; // > SKIP_HASH_LIMIT
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body.clone(), "audio/mpeg"))
+        .mount(&server).await;
+
+    let client = test_client();
+    let dir = tempfile::tempdir().unwrap();
+    // Pre-create the destination with the same content — the download is skipped.
+    // An internal-style local_path controls the exact destination (external
+    // assets get hashed filenames and would never match a pre-created file).
+    let assets_dir = dir.path().join("assets");
+    std::fs::create_dir_all(&assets_dir).unwrap();
+    std::fs::write(assets_dir.join("track-hash.mp3"), &body).unwrap();
+
+    let url = format!("{}/track-hash.mp3", server.uri());
+    let asset = AssetRef {
+        url: url.clone(),
+        asset_type: "music".into(),
+        is_default: false,
+        local_path: "assets/track-hash.mp3".to_string(),
+    };
+    let tx = tauri::ipc::Channel::new(|_| Ok(()));
+    let cancellation = crate::downloader::cancel::Cancellation::new();
+    let snapshot = cancellation.snapshot();
+
+    let result = download_assets(
+        &client, vec![asset], &dir.path().to_path_buf(), &dir.path().to_path_buf(),
+        None, &tx, 1, &cancellation, snapshot,
+    ).await.unwrap();
+
+    assert_eq!(result.downloaded.len(), 1);
+    assert_eq!(result.downloaded[0].size, body.len() as u64);
+    assert_eq!(
+        result.downloaded[0].content_hash, 0,
+        "large skipped files must not be hashed (sentinel 0)"
+    );
 }

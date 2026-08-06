@@ -14,13 +14,18 @@ use crate::error::AppError;
 use super::{CaseInfo, DownloaderError, SitePaths, AAONLINE_BASE};
 
 /// Quick check if aaonline.fr is reachable (HEAD with short timeout).
+/// Uses the shared client — no per-call client construction.
 pub async fn is_aaonline_reachable(client: &Client) -> bool {
-    let check_client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_else(|_| client.clone());
+    is_aaonline_reachable_from(client, AAONLINE_BASE).await
+}
 
-    match check_client.head(AAONLINE_BASE).send().await {
+pub(crate) async fn is_aaonline_reachable_from(client: &Client, base: &str) -> bool {
+    match client
+        .head(base)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+    {
         Ok(resp) => resp.status().is_success() || resp.status().is_redirection(),
         Err(_) => false,
     }
@@ -40,6 +45,28 @@ fn unescape_js_string(s: &str) -> String {
                 Some('n') => result.push('\n'),
                 Some('r') => result.push('\r'),
                 Some('t') => result.push('\t'),
+                Some('u') => {
+                    // \uXXXX — exactly 4 hex digits; anything else is preserved literally
+                    let mut buf = ['\0'; 4];
+                    let mut n = 0;
+                    while n < 4 {
+                        match chars.next() {
+                            Some(c) => { buf[n] = c; n += 1; }
+                            None => break,
+                        }
+                    }
+                    let hex: String = buf[..n].iter().collect();
+                    if n == 4 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                        match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                            Some(ch) => result.push(ch),
+                            None => result.push('\u{FFFD}'),
+                        }
+                    } else {
+                        result.push('\\');
+                        result.push('u');
+                        result.push_str(&hex);
+                    }
+                }
                 Some(other) => {
                     result.push('\\');
                     result.push(other);
@@ -157,7 +184,11 @@ pub(crate) fn parse_bridge_js_response(text: &str) -> Result<SitePaths, Download
 
 /// Fetch site paths (cfg) from bridge.js.php on aaonline.fr.
 pub async fn fetch_site_paths(client: &Client) -> Result<SitePaths, AppError> {
-    let url = format!("{}/bridge.js.php", AAONLINE_BASE);
+    fetch_site_paths_from(client, AAONLINE_BASE).await
+}
+
+pub(crate) async fn fetch_site_paths_from(client: &Client, base: &str) -> Result<SitePaths, AppError> {
+    let url = format!("{}/bridge.js.php", base);
     let text = client
         .get(&url)
         .send()
@@ -166,7 +197,6 @@ pub async fn fetch_site_paths(client: &Client) -> Result<SitePaths, AppError> {
         .text()
         .await
         .map_err(|e| format!("Failed to read bridge.js.php response: {}", e))?;
-
     Ok(parse_bridge_js_response(&text)?)
 }
 
@@ -226,7 +256,15 @@ pub async fn fetch_case(
     client: &Client,
     case_id: u32,
 ) -> Result<(CaseInfo, Value, String, String), AppError> {
-    let url = format!("{}/trial.js.php?trial_id={}", AAONLINE_BASE, case_id);
+    fetch_case_from(client, &AAONLINE_BASE, case_id).await
+}
+
+pub(crate) async fn fetch_case_from(
+    client: &Client,
+    base: &str,
+    case_id: u32,
+) -> Result<(CaseInfo, Value, String, String), AppError> {
+    let url = format!("{}/trial.js.php?trial_id={}", base, case_id);
     let text = client
         .get(&url)
         .send()
@@ -299,5 +337,39 @@ var initial_trial_data = JSON.parse("{\"profiles\":[0]}");
         let (info, _, _, _) = parse_trial_js_response(response, 0).unwrap();
         assert_eq!(info.id, 99);
         assert!(info.title.contains("Turnabout"));
+    }
+
+    #[tokio::test]
+    async fn test_is_aaonline_reachable_true_on_success() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("HEAD"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&server).await;
+        let client = reqwest::Client::new();
+        assert!(is_aaonline_reachable_from(&client, &server.uri()).await);
+    }
+
+    #[tokio::test]
+    async fn test_is_aaonline_reachable_false_on_error() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("HEAD"))
+            .respond_with(wiremock::ResponseTemplate::new(500))
+            .mount(&server).await;
+        let client = reqwest::Client::new();
+        assert!(!is_aaonline_reachable_from(&client, &server.uri()).await);
+    }
+
+    #[test]
+    fn test_unescape_unicode_escapes() {
+        assert_eq!(unescape_js_string(r#"\u0041"#), "A");
+        assert_eq!(unescape_js_string(r#"\u00e9"#), "é");
+        assert_eq!(unescape_js_string(r#"\u{41}"#), r#"\u{41}"#, "brace syntax is not JSON escaping — preserved");
+    }
+
+    #[test]
+    fn test_unescape_invalid_unicode_preserved() {
+        assert_eq!(unescape_js_string(r#"\uZZZZ"#), r#"\uZZZZ"#);
+        assert_eq!(unescape_js_string(r#"\u12"#), r#"\u12"#);
+        assert_eq!(unescape_js_string(r#"\u"#), r#"\u"#);
     }
 }

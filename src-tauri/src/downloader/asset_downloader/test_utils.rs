@@ -324,3 +324,11 @@ mod proptests {
         }
     }
 }
+
+#[test]
+fn test_should_hash_skipped_threshold() {
+    assert!(should_hash_skipped(0), "empty/missing sizes are cheap");
+    assert!(should_hash_skipped(SKIP_HASH_LIMIT));
+    assert!(!should_hash_skipped(SKIP_HASH_LIMIT + 1));
+    assert!(!should_hash_skipped(50 * 1024 * 1024), "50MB cached tracks must not be re-hashed");
+}

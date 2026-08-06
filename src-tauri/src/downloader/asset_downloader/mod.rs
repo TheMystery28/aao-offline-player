@@ -10,13 +10,15 @@ mod utils;
 pub use download::download_assets;
 // Used by test submodules via `use super::*`
 #[cfg(test)]
-use download::{download_single_asset, download_with_retry, PER_ASSET_TIMEOUT};
+use download::{body_too_large, download_single_asset, download_with_retry, PER_ASSET_TIMEOUT};
 #[cfg(test)]
 use log::DownloadLog;
 #[cfg(test)]
 use url_encoding::encode_url;
 #[cfg(test)]
-use utils::{check_skip_existing, generate_filename};
+use utils::{check_skip_existing, generate_filename, should_hash_skipped};
+#[cfg(test)]
+use utils::SKIP_HASH_LIMIT;
 
 use serde::Serialize;
 

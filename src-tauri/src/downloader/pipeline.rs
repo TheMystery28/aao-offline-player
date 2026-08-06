@@ -36,12 +36,15 @@ pub fn extract_all_assets(
     site_paths: &SitePaths,
     engine_dir: &Path,
 ) -> Vec<AssetRef> {
-    let mut assets = super::asset_resolver::extract_asset_urls(trial_data, site_paths, engine_dir);
+    let default_data = super::default_data::DefaultData::for_engine(engine_dir);
+    let mut assets =
+        super::asset_resolver::extract_asset_urls(trial_data, site_paths, &default_data);
 
     let default_sprites = super::asset_resolver::extract_default_sprite_assets(
-        trial_data, site_paths, engine_dir,
+        trial_data, site_paths, &default_data,
     );
-    let default_places = super::asset_resolver::extract_default_place_assets(engine_dir, site_paths);
+    let default_places =
+        super::asset_resolver::extract_default_place_assets(&default_data, site_paths);
 
     let existing_urls: HashSet<String> = assets.iter().map(|a| a.url.clone()).collect();
     for sprite in default_sprites {
@@ -107,15 +110,20 @@ pub fn extract_and_prepare_assets(
 }
 
 /// Save trial_info.json to a case directory.
+/// Writes the raw JSON string from the site verbatim (already valid JSON —
+/// no reparse, no pretty-print).
 pub fn save_trial_info(case_dir: &Path, info_json: &str) -> Result<(), AppError> {
-    let info_pretty: serde_json::Value = serde_json::from_str(info_json)
-        .map_err(|e| format!("Failed to reparse info JSON: {}", e))?;
-    fs::write(
-        case_dir.join("trial_info.json"),
-        serde_json::to_string_pretty(&info_pretty)
-            .map_err(|e| format!("Failed to serialize trial_info: {}", e))?,
-    )
-    .map_err(|e| format!("Failed to write trial_info.json: {}", e))?;
+    fs::write(case_dir.join("trial_info.json"), info_json)
+        .map_err(|e| format!("Failed to write trial_info.json: {}", e))?;
+    Ok(())
+}
+
+/// Write trial_data.json as compact JSON from an already-parsed Value.
+pub fn write_trial_data(case_dir: &Path, trial_data: &serde_json::Value) -> Result<(), AppError> {
+    let json = serde_json::to_string(trial_data)
+        .map_err(|e| format!("Failed to serialize trial_data: {}", e))?;
+    fs::write(case_dir.join("trial_data.json"), json)
+        .map_err(|e| format!("Failed to write trial_data.json: {}", e))?;
     Ok(())
 }
 
@@ -149,9 +157,11 @@ pub(crate) async fn download_single_case(
     cancellation: &super::cancel::Cancellation,
     snapshot: u64,
 ) -> Result<CaseManifest, AppError> {
-    // 1. Fetch case data
-    let (case_info, trial_data, info_json, data_json) =
-        super::case_fetcher::fetch_case(client, case_id).await?;
+    // 1. Fetch case data (may reuse the frontend pre-check payload)
+    let fetched = super::fetch_cache::fetch_case_cached(client, case_id).await?;
+    let case_info = fetched.case_info;
+    let trial_data = fetched.trial_data;
+    let info_json = fetched.info_json;
 
     // 2. Save trial_info.json
     let case_dir = data_dir.join("case").join(case_id.to_string());
@@ -185,16 +195,10 @@ pub(crate) async fn download_single_case(
     )
     .await?;
 
-    // 6. Rewrite external URLs in trial_data and save
-    let mut data_value: serde_json::Value = serde_json::from_str(&data_json)
-        .map_err(|e| format!("Failed to reparse data JSON: {}", e))?;
+    // 6. Rewrite external URLs in trial_data (already parsed) and save compact
+    let mut data_value = trial_data;
     super::asset_resolver::rewrite_external_urls(&mut data_value, case_id, &result.downloaded);
-    fs::write(
-        case_dir.join("trial_data.json"),
-        serde_json::to_string_pretty(&data_value)
-            .map_err(|e| format!("Failed to serialize trial_data: {}", e))?,
-    )
-    .map_err(|e| format!("Failed to write trial_data.json: {}", e))?;
+    write_trial_data(&case_dir, &data_value)?;
 
     // 7. Build and save manifest
     let mut manifest = super::manifest::build_manifest(
@@ -213,7 +217,7 @@ pub(crate) async fn download_single_case(
     // 8. Register downloaded assets in dedup index
     if let Some(ref index) = dedup_index {
         for asset in &result.downloaded {
-            if !asset.local_path.is_empty() {
+            if !asset.local_path.is_empty() && asset.content_hash != 0 {
                 let reg_path = if asset.local_path.starts_with("defaults/") {
                     asset.local_path.clone()
                 } else {
@@ -242,3 +246,28 @@ pub(crate) async fn download_single_case(
     Ok(manifest)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_save_trial_info_writes_raw_json_verbatim() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = r#"{"id":42,"title":"Raw Title"}"#;
+        save_trial_info(dir.path(), raw).unwrap();
+        let written = std::fs::read_to_string(dir.path().join("trial_info.json")).unwrap();
+        assert_eq!(written, raw, "raw JSON must be written verbatim (no pretty-print)");
+    }
+
+    #[test]
+    fn test_write_trial_data_is_compact() {
+        let dir = tempfile::tempdir().unwrap();
+        let value = serde_json::json!({"profiles": [0, {"base": "Phoenix"}], "frames": [0]});
+        let compact = serde_json::to_string(&value).unwrap();
+        super::write_trial_data(dir.path(), &value).unwrap();
+        let written = std::fs::read_to_string(dir.path().join("trial_data.json")).unwrap();
+        assert_eq!(written, compact, "trial_data.json must be compact JSON");
+        assert!(!written.contains('\n'), "no pretty-print newlines");
+    }
+}

@@ -1,5 +1,15 @@
 use xxhash_rust::xxh3::xxh3_64;
 
+/// Files at or below this size are hashed when skipped as already-downloaded.
+/// Larger files are skipped without hashing (sentinel `content_hash == 0`); the
+/// dedup index is backfilled later by `DedupIndex::scan_and_register`.
+pub const SKIP_HASH_LIMIT: u64 = 4 * 1024 * 1024;
+
+/// Whether a skipped existing file is cheap enough to hash for the dedup index.
+pub fn should_hash_skipped(size: u64) -> bool {
+    size <= SKIP_HASH_LIMIT
+}
+
 /// Check if a file already exists locally and should be skipped.
 /// Returns `Some(size)` if the file exists and has content (skip download),
 /// or `None` if the file is missing or empty (proceed with download).

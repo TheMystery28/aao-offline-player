@@ -469,3 +469,34 @@ fn test_shared_index_reused_across_passes() {
     // Reopening while the shared instance is alive must fail (single-instance contract)
     assert!(DedupIndex::open(dir.path()).is_err());
 }
+
+#[test]
+fn test_scan_and_register_cases_skips_part_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let case_dir = dir.path().join("case/5/assets");
+    std::fs::create_dir_all(&case_dir).unwrap();
+    std::fs::write(case_dir.join("song.mp3.part"), b"partial").unwrap();
+    std::fs::write(case_dir.join("song.mp3"), b"complete").unwrap();
+
+    let index = DedupIndex::open(dir.path()).unwrap();
+    let count = index.scan_and_register_cases(dir.path()).unwrap();
+    assert_eq!(count, 1, "only the complete file is indexed");
+}
+
+#[test]
+fn test_remove_part_files_deletes_strays() {
+    let dir = tempfile::tempdir().unwrap();
+    let assets = dir.path().join("case/5/assets");
+    let defaults = dir.path().join("defaults/music/Game");
+    std::fs::create_dir_all(&assets).unwrap();
+    std::fs::create_dir_all(&defaults).unwrap();
+    std::fs::write(assets.join("a.mp3.part"), b"partial").unwrap();
+    std::fs::write(assets.join("a.mp3"), b"complete").unwrap();
+    std::fs::write(defaults.join("b.ogg.part"), b"partial").unwrap();
+
+    let removed = crate::downloader::cleanup::remove_part_files(dir.path());
+    assert_eq!(removed, 2, "both strays must be removed");
+    assert!(!assets.join("a.mp3.part").exists());
+    assert!(!defaults.join("b.ogg.part").exists());
+    assert!(assets.join("a.mp3").exists(), "complete files must survive");
+}

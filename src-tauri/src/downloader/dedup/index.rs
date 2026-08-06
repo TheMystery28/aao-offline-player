@@ -187,6 +187,12 @@ impl DedupIndex {
             if path.is_dir() {
                 Self::collect_unregistered(&path, base_dir, db, pending)?;
             } else if path.is_file() {
+                if path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(".part"))
+                {
+                    continue; // crash leftovers are not assets
+                }
                 let relative = match path.strip_prefix(base_dir) {
                     Ok(r) => normalize_path(&r.to_string_lossy()),
                     Err(_) => continue,
@@ -261,6 +267,12 @@ impl DedupIndex {
             // Batch: collect all existing keys in one read transaction
             let file_entries: Vec<_> = files.flatten()
                 .filter(|e| e.path().is_file())
+                .filter(|e| {
+                    !e.path()
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.ends_with(".part"))
+                })
                 .collect();
             let existing_keys: std::collections::HashSet<String> = {
                 let txn = self.db.begin_read()?;

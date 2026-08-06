@@ -1,20 +1,13 @@
 use super::*;
-use super::defaults::parse_js_object_assignment;
 use crate::downloader::asset_downloader::DownloadedAsset;
 use crate::downloader::SitePaths;
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::collections::HashSet;
 
 mod test_helpers;
 mod test_extractors;
 mod test_rewriter;
 mod test_defaults;
-
-/// Dummy engine dir with no default_data.js -- startup sprites won't be generated.
-pub(super) fn test_engine_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("test_dummy_engine")
-}
 
 pub(super) fn test_site_paths() -> SitePaths {
     SitePaths {

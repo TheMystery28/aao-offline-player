@@ -1,64 +1,10 @@
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::sync::LazyLock;
+use std::collections::HashSet;
 
-use regex::Regex;
 use serde_json::Value;
 
+use super::super::default_data::DefaultData;
 use super::super::{AssetRef, SitePaths};
 use super::helpers::*;
-
-/// Parse `default_profiles_nb` from engine/Javascript/default_data.js.
-/// Returns a map of character base name -> number of default sprites.
-pub(super) fn parse_default_profiles_nb(engine_dir: &Path) -> HashMap<String, u32> {
-    let path = engine_dir.join("Javascript").join("default_data.js");
-    let content = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return HashMap::new(),
-    };
-
-    parse_js_object_assignment(&content, "default_profiles_nb")
-        .and_then(|json_str| serde_json::from_str::<HashMap<String, u32>>(&json_str).ok())
-        .unwrap_or_default()
-}
-
-/// Parse `default_profiles_startup` from engine/Javascript/default_data.js.
-/// Returns the set of "Base/index" keys that have startup animations.
-pub(super) fn parse_default_profiles_startup(engine_dir: &Path) -> HashSet<String> {
-    let path = engine_dir.join("Javascript").join("default_data.js");
-    let content = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return HashSet::new(),
-    };
-
-    parse_js_object_assignment(&content, "default_profiles_startup")
-        .and_then(|json_str| serde_json::from_str::<HashMap<String, Value>>(&json_str).ok())
-        .map(|map| map.keys().cloned().collect())
-        .unwrap_or_default()
-}
-
-/// Extract the JSON object from a `var name = {...};` assignment in JS source.
-pub(super) fn parse_js_object_assignment(source: &str, var_name: &str) -> Option<String> {
-    let prefix = format!("var {} = ", var_name);
-    let start = source.find(&prefix)?;
-    let rest = &source[start + prefix.len()..];
-    // Find the matching closing brace
-    let obj_start = rest.find('{')?;
-    let mut depth = 0;
-    for (i, ch) in rest[obj_start..].char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(rest[obj_start..obj_start + i + 1].to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
 
 /// Extract default sprite assets for characters used in the trial.
 /// Reads `default_profiles_nb` and `default_profiles_startup` from `default_data.js`
@@ -67,11 +13,10 @@ pub(super) fn parse_js_object_assignment(source: &str, var_name: &str) -> Option
 pub fn extract_default_sprite_assets(
     trial_data: &Value,
     site_paths: &SitePaths,
-    engine_dir: &Path,
+    default_data: &DefaultData,
 ) -> Vec<AssetRef> {
-    let profiles_nb = parse_default_profiles_nb(engine_dir);
-    let profiles_startup = parse_default_profiles_startup(engine_dir);
-
+    let profiles_nb = &default_data.profiles_nb;
+    let profiles_startup = &default_data.profiles_startup;
     if profiles_nb.is_empty() {
         return Vec::new();
     }
@@ -136,12 +81,6 @@ pub fn extract_default_sprite_assets(
     assets
 }
 
-/// Pre-compiled regex for default place asset paths in default_data.js.
-static DEFAULT_PLACES_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"defaults/images/defaultplaces/(backgrounds|foreground_objects)/([^"]+)"#)
-        .expect("DEFAULT_PLACES_PATH_RE pattern is valid")
-});
-
 /// Extract default place assets (backgrounds and foreground objects) from `default_data.js`.
 ///
 /// Default places (courtrooms, lobbies, detention centers, etc.) are built-in to the player
@@ -149,15 +88,9 @@ static DEFAULT_PLACES_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// `default_data.js` with paths like `defaults/images/defaultplaces/backgrounds/pw_courtroom.jpg`.
 /// The downloader must fetch these from the AAO server and store them locally.
 pub fn extract_default_place_assets(
-    engine_dir: &Path,
+    default_data: &DefaultData,
     site_paths: &SitePaths,
 ) -> Vec<AssetRef> {
-    let path = engine_dir.join("Javascript").join("default_data.js");
-    let content = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-
     let mut assets: Vec<AssetRef> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
@@ -167,16 +100,12 @@ pub fn extract_default_place_assets(
     let dp_server_bg = format!("{}backgrounds/", site_paths.defaultplaces_path());
     let dp_server_fg = format!("{}foreground_objects/", site_paths.defaultplaces_path());
 
-    for cap in DEFAULT_PLACES_PATH_RE.captures_iter(&content) {
-        let category = &cap[1]; // "backgrounds" or "foreground_objects"
-        let filename = &cap[2]; // e.g., "pw_courtroom.jpg"
-
-        let (server_dir, local_dir, asset_type) = match category {
+    for (category, filename) in &default_data.place_files {
+        let (server_dir, local_dir, asset_type) = match category.as_str() {
             "backgrounds" => (&dp_server_bg, LocalPaths::defaultplaces_bg(), "default_place_bg"),
             "foreground_objects" => (&dp_server_fg, LocalPaths::defaultplaces_fg(), "default_place_fg"),
             _ => continue,
         };
-
         add_internal(
             &mut assets, &mut seen,
             server_dir, local_dir,

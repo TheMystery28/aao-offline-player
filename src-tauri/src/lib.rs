@@ -242,6 +242,11 @@ pub fn run() {
                 .build()
                 .unwrap_or_default();
 
+            let removed_parts = downloader::cleanup::remove_part_files(&data_dir);
+            if removed_parts > 0 {
+                log::info!("Removed {} leftover .part file(s)", removed_parts);
+            }
+
             let dedup_index = match downloader::dedup::DedupIndex::open(&data_dir) {
                 Ok(idx) => {
                     log::info!("Dedup index opened");

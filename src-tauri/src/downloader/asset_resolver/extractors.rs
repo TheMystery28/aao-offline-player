@@ -1,9 +1,8 @@
 use serde_json::Value;
 use std::collections::HashSet;
-use std::path::Path;
 
+use super::super::default_data::DefaultData;
 use super::super::{AssetRef, SitePaths};
-use super::defaults::{parse_default_profiles_nb, parse_default_profiles_startup};
 use super::helpers::*;
 
 pub(super) fn extract_profiles(
@@ -277,7 +276,7 @@ pub(super) fn extract_sprites_from_frames(
     seen: &mut HashSet<String>,
     data: &Value,
     paths: &SitePaths,
-    engine_dir: &Path,
+    default_data: &DefaultData,
 ) {
     let frames = match data["frames"].as_array() {
         Some(arr) => arr,
@@ -286,8 +285,8 @@ pub(super) fn extract_sprites_from_frames(
     let profiles = data["profiles"].as_array();
 
     // Load sprite count and startup animation lookup to avoid downloading non-existent sprites
-    let profiles_nb = parse_default_profiles_nb(engine_dir);
-    let profiles_startup = parse_default_profiles_startup(engine_dir);
+    let profiles_nb = &default_data.profiles_nb;
+    let profiles_startup = &default_data.profiles_startup;
 
     let mut used_sprites: HashSet<(i64, i64)> = HashSet::new();
 

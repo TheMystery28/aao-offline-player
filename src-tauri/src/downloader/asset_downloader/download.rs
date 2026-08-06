@@ -6,11 +6,12 @@ use std::time::Duration;
 use futures::stream::{self, StreamExt};
 use reqwest::Client;
 use tauri::ipc::Channel;
+use tokio::io::AsyncWriteExt;
 
 use crate::error::AppError;
 use super::log::DownloadLog;
 use super::url_encoding::encode_url;
-use super::utils::{check_skip_existing, generate_filename};
+use super::utils::{check_skip_existing, generate_filename, should_hash_skipped};
 use super::{DownloadEvent, DownloadResult, DownloadedAsset};
 use crate::downloader::cancel::Cancellation;
 use crate::downloader::dedup::{DedupIndex, check_and_promote};
@@ -21,6 +22,11 @@ const DEFAULT_CONCURRENCY: usize = 3;
 const MAX_RETRIES: u32 = 3;
 const BASE_RETRY_DELAY: Duration = Duration::from_secs(2);
 pub(super) const PER_ASSET_TIMEOUT: Duration = Duration::from_secs(15);
+/// Timeout for the full body download of the main request. Deliberately
+/// generous: reqwest's `.timeout()` covers the ENTIRE response body, and
+/// 15s killed legitimate slow downloads (regression observed in the first
+/// execution). Probes keep the short 15s timeout.
+pub(super) const DOWNLOAD_BODY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Download assets with progress reporting and retry logic.
 /// - Assets with `local_path` set are saved to `engine_dir/{local_path}` (internal AAO assets).
@@ -124,13 +130,18 @@ pub async fn download_assets(
                             elapsed_ms: start_time.elapsed().as_millis() as u64,
                         })
                         .ok();
-                    // Compute hash from existing file for accurate dedup index.
-                    // If the file is a VFS pointer, resolve to the real target before hashing.
-                    let file_path = save_dir.join(&relative_path);
-                    let hash_path = crate::downloader::vfs::resolve_path(&file_path, &save_dir, &save_dir);
-                    let content_hash = std::fs::read(&hash_path)
-                        .map(|bytes| xxhash_rust::xxh3::xxh3_64(&bytes))
-                        .unwrap_or(0);
+                    // Hash only cheap files (VFS pointers are tiny; large cached
+                    // tracks are backfilled later by scan_and_register).
+                    let content_hash = if should_hash_skipped(size) {
+                        let file_path = save_dir.join(&relative_path);
+                        let hash_path =
+                            crate::downloader::vfs::resolve_path(&file_path, &save_dir, &save_dir);
+                        std::fs::read(&hash_path)
+                            .map(|bytes| xxhash_rust::xxh3::xxh3_64(&bytes))
+                            .unwrap_or(0)
+                    } else {
+                        0
+                    };
                     return Ok(DownloadedAsset {
                         original_url: url,
                         local_path: relative_path,
@@ -142,7 +153,9 @@ pub async fn download_assets(
                 match download_with_retry(&client, &url, &save_dir, &relative_path, &log, &asset_type).await {
                     Ok(mut result) => {
                         // Post-download dedup: check if identical content already exists
+                        // (skipped, content_hash == 0 → nothing to dedup/register)
                         if let Some(idx) = dedup_index {
+                            if result.content_hash != 0 {
                             if let Some(existing) = check_and_promote(
                                 &engine, result.content_hash, idx, None,
                             ) {
@@ -186,6 +199,7 @@ pub async fn download_assets(
                                 let _ = idx.register(
                                     &result.local_path, result.size, result.content_hash,
                                 );
+                            }
                             }
                         }
 
@@ -378,49 +392,11 @@ pub(crate) async fn download_single_asset(
         }
     }
 
-    // Capture content-length for verification after download
+    // Capture content-length for verification during streaming
     let expected_len = response.content_length();
-
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read body: {}", e))?;
-
-    if bytes.is_empty() {
-        log.log(&format!("  EMPTY response body for {}", url));
-        return Err("Empty response body".to_string().into());
-    }
-
-    // Content-Length verification: detect truncated downloads
-    if let Some(expected) = expected_len {
-        if bytes.len() as u64 != expected {
-            log.log(&format!(
-                "  TRUNCATED: expected {} bytes, got {} for {}",
-                expected, bytes.len(), url
-            ));
-            return Err(format!("Truncated download: expected {} bytes, got {}", expected, bytes.len()).into());
-        }
-    }
-
-    let content_hash = xxhash_rust::xxh3::xxh3_64(&bytes);
-
-    // Reject imgur's "removed" placeholder (503 bytes, served with HTTP 200 for dead image URLs).
-    const IMGUR_REMOVED_HASH: u64 = 0x38da9bd2e10a4bc8;
-    if content_hash == IMGUR_REMOVED_HASH {
-        log.log(&format!("  IMGUR_REMOVED detected for {}", url));
-        return Err("Image has been removed from imgur".to_string().into());
-    }
-
     let file_path = base_dir.join(relative_path);
-    log.log(&format!(
-        "  SAVING {} bytes → {} (base={}, rel={})",
-        bytes.len(),
-        file_path.display(),
-        base_dir.display(),
-        relative_path
-    ));
+    let part_path = PathBuf::from(format!("{}.part", file_path.to_string_lossy()));
 
-    // Create parent directories
     if let Some(parent) = file_path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
@@ -430,14 +406,85 @@ pub(crate) async fn download_single_asset(
             })?;
     }
 
-    tokio::fs::write(&file_path, &bytes)
+    // Stream to a .part file, hashing incrementally, then rename atomically.
+    let mut file = tokio::fs::File::create(&part_path)
         .await
         .map_err(|e| {
-            log.log(&format!("  WRITE_ERR {} err={}", file_path.display(), e));
+            log.log(&format!("  CREATE_ERR {} err={}", part_path.display(), e));
+            format!("Failed to create file: {}", e)
+        })?;
+    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+    let mut stream = response.bytes_stream();
+    let mut written: u64 = 0;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| {
+            let _ = std::fs::remove_file(&part_path);
+            log.log(&format!("  STREAM_ERR err={}", e));
+            format!("Failed to read body: {}", e)
+        })?;
+        hasher.update(&chunk);
+        file.write_all(&chunk).await.map_err(|e| {
+            let _ = std::fs::remove_file(&part_path);
+            log.log(&format!("  WRITE_ERR err={}", e));
             format!("Failed to write file: {}", e)
         })?;
+        written += chunk.len() as u64;
+        if body_too_large(expected_len, written) {
+            let _ = std::fs::remove_file(&part_path);
+            log.log(&format!(
+                "  OVERSIZED: expected {} bytes, got >{} for {}",
+                expected_len.unwrap_or(0), written, url
+            ));
+            return Err(format!(
+                "Download exceeded Content-Length: expected {} bytes, got more",
+                expected_len.unwrap_or(0)
+            ).into());
+        }
+    }
 
-    // Verify the file was actually written
+    file.flush().await.map_err(|e| {
+        let _ = std::fs::remove_file(&part_path);
+        log.log(&format!("  FLUSH_ERR err={}", e));
+        format!("Failed to flush file: {}", e)
+    })?;
+    drop(file);
+
+    if written == 0 {
+        let _ = std::fs::remove_file(&part_path);
+        log.log(&format!("  EMPTY response body for {}", url));
+        return Err("Empty response body".to_string().into());
+    }
+
+    if let Some(expected) = expected_len {
+        if written != expected {
+            let _ = std::fs::remove_file(&part_path);
+            log.log(&format!(
+                "  TRUNCATED: expected {} bytes, got {} for {}",
+                expected, written, url
+            ));
+            return Err(format!("Truncated download: expected {} bytes, got {}", expected, written).into());
+        }
+    }
+
+    let content_hash = hasher.digest();
+
+    // Reject imgur's "removed" placeholder (503 bytes, served with HTTP 200 for dead image URLs).
+    const IMGUR_REMOVED_HASH: u64 = 0x38da9bd2e10a4bc8;
+    if content_hash == IMGUR_REMOVED_HASH {
+        let _ = std::fs::remove_file(&part_path);
+        log.log(&format!("  IMGUR_REMOVED detected for {}", url));
+        return Err("Image has been removed from imgur".to_string().into());
+    }
+
+    tokio::fs::rename(&part_path, &file_path)
+        .await
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&part_path);
+            log.log(&format!("  RENAME_ERR {} err={}", file_path.display(), e));
+            format!("Failed to finalize file: {}", e)
+        })?;
+
     let verify_exists = file_path.exists();
     let verify_size = if verify_exists {
         std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0)
@@ -452,9 +499,15 @@ pub(crate) async fn download_single_asset(
     Ok(DownloadedAsset {
         original_url: url.to_string(),
         local_path: relative_path.to_string(),
-        size: bytes.len() as u64,
+        size: written,
         content_hash,
     })
+}
+
+/// True when the number of streamed bytes already exceeds the declared
+/// Content-Length (guards against oversized or adversarial bodies).
+pub(super) fn body_too_large(expected: Option<u64>, written: u64) -> bool {
+    expected.is_some_and(|e| written > e)
 }
 
 /// Make an HTTP GET request with smart protocol handling:
@@ -530,6 +583,7 @@ pub(crate) async fn do_request(
     let response = client
         .get(request_url)
         .header("User-Agent", "AAO-Offline-Player/0.1")
+        .timeout(DOWNLOAD_BODY_TIMEOUT)
         .send()
         .await
         .map_err(|e| {
