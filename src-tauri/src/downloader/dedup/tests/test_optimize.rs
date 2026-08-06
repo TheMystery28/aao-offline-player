@@ -145,3 +145,12 @@ fn test_optimize_multiple_cases_share_same_promoted_default() {
     // The shared file should exist on disk
     assert!(data_dir.join(p800).is_file(), "Shared file should exist on disk");
 }
+
+#[test]
+fn test_optimize_all_cases_with_shared_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = DedupIndex::open(dir.path()).unwrap();
+    let (deduped, saved) = optimize_all_cases(dir.path(), Some(&index), None).unwrap();
+    assert_eq!(deduped, 0);
+    assert_eq!(saved, 0);
+}

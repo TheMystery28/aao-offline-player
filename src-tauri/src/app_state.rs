@@ -46,6 +46,8 @@ pub(crate) struct AppPaths {
     pub(crate) http_client: reqwest::Client,
     /// Single shared dedup index. `None` = index unavailable (dedup disabled, non-fatal).
     pub(crate) dedup_index: Option<Arc<DedupIndex>>,
+    /// TTL cache for storage-info scans (see config::StorageCache).
+    pub(crate) storage_cache: crate::config::StorageCache,
 }
 
 /// Shared application configuration (mutable).

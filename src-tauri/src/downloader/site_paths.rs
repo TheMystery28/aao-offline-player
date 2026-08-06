@@ -84,8 +84,13 @@ mod tests {
         );
     }
 
+    // Both async tests mutate the process-wide cache — serialize them so one
+    // test's reset() cannot land between the other's fetch and cache-read.
+    static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn test_cached_site_paths_single_fetch_within_ttl() {
+        let _guard = TEST_LOCK.lock().await;
         site_paths_cache_reset();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -105,6 +110,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_expiry_after_ttl() {
+        let _guard = TEST_LOCK.lock().await;
         site_paths_cache_reset();
         let server = MockServer::start().await;
         Mock::given(method("GET"))

@@ -12,6 +12,7 @@ mod config;
 mod downloader;
 pub mod error;
 mod importer;
+mod library_cache;
 mod server;
 pub mod utils;
 
@@ -267,6 +268,7 @@ pub fn run() {
                 cancellation: downloader::cancel::Cancellation::new(),
                 http_client,
                 dedup_index,
+                storage_cache: config::StorageCache::new(),
             });
             // Store mutable config (locked only by settings commands)
             app.manage(MutableConfig(Mutex::new(app_config)));
@@ -288,6 +290,7 @@ pub fn run() {
             commands::download::cancel_download,
             // cases
             commands::cases::list_cases,
+            commands::cases::get_case_manifest,
             commands::cases::get_missing_assets,
             commands::cases::delete_case,
             // saves

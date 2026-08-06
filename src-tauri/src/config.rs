@@ -4,6 +4,7 @@
 //! `StorageInfo` for displaying disk usage in the UI.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -110,16 +111,28 @@ pub fn load_config(data_dir: &Path) -> AppConfig {
 /// # Errors
 ///
 /// Returns an `AppError` if JSON serialization or file writing fails.
+/// Persist the application configuration to disk as `config.json`.
+///
+/// Written atomically: the JSON goes to `config.json.tmp` first, then the
+/// file is renamed over `config.json`, so a crash mid-write can never leave
+/// a truncated config (which would silently reset all settings).
+///
+/// # Errors
+///
+/// Returns an `AppError` if JSON serialization or file writing fails.
 pub fn save_config(data_dir: &Path, config: &AppConfig) -> Result<(), crate::error::AppError> {
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    std::fs::write(config_path(data_dir), json)
+    let tmp_path = config_path(data_dir).with_extension("json.tmp");
+    std::fs::write(&tmp_path, json)
         .map_err(|e| format!("Failed to write config: {}", e))?;
+    std::fs::rename(&tmp_path, config_path(data_dir))
+        .map_err(|e| format!("Failed to commit config: {}", e))?;
     Ok(())
 }
 
 /// Summarizes the current storage usage for UI display.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct StorageInfo {
     pub data_dir: String,
     pub cases_count: usize,
@@ -215,6 +228,40 @@ pub fn compute_storage_info(engine_dir: &Path) -> StorageInfo {
         defaults_shared_other_bytes: shared_other_sub,
         defaults_other_bytes: other,
         total_size_bytes: cases_size + defaults_size,
+    }
+}
+
+/// In-memory TTL cache for `StorageInfo` — storage scans are expensive
+/// (recursive directory walks) and the settings panel calls them often.
+#[derive(Clone)]
+pub struct StorageCache {
+    inner: Arc<std::sync::Mutex<Option<(std::time::Instant, StorageInfo)>>>,
+}
+
+impl StorageCache {
+    pub fn new() -> Self {
+        Self { inner: Arc::new(std::sync::Mutex::new(None)) }
+    }
+
+    /// Return the cached value if younger than `ttl`, else compute + cache.
+    pub fn get_or_compute(
+        &self,
+        ttl: std::time::Duration,
+        compute: impl FnOnce() -> StorageInfo,
+    ) -> StorageInfo {
+        let now = std::time::Instant::now();
+        if let Ok(guard) = self.inner.lock() {
+            if let Some((at, info)) = guard.as_ref() {
+                if now.duration_since(*at) < ttl {
+                    return info.clone();
+                }
+            }
+        }
+        let info = compute();
+        if let Ok(mut guard) = self.inner.lock() {
+            *guard = Some((now, info.clone()));
+        }
+        info
     }
 }
 
@@ -635,5 +682,87 @@ mod tests {
         save_config(dir.path(), &config).unwrap();
         let loaded = load_config(dir.path());
         assert_eq!(loaded.custom_css, ":root { --bg-body: #ff0000; }");
+    }
+
+    #[test]
+    fn test_storage_cache_computes_once_within_ttl() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = AtomicUsize::new(0);
+        let cache = StorageCache::new();
+        let compute = || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            dummy_storage_info()
+        };
+        let first = cache.get_or_compute(std::time::Duration::from_secs(60), compute);
+        let second = cache.get_or_compute(std::time::Duration::from_secs(60), compute);
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "compute must run once within TTL");
+        assert_eq!(second.total_size_bytes, first.total_size_bytes);
+    }
+
+    #[test]
+    fn test_storage_cache_recomputes_after_ttl() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = AtomicUsize::new(0);
+        let cache = StorageCache::new();
+        let compute = || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            dummy_storage_info()
+        };
+        cache.get_or_compute(std::time::Duration::from_millis(1), compute);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        cache.get_or_compute(std::time::Duration::from_millis(1), compute);
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "expired cache must recompute");
+    }
+
+    fn dummy_storage_info() -> StorageInfo {
+        StorageInfo {
+            data_dir: String::new(),
+            cases_count: 0,
+            cases_size_bytes: 0,
+            cases_assets_bytes: 0,
+            cases_metadata_bytes: 0,
+            cases_plugins_bytes: 0,
+            defaults_size_bytes: 0,
+            defaults_sprites_bytes: 0,
+            defaults_music_bytes: 0,
+            defaults_sounds_bytes: 0,
+            defaults_voices_bytes: 0,
+            defaults_shared_bytes: 0,
+            defaults_shared_count: 0,
+            defaults_shared_images_bytes: 0,
+            defaults_shared_audio_bytes: 0,
+            defaults_shared_other_bytes: 0,
+            defaults_other_bytes: 0,
+            total_size_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn test_save_config_atomic_no_temp_leftover() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig::default();
+        save_config(dir.path(), &config).unwrap();
+
+        let path = dir.path().join("config.json");
+        assert!(path.exists(), "config.json must exist after save");
+        let loaded: AppConfig =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.language, "en");
+
+        assert!(
+            !dir.path().join("config.json.tmp").exists(),
+            "temp file must be renamed away"
+        );
+    }
+
+    #[test]
+    fn test_save_config_replaces_corrupt_config() {
+        let dir = tempfile::tempdir().unwrap();
+        // Simulate a crash-corrupted config
+        std::fs::write(dir.path().join("config.json"), "{corrupt").unwrap();
+        let config = AppConfig { language: "fr".to_string(), ..Default::default() };
+        save_config(dir.path(), &config).unwrap();
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.language, "fr");
     }
 }

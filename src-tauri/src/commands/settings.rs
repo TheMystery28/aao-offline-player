@@ -43,9 +43,16 @@ pub fn save_settings(
 /// Scans the data directory to calculate the size of cases, assets, and
 /// defaults.
 #[tauri::command]
-pub fn get_storage_info(paths: State<'_, AppPaths>) -> Result<config::StorageInfo, AppError> {
-    let data_dir = &paths.data_dir;
-    Ok(config::compute_storage_info(data_dir))
+pub async fn get_storage_info(paths: State<'_, AppPaths>) -> Result<config::StorageInfo, AppError> {
+    let data_dir = paths.data_dir.clone();
+    let cache = paths.storage_cache.clone();
+    tokio::task::spawn_blocking(move || {
+        cache.get_or_compute(std::time::Duration::from_secs(30), || {
+            config::compute_storage_info(&data_dir)
+        })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("Storage scan failed: {}", e)))
 }
 
 /// Optimize storage by deduplicating assets across all cases.
@@ -56,21 +63,28 @@ pub async fn optimize_storage(
     config: State<'_, MutableConfig>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<serde_json::Value, AppError> {
-    let data_dir = &paths.data_dir;
-    let dedup_index = paths.dedup_index.clone();
-    let (deduped, bytes_saved) = downloader::dedup::optimize_all_cases(
-        data_dir,
-        dedup_index.as_deref(),
-        Some(&|completed, total, current_path| {
-            let _ = on_event.send(DownloadEvent::Progress {
-                completed,
-                total,
-                current_url: current_path.to_string(),
-                bytes_downloaded: 0,
-                elapsed_ms: 0,
-            });
-        }),
-    )?;
+    let data_dir = paths.data_dir.clone();
+    let data_dir_for_task = data_dir.clone();
+    let index = paths.dedup_index.clone();
+    let on_event = on_event.clone();
+
+    let (deduped, bytes_saved) = tokio::task::spawn_blocking(move || {
+        downloader::dedup::optimize_all_cases(
+            &data_dir_for_task,
+            index.as_deref(),
+            Some(&|completed, total, current_path| {
+                let _ = on_event.send(DownloadEvent::Progress {
+                    completed,
+                    total,
+                    current_url: current_path.to_string(),
+                    bytes_downloaded: 0,
+                    elapsed_ms: 0,
+                });
+            }),
+        )
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("Optimize task failed: {}", e)))??;
     log::info!("Optimize storage: {} files deduplicated, {} bytes saved", deduped, bytes_saved);
 
     let ts = std::time::SystemTime::now()
@@ -80,7 +94,7 @@ pub async fn optimize_storage(
     {
         let mut cfg = config.0.lock().map_err(|e| e.to_string())?;
         cfg.last_optimized_at = Some(ts);
-        config::save_config(data_dir, &cfg)?;
+        config::save_config(&data_dir, &cfg)?;
     }
 
     Ok(serde_json::json!({

@@ -4,6 +4,7 @@
 //! have been successfully downloaded and stored in the app's data directory.
 
 use std::fs;
+use std::path::Path;
 use tauri::State;
 
 use crate::app_state::AppPaths;
@@ -25,39 +26,19 @@ pub fn list_cases(
     paths: State<'_, AppPaths>,
 ) -> Result<Vec<downloader::manifest::CaseManifest>, AppError> {
     let data_dir = &paths.data_dir;
+    crate::library_cache::list_cases_cached(data_dir)
+}
 
-    let cases_dir = data_dir.join("case");
-    if !cases_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut cases = Vec::new();
-    let entries =
-        fs::read_dir(&cases_dir).map_err(|e| format!("Failed to read cases directory: {}", e))?;
-
-    for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let manifest_path = path.join("manifest.json");
-        if manifest_path.exists() {
-            match downloader::manifest::read_manifest(&path) {
-                Ok(manifest) => cases.push(manifest),
-                Err(e) => {
-                    log::warn!("Skipping {}: {}", path.display(), e);
-                }
-            }
-        }
-    }
-
-    // Sort by title
-    cases.sort_by(|a, b| a.title.cmp(&b.title));
-    Ok(cases)
+/// Return the FULL manifest (including asset_map) for a case.
+/// The library listing serves slim cached manifests; this command backs the
+/// Inspect modal's asset gallery.
+#[tauri::command]
+pub fn get_case_manifest(
+    paths: State<'_, AppPaths>,
+    case_id: u32,
+) -> Result<downloader::manifest::CaseManifest, AppError> {
+    let case_dir = paths.data_dir.join("case").join(case_id.to_string());
+    downloader::manifest::read_manifest(&case_dir)
 }
 
 /// Get assets in the manifest whose files are missing from disk.
@@ -77,11 +58,28 @@ pub async fn get_missing_assets(
     let case_dir = data_dir.join("case").join(case_id.to_string());
     let manifest = downloader::manifest::read_manifest(&case_dir)?;
 
-    let mut missing = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let trial_data_path = case_dir.join("trial_data.json");
+    let trial_data: serde_json::Value = match std::fs::read(&trial_data_path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        Err(_) => serde_json::Value::Null,
+    };
 
-    // 1. Check asset_map entries
-    let case_prefix = format!("case/{}/", case_id);
+    Ok(collect_missing_assets(&manifest, &trial_data, &data_dir))
+}
+
+/// Compute missing assets from a manifest + trial data, deduplicating by
+/// local path (the same file can appear as a manifest URL entry AND as a
+/// trial_data music/sound entry). Manifest entries keep their original URL.
+fn collect_missing_assets(
+    manifest: &downloader::manifest::CaseManifest,
+    trial_data: &serde_json::Value,
+    data_dir: &Path,
+) -> Vec<downloader::manifest::MissingAsset> {
+    let mut missing = Vec::new();
+    let mut seen_paths = std::collections::HashSet::new();
+
+    // 1. Manifest entries (keyed by URL) — dedupe by local_path, keep the URL
+    let case_prefix = format!("case/{}/", manifest.case_id);
     for (url, local_path) in &manifest.asset_map {
         if local_path.is_empty() {
             continue;
@@ -91,83 +89,67 @@ pub async fn get_missing_assets(
         } else {
             format!("{}{}", case_prefix, local_path)
         };
-        if !downloader::vfs::asset_exists(&data_dir, &disk_path) {
-            seen.insert(url.clone());
+        if !downloader::vfs::asset_exists(data_dir, &disk_path) {
+            if seen_paths.insert(local_path.clone()) {
+                missing.push(downloader::manifest::MissingAsset {
+                    url: url.clone(),
+                    local_path: local_path.clone(),
+                });
+            }
+        }
+    }
+
+    // 2. trial_data music/sound/voice paths (resolved to local paths)
+    let mut report_missing = |local: String| {
+        if !seen_paths.contains(&local) && !downloader::vfs::asset_exists(data_dir, &local) {
+            seen_paths.insert(local.clone());
             missing.push(downloader::manifest::MissingAsset {
-                url: url.clone(),
-                local_path: local_path.clone(),
+                url: local.clone(),
+                local_path: local,
             });
         }
-    }
+    };
 
-    // 2. Scan trial_data.json for sound/music/voice assets not on disk.
-    //    trial_data stores raw paths (e.g. music[i].path = "Game/song"),
-    //    resolved at runtime to "defaults/music/Game/song.mp3" etc.
-    let trial_data_path = case_dir.join("trial_data.json");
-    if let Ok(td_bytes) = std::fs::read(&trial_data_path) {
-        if let Ok(td) = serde_json::from_slice::<serde_json::Value>(&td_bytes) {
-            // Check music entries
-            if let Some(music_arr) = td.get("music").and_then(|v| v.as_array()) {
-                for m in music_arr.iter().skip(1) {
-                    let external = m.get("external").and_then(|v| v.as_bool()).unwrap_or(false);
-                    if external { continue; }
-                    if let Some(path) = m.get("path").and_then(|v| v.as_str()) {
-                        let local = normalize_path(&format!("defaults/music/{}.mp3", path));
-                        if !seen.contains(&local) && !downloader::vfs::asset_exists(&data_dir, &local) {
-                            seen.insert(local.clone());
-                            missing.push(downloader::manifest::MissingAsset {
-                                url: local.clone(), local_path: local,
-                            });
+    if let Some(music_arr) = trial_data.get("music").and_then(|v| v.as_array()) {
+        for m in music_arr.iter().skip(1) {
+            let external = m.get("external").and_then(|v| v.as_bool()).unwrap_or(false);
+            if external { continue; }
+            if let Some(path) = m.get("path").and_then(|v| v.as_str()) {
+                report_missing(normalize_path(&format!("defaults/music/{}.mp3", path)));
+            }
+        }
+    }
+    if let Some(sounds_arr) = trial_data.get("sounds").and_then(|v| v.as_array()) {
+        for s in sounds_arr.iter().skip(1) {
+            let external = s.get("external").and_then(|v| v.as_bool()).unwrap_or(false);
+            if external { continue; }
+            if let Some(path) = s.get("path").and_then(|v| v.as_str()) {
+                report_missing(normalize_path(&format!("defaults/sounds/{}.mp3", path)));
+            }
+        }
+    }
+    if let Some(profiles_arr) = trial_data.get("profiles").and_then(|v| v.as_array()) {
+        for p in profiles_arr.iter().skip(1) {
+            if let Some(voice) = p.get("voice").and_then(|v| v.as_i64()) {
+                if voice < 0 && voice != -4 {
+                    let id = -voice;
+                    let mut found = false;
+                    for ext in &["opus", "wav", "mp3"] {
+                        let local = format!("defaults/voices/voice_singleblip_{}.{}", id, ext);
+                        if downloader::vfs::asset_exists(data_dir, &local) {
+                            found = true;
+                            break;
                         }
                     }
-                }
-            }
-            // Check sound entries
-            if let Some(sounds_arr) = td.get("sounds").and_then(|v| v.as_array()) {
-                for s in sounds_arr.iter().skip(1) {
-                    let external = s.get("external").and_then(|v| v.as_bool()).unwrap_or(false);
-                    if external { continue; }
-                    if let Some(path) = s.get("path").and_then(|v| v.as_str()) {
-                        let local = normalize_path(&format!("defaults/sounds/{}.mp3", path));
-                        if !seen.contains(&local) && !downloader::vfs::asset_exists(&data_dir, &local) {
-                            seen.insert(local.clone());
-                            missing.push(downloader::manifest::MissingAsset {
-                                url: local.clone(), local_path: local,
-                            });
-                        }
-                    }
-                }
-            }
-            // Check voice entries (used by profiles)
-            if let Some(profiles_arr) = td.get("profiles").and_then(|v| v.as_array()) {
-                for p in profiles_arr.iter().skip(1) {
-                    if let Some(voice) = p.get("voice").and_then(|v| v.as_i64()) {
-                        if voice < 0 && voice != -4 {
-                            let id = -voice;
-                            for ext in &["opus", "wav", "mp3"] {
-                                let local = format!("defaults/voices/voice_singleblip_{}.{}", id, ext);
-                                if !seen.contains(&local) && downloader::vfs::asset_exists(&data_dir, &local) {
-                                    // At least one format exists — don't report as missing
-                                    seen.insert(format!("voice_{}", id));
-                                    break;
-                                }
-                            }
-                            let voice_key = format!("voice_{}", id);
-                            if !seen.contains(&voice_key) {
-                                seen.insert(voice_key);
-                                let local = format!("defaults/voices/voice_singleblip_{}.opus", id);
-                                missing.push(downloader::manifest::MissingAsset {
-                                    url: local.clone(), local_path: local,
-                                });
-                            }
-                        }
+                    if !found {
+                        report_missing(format!("defaults/voices/voice_singleblip_{}.opus", id));
                     }
                 }
             }
         }
     }
 
-    Ok(missing)
+    missing
 }
 
 /// Delete a downloaded case and all its associated files from disk.
@@ -207,4 +189,67 @@ pub async fn delete_case(paths: State<'_, AppPaths>, case_id: u32) -> Result<(),
     })
     .await
     .map_err(|e| AppError::Other(format!("Delete task failed: {}", e)))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn manifest_with_map(case_id: u32, entries: &[(&str, &str)]) -> downloader::manifest::CaseManifest {
+        let mut asset_map = std::collections::HashMap::new();
+        for (k, v) in entries {
+            asset_map.insert(k.to_string(), v.to_string());
+        }
+        downloader::manifest::CaseManifest {
+            case_id,
+            title: "T".to_string(),
+            author: "A".to_string(),
+            language: "en".to_string(),
+            download_date: "2026-01-01T00:00:00Z".to_string(),
+            format: "v6".to_string(),
+            sequence: None,
+            assets: downloader::manifest::AssetSummary {
+                case_specific: 0, shared_defaults: 0, total_downloaded: 0, total_size_bytes: 0,
+            },
+            asset_map,
+            failed_assets: vec![],
+            has_plugins: false,
+            has_case_config: false,
+        }
+    }
+
+    #[test]
+    fn test_collect_missing_assets_dedupes_url_and_path_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        // Same logical file appears BOTH as a manifest entry (url key) and as a
+        // trial_data music entry (path key) — must be reported ONCE.
+        let manifest = manifest_with_map(1, &[(
+            "https://aaonline.fr/Ressources/Musiques/Game/song.mp3",
+            "defaults/music/Game/song.mp3",
+        )]);
+        let trial_data = json!({
+            "music": [null, {"path": "Game/song", "external": false}]
+        });
+
+        let missing = collect_missing_assets(&manifest, &trial_data, dir.path());
+        let paths: Vec<&String> = missing.iter().map(|m| &m.local_path).collect();
+        assert_eq!(missing.len(), 1, "duplicate sources must collapse to one entry");
+        assert_eq!(paths[0], "defaults/music/Game/song.mp3");
+    }
+
+    #[test]
+    fn test_collect_missing_assets_reports_true_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = manifest_with_map(1, &[(
+            "http://x.com/1.png",
+            "defaults/music/ActuallyMissing.mp3",
+        )]);
+        let trial_data = json!({"music": [], "sounds": [], "profiles": [null]});
+
+        let missing = collect_missing_assets(&manifest, &trial_data, dir.path());
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].local_path, "defaults/music/ActuallyMissing.mp3");
+        assert_eq!(missing[0].url, "http://x.com/1.png", "manifest entries keep the original URL");
+    }
 }

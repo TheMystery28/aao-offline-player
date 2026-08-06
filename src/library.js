@@ -22,9 +22,16 @@ export function switchInspectTab(name) {
 }
 
 export async function showInspectModal(manifest, serverUrl, runtimeFailures) {
+  // The library listing returns slim manifests (no asset_map) — fetch the full one.
+  let full = manifest;
+  try {
+    full = await window.__TAURI__.core.invoke('get_case_manifest', { caseId: manifest.case_id });
+  } catch (e) {
+    console.warn('[Inspect] Failed to load full manifest:', e);
+  }
   const images = [];
   const audio = [];
-  const assetMap = manifest.asset_map || {};
+  const assetMap = full.asset_map || {};
 
   Object.keys(assetMap).forEach(function (localUrl) {
     const localPath = assetMap[localUrl];
@@ -42,7 +49,7 @@ export async function showInspectModal(manifest, serverUrl, runtimeFailures) {
   });
 
   // Combine download failures with assets missing from disk
-  const downloadFailed = manifest.failed_assets || [];
+  const downloadFailed = full.failed_assets || [];
   let missingAssets = [];
   try {
     missingAssets = await window.__TAURI__.core.invoke('get_missing_assets', { caseId: manifest.case_id });
