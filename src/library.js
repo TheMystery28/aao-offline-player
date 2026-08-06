@@ -1,5 +1,6 @@
 import { formatBytes, escapeHtml, showUpdateModal, showConfirmModal, groupCasesBySequence, applySpoilerBlur } from './helpers.js';
 import { buildSequenceGroupCore } from './collections/rendering.js';
+import { debugLog } from './debug.js';
 
 // ── Asset gallery helpers ──────────────────────────────────────────────────
 
@@ -196,7 +197,7 @@ export function initLibrary(ctx) {
   }
 
   function loadLibraryImpl() {
-    console.log("[LIBRARY] loadLibrary called");
+    debugLog("[LIBRARY] loadLibrary called");
     libraryLoading.classList.remove("hidden");
     emptyLibrary.classList.add("hidden");
     Promise.all([
@@ -206,7 +207,7 @@ export function initLibrary(ctx) {
       .then(function (results) {
         cachedCases = results[0];
         cachedCollections = results[1];
-        console.log("[LIBRARY] list_cases returned " + cachedCases.length + " cases, " +
+        debugLog("[LIBRARY] list_cases returned " + cachedCases.length + " cases, " +
           cachedCollections.length + " collections");
         ctx.knownCaseIds.clear();
         for (let i = 0; i < cachedCases.length; i++) {
@@ -594,11 +595,11 @@ export function initLibrary(ctx) {
   // --- Case Action Functions ---
 
   function playCase(caseId, title) {
-    console.log("[MAIN] playCase caseId=" + caseId + " title=" + title);
+    debugLog("[MAIN] playCase caseId=" + caseId + " title=" + title);
     statusMsg.textContent = "Loading...";
     invoke("open_game", { caseId: caseId })
       .then(function (url) {
-        console.log("[MAIN] open_game returned url=" + url);
+        debugLog("[MAIN] open_game returned url=" + url);
         ctx.showPlayer(title, url);
       })
       .catch(function (e) {
@@ -654,7 +655,7 @@ export function initLibrary(ctx) {
   }
 
   function exportCase(caseId, title) {
-    console.log("[EXPORT] exportCase called, caseId=" + caseId + " title=" + title);
+    debugLog("[EXPORT] exportCase called, caseId=" + caseId + " title=" + title);
     const safeName = title.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
     const defaultName = safeName + ".aaocase";
     statusMsg.textContent = "Choosing export location...";

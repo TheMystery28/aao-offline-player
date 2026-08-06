@@ -32,6 +32,7 @@
 const { invoke, Channel } = window.__TAURI__.core;
 // helpers.js imports are used by the extracted modules (library.js, collections.js), not directly here
 import { createKnownIds } from './knownIds.js';
+import { debugLog } from './debug.js';
 import { initSettings } from './settings.js';
 import { initImport } from './importSection.js';
 import { initPlayer } from './player.js';
@@ -82,7 +83,7 @@ async function migrateLocalStorage() {
             try { localStorage.setItem("aao_engine_config", data.aao_engine_config); }
             catch (e) { console.warn("[MIGRATE] Failed to write engine_config:", e); }
           }
-          console.log("[MIGRATE] Migrated localStorage from old origin");
+          debugLog("[MIGRATE] Migrated localStorage from old origin");
         }
 
         invoke("save_settings", {

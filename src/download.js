@@ -1,4 +1,5 @@
 import { parseCaseId, formatBytes, formatDuration, escapeHtml, showConfirmModal, showUpdateModal, createModal, applySpoilerBlur, removeSpoilerBlur } from './helpers.js';
+import { debugLog } from './debug.js';
 
 /**
  * Initialise the Download section UI and event listeners.
@@ -27,7 +28,7 @@ export function initDownload(ctx) {
 
   function createDownloadProgressHandler(options) {
     return function (msg) {
-      if (options.logPrefix) console.log(options.logPrefix, JSON.stringify(msg));
+      if (options.logPrefix) debugLog(options.logPrefix, JSON.stringify(msg));
       if (msg.event === "sequence_progress" && options.onSequenceProgress) {
         options.onSequenceProgress(msg.data);
       } else if (msg.event === "started") {
@@ -221,7 +222,7 @@ export function initDownload(ctx) {
   }
 
   async function startUpdate(caseId, redownloadAssets, onDone) {
-    console.log("[UPDATE] startUpdate caseId=" + caseId + " redownloadAssets=" + redownloadAssets);
+    debugLog("[UPDATE] startUpdate caseId=" + caseId + " redownloadAssets=" + redownloadAssets);
     downloadInProgress = true;
     downloadBtn.disabled = true;
     caseIdInput.disabled = true;
@@ -248,7 +249,7 @@ export function initDownload(ctx) {
         redownloadAssets: redownloadAssets,
         onEvent: onEvent
       });
-      console.log("[UPDATE] update_case success:", JSON.stringify({
+      debugLog("[UPDATE] update_case success:", JSON.stringify({
         case_id: manifest.case_id,
         title: manifest.title,
         total_downloaded: manifest.assets.total_downloaded,
@@ -309,7 +310,7 @@ export function initDownload(ctx) {
       "will be re-downloaded.";
 
     showConfirmModal(msg, "Retry", async function () {
-    console.log("[RETRY] retryCase caseId=" + caseId);
+    debugLog("[RETRY] retryCase caseId=" + caseId);
     downloadInProgress = true;
     downloadBtn.disabled = true;
     downloadResult.textContent = "";
@@ -331,7 +332,7 @@ export function initDownload(ctx) {
 
     try {
       const manifest = await invoke("retry_failed_assets", { caseId: caseId, onEvent: onEvent });
-      console.log("[RETRY] retry_failed_assets success:", JSON.stringify({
+      debugLog("[RETRY] retry_failed_assets success:", JSON.stringify({
         case_id: manifest.case_id,
         total_downloaded: manifest.assets.total_downloaded,
         still_failed: manifest.failed_assets ? manifest.failed_assets.length : 0
@@ -366,7 +367,7 @@ export function initDownload(ctx) {
       statusMsg.textContent = "Queued for download (" + downloadQueue.length + " in queue).";
       return;
     }
-    console.log("[DOWNLOAD] startSequenceDownload ids=" + JSON.stringify(caseIds) + " title=" + sequenceTitle);
+    debugLog("[DOWNLOAD] startSequenceDownload ids=" + JSON.stringify(caseIds) + " title=" + sequenceTitle);
     downloadInProgress = true;
     downloadBtn.disabled = true;
     caseIdInput.disabled = true;
@@ -392,7 +393,7 @@ export function initDownload(ctx) {
 
     try {
       const manifests = await invoke("download_sequence", { caseIds: caseIds, onEvent: onEvent });
-      console.log("[DOWNLOAD] download_sequence success: " + manifests.length + " parts");
+      debugLog("[DOWNLOAD] download_sequence success: " + manifests.length + " parts");
       downloadResult.innerHTML =
         '<strong>' + escapeHtml(sequenceTitle) + '</strong> (' +
         manifests.length + ' parts) &mdash; ready to play!';
@@ -421,7 +422,7 @@ export function initDownload(ctx) {
       statusMsg.textContent = "Queued for download (" + downloadQueue.length + " in queue).";
       return;
     }
-    console.log("[DOWNLOAD] startDownload caseId=" + caseId);
+    debugLog("[DOWNLOAD] startDownload caseId=" + caseId);
     downloadInProgress = true;
     downloadBtn.disabled = true;
     caseIdInput.disabled = true;
@@ -443,7 +444,7 @@ export function initDownload(ctx) {
 
     try {
       const manifest = await invoke("download_case", { caseId: caseId, onEvent: onEvent });
-      console.log("[DOWNLOAD] download_case success:", JSON.stringify({
+      debugLog("[DOWNLOAD] download_case success:", JSON.stringify({
         case_id: manifest.case_id,
         title: manifest.title,
         total_downloaded: manifest.assets.total_downloaded,

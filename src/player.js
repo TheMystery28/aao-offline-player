@@ -1,3 +1,5 @@
+import { debugLog } from './debug.js';
+
 /**
  * Player module: manages the game iframe, toolbar, and save backup/restore.
  *
@@ -74,7 +76,7 @@ export function initPlayer(ctx) {
 
   function showPlayer(title, url, author) {
     runtimeFailedAssets.length = 0; // Reset for new case
-    console.log("[PLAYER] showPlayer title=" + title + " url=" + url);
+    debugLog("[PLAYER] showPlayer title=" + title + " url=" + url);
     if (author) {
       playerTitle.textContent = title + " — " + author;
     } else {
@@ -103,14 +105,14 @@ export function initPlayer(ctx) {
       }
       try {
         const iframeDoc = gameFrame.contentDocument || gameFrame.contentWindow.document;
-        console.log("[PLAYER] Iframe loaded. baseURI=" + iframeDoc.baseURI);
-        console.log("[PLAYER] Iframe location=" + gameFrame.contentWindow.location.href);
+        debugLog("[PLAYER] Iframe loaded. baseURI=" + iframeDoc.baseURI);
+        debugLog("[PLAYER] Iframe location=" + gameFrame.contentWindow.location.href);
 
         // List all <script> tags loaded in the iframe
         const scripts = iframeDoc.querySelectorAll("script");
-        console.log("[PLAYER] Iframe scripts loaded: " + scripts.length);
+        debugLog("[PLAYER] Iframe scripts loaded: " + scripts.length);
         for (let s = 0; s < scripts.length; s++) {
-          console.log("[PLAYER]   script[" + s + "] src=" + (scripts[s].src || "(inline)"));
+          debugLog("[PLAYER]   script[" + s + "] src=" + (scripts[s].src || "(inline)"));
         }
 
         // Listen for resource load failures (images, audio, scripts)
@@ -133,11 +135,11 @@ export function initPlayer(ctx) {
           const el = e.target;
           if (el.tagName === "IMG" || el.tagName === "AUDIO" || el.tagName === "SOURCE") {
             const src = el.src || el.currentSrc || "(unknown)";
-            console.log("[IFRAME RESOURCE OK] <" + el.tagName + "> src=" + src);
+            debugLog("[IFRAME RESOURCE OK] <" + el.tagName + "> src=" + src);
           }
         }, true);
 
-        console.log("[PLAYER] Iframe error+load listeners attached");
+        debugLog("[PLAYER] Iframe error+load listeners attached");
       } catch (ex) {
         console.warn("[PLAYER] Cannot attach iframe listeners (cross-origin?): " + ex.message);
       }
@@ -172,7 +174,7 @@ export function initPlayer(ctx) {
           (async () => {
             try {
               await invoke("backup_saves", { saves: parsed });
-              console.log("[SAVE] Auto-save backed up directly to disk");
+              debugLog("[SAVE] Auto-save backed up directly to disk");
             } catch (e) {
               console.warn("[SAVE] Direct backup failed:", e);
               backupSavesToFile();
@@ -328,7 +330,7 @@ export function initPlayer(ctx) {
           (async () => {
             try {
               await invoke("backup_saves", { saves: parsed });
-              console.log("[SAVE] Backed up saves to file");
+              debugLog("[SAVE] Backed up saves to file");
             } catch (e) {
               console.warn("[SAVE] Backup failed:", e);
             }
@@ -356,13 +358,13 @@ export function initPlayer(ctx) {
     try {
       const saves = await invoke("load_saves_backup");
       if (!saves) {
-        console.log("[SAVE] No saves backup to restore");
+        debugLog("[SAVE] No saves backup to restore");
         return;
       }
-      console.log("[SAVE] Restoring saves from backup...");
+      debugLog("[SAVE] Restoring saves from backup...");
       const result = await writeGameSaves(saves);
       if (result && result.success) {
-        console.log("[SAVE] Restored " + result.merged + " saves from backup");
+        debugLog("[SAVE] Restored " + result.merged + " saves from backup");
       } else {
         console.warn("[SAVE] Restore failed:", result && result.error);
       }
@@ -383,7 +385,7 @@ export function initPlayer(ctx) {
         (async () => {
           try {
             await invoke("backup_saves", { saves: parsed });
-            console.log("[SAVE] Save change backed up to disk");
+            debugLog("[SAVE] Save change backed up to disk");
           } catch (e) {
             console.warn("[SAVE] Save change backup failed:", e);
           }

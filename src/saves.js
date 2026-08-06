@@ -1,4 +1,5 @@
 import { escapeHtml, base64DecodeUtf8, showConfirmModal, formatBytes, createModal } from './helpers.js';
+import { debugLog } from './debug.js';
 
 // --- Saves ---
 
@@ -354,7 +355,7 @@ export function initSaves(ctx) {
   function findLastSequenceSaveBridge(sequenceList) {
     return invoke("get_server_url").then(function (serverUrl) {
       const bridgeId = "read_" + (++bridgeIdCounter);
-      console.log("[SAVE] Server URL:", serverUrl, "bridgeId:", bridgeId);
+      debugLog("[SAVE] Server URL:", serverUrl, "bridgeId:", bridgeId);
 
       return new Promise(function (resolve) {
         const iframe = document.createElement("iframe");
@@ -367,7 +368,7 @@ export function initSaves(ctx) {
           if (!event.data || event.data.type !== "game_saves") return;
           if (event.data.bridgeId && event.data.bridgeId !== bridgeId) return;
 
-          console.log("[SAVE]", bridgeId, "Received postMessage, data length:", event.data.data ? event.data.data.length : "null");
+          debugLog("[SAVE]", bridgeId, "Received postMessage, data length:", event.data.data ? event.data.data.length : "null");
           if (event.data.error) {
             console.error("[SAVE] Bridge error:", event.data.error);
           }
@@ -378,12 +379,12 @@ export function initSaves(ctx) {
           const raw = event.data.data;
           const gameSaves = raw ? JSON.parse(raw) : null;
           if (!gameSaves) {
-            console.log("[SAVE] No game_saves in server localStorage");
+            debugLog("[SAVE] No game_saves in server localStorage");
             resolve(null);
             return;
           }
 
-          console.log("[SAVE] game_saves keys:", Object.keys(gameSaves));
+          debugLog("[SAVE] game_saves keys:", Object.keys(gameSaves));
           let latestDate = 0;
           let latestPartId = null;
           let latestSaveString = null;
@@ -391,7 +392,7 @@ export function initSaves(ctx) {
           for (let i = 0; i < sequenceList.length; i++) {
             const partId = sequenceList[i].id;
             if (!(partId in gameSaves)) continue;
-            console.log("[SAVE] Part", partId, "has", Object.keys(gameSaves[partId]).length, "saves");
+            debugLog("[SAVE] Part", partId, "has", Object.keys(gameSaves[partId]).length, "saves");
             for (let saveDate in gameSaves[partId]) {
               const ts = parseInt(saveDate, 10);
               if (ts > latestDate) {
@@ -403,11 +404,11 @@ export function initSaves(ctx) {
           }
 
           if (!latestPartId) {
-            console.log("[SAVE] No matching saves for sequence parts");
+            debugLog("[SAVE] No matching saves for sequence parts");
             resolve(null);
             return;
           }
-          console.log("[SAVE] Latest save: part", latestPartId, "date", new Date(latestDate));
+          debugLog("[SAVE] Latest save: part", latestPartId, "date", new Date(latestDate));
           resolve({
             partId: latestPartId,
             saveDate: latestDate,
@@ -503,7 +504,7 @@ export function initSaves(ctx) {
   function writeGameSaves(savesJson) {
     return invoke("get_server_url").then(function (serverUrl) {
       const bridgeId = "write_" + (++bridgeIdCounter);
-      console.log("[SAVE]", bridgeId, "writeGameSaves starting");
+      debugLog("[SAVE]", bridgeId, "writeGameSaves starting");
       return new Promise(function (resolve) {
         const iframe = document.createElement("iframe");
         iframe.style.display = "none";
@@ -517,7 +518,7 @@ export function initSaves(ctx) {
           // Wait for the initial game_saves message (bridge sends it on load),
           // then send our write_saves message.
           if (event.data.type === "game_saves" && !resolved) {
-            console.log("[SAVE]", bridgeId, "Bridge loaded, sending write_saves");
+            debugLog("[SAVE]", bridgeId, "Bridge loaded, sending write_saves");
             iframe.contentWindow.postMessage({ type: "write_saves", data: savesJson, bridgeId: bridgeId }, "*");
           }
 
@@ -526,7 +527,7 @@ export function initSaves(ctx) {
             resolved = true;
             window.removeEventListener("message", onMessage);
             if (iframe.parentNode) document.body.removeChild(iframe);
-            console.log("[SAVE]", bridgeId, "write result:", event.data);
+            debugLog("[SAVE]", bridgeId, "write result:", event.data);
             resolve(event.data);
           }
         }

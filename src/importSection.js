@@ -1,4 +1,5 @@
 import { formatBytes, escapeHtml, showPromptModal } from './helpers.js';
+import { debugLog } from './debug.js';
 
 /**
  * Initialise the Import section UI and event listeners.
@@ -26,7 +27,7 @@ export function initImport(ctx) {
   const importResult = document.getElementById("import-result");
 
   function doImport(sourcePath) {
-    console.log("[IMPORT] doImport called with path:", sourcePath);
+    debugLog("[IMPORT] doImport called with path:", sourcePath);
     importFolderBtn.disabled = true;
     importFileBtn.disabled = true;
     importResult.textContent = "";
@@ -69,8 +70,8 @@ export function initImport(ctx) {
         // If the imported file contained saves, merge them into localStorage.
         // IMPORTANT: wait for writeGameSaves to complete BEFORE loadLibrary(),
         // because both create bridge iframes and their postMessage listeners cross-talk.
-        console.log("[IMPORT] result.saves:", result.saves ? "present (" + JSON.stringify(result.saves).length + " bytes)" : "null");
-        console.log("[IMPORT] result.missing_defaults:", result.missing_defaults);
+        debugLog("[IMPORT] result.saves:", result.saves ? "present (" + JSON.stringify(result.saves).length + " bytes)" : "null");
+        debugLog("[IMPORT] result.missing_defaults:", result.missing_defaults);
 
         let savesPromise = Promise.resolve();
         if (result.saves) {
@@ -84,7 +85,7 @@ export function initImport(ctx) {
             savesInfo = ", " + saveCount + " save" + (saveCount > 1 ? "s" : "") + " imported";
             savesPromise = writeGameSaves(result.saves).then(function (writeResult) {
               if (writeResult && writeResult.success) {
-                console.log("[IMPORT] Merged " + writeResult.merged + " saves into localStorage");
+                debugLog("[IMPORT] Merged " + writeResult.merged + " saves into localStorage");
               } else {
                 console.warn("[IMPORT] Failed to write saves:", writeResult && writeResult.error);
               }
@@ -194,7 +195,7 @@ export function initImport(ctx) {
 
     invoke("pick_folder")
       .then(function (selected) {
-        console.log("[IMPORT] pick_folder returned:", selected);
+        debugLog("[IMPORT] pick_folder returned:", selected);
         if (!selected) return;
         doImport(selected);
       })
@@ -214,7 +215,7 @@ export function initImport(ctx) {
 
     invoke("pick_import_file")
       .then(function (selected) {
-        console.log("[IMPORT] pick_import_file returned:", selected);
+        debugLog("[IMPORT] pick_import_file returned:", selected);
         if (!selected) return;
         if (selected.toLowerCase().endsWith(".aaosave")) {
           doImportSave(selected);
