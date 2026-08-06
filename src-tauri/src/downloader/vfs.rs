@@ -8,32 +8,94 @@
 //! The server's `resolve_path` follows these pointers transparently so the engine
 //! can request either path and get the correct file.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 
 use super::paths::normalize_path;
 
 const VFS_PREFIX: &str = "AAO_VFS_ALIAS:";
 const MAX_RESOLVE_DEPTH: u8 = 5;
+const CACHE_MAX_ENTRIES: usize = 4096;
+
+/// Process-wide cache of VFS pointer probes: path → (mtime, size, target).
+/// Freshness is validated against the file's (mtime, size) on every read, so
+/// stale entries are impossible even when files are rewritten.
+struct VfsCache {
+    inner: Mutex<HashMap<PathBuf, (Option<SystemTime>, u64, Option<String>)>>,
+}
+
+impl VfsCache {
+    fn new() -> Self {
+        Self { inner: Mutex::new(HashMap::new()) }
+    }
+
+    fn get(
+        &self,
+        path: &Path,
+    ) -> Option<(Option<SystemTime>, u64, Option<String>)> {
+        self.inner.lock().ok().and_then(|g| g.get(path).cloned())
+    }
+
+    fn insert(&self, path: PathBuf, entry: (Option<SystemTime>, u64, Option<String>)) {
+        let Ok(mut g) = self.inner.lock() else { return };
+        if g.len() >= CACHE_MAX_ENTRIES {
+            g.clear();
+        }
+        g.insert(path, entry);
+    }
+
+    fn invalidate(&self, path: &Path) {
+        let Ok(mut g) = self.inner.lock() else { return };
+        g.remove(path);
+    }
+
+    fn clear(&self) {
+        let Ok(mut g) = self.inner.lock() else { return };
+        g.clear();
+    }
+}
+
+static VFS_CACHE: OnceLock<VfsCache> = OnceLock::new();
+
+fn vfs_cache() -> &'static VfsCache {
+    VFS_CACHE.get_or_init(VfsCache::new)
+}
+
+/// Clear the process-wide VFS pointer cache (tests; also safe after bulk writes).
+#[allow(dead_code)]
+pub fn vfs_cache_reset() {
+    vfs_cache().clear();
+}
 
 /// Check if a file is a VFS pointer.
 ///
-/// # Returns
+/// Returns the target relative path (forward-slash normalized) if it is a
+/// VFS pointer, or `None` if it is a regular file or if an error occurs.
 ///
-/// The target relative path (forward-slash normalized) if it is a VFS pointer,
-/// or `None` if it is a regular file or if an error occurs.
-///
-/// # Notes
-///
-/// Files >= 256 bytes are assumed to be real assets and are skipped without
-/// reading their content.
+/// Results are cached per path with (mtime, size) freshness — the per-request
+/// probe file read is skipped when the file is unchanged.
 pub fn read_vfs_pointer(path: &Path) -> Option<String> {
     let meta = fs::metadata(path).ok()?;
     if meta.len() >= 256 {
         return None;
     }
-    let content = fs::read_to_string(path).ok()?;
-    content.strip_prefix(VFS_PREFIX).map(|s| s.to_string())
+    let mtime = meta.modified().ok();
+    let size = meta.len();
+
+    let cache = vfs_cache();
+    if let Some((cached_mtime, cached_size, cached)) = cache.get(path) {
+        if cached_mtime == mtime && cached_size == size {
+            return cached;
+        }
+    }
+
+    let content = fs::read_to_string(path).ok();
+    let result = content.and_then(|c| c.strip_prefix(VFS_PREFIX).map(|s| s.to_string()));
+    cache.insert(path.to_path_buf(), (mtime, size, result.clone()));
+    result
 }
 
 /// Write a VFS pointer file that redirects to the target path.
@@ -48,7 +110,9 @@ pub fn write_vfs_pointer(pointer_path: &Path, target_relative: &str) -> std::io:
         fs::create_dir_all(parent)?;
     }
     let normalized = normalize_path(target_relative);
-    fs::write(pointer_path, format!("{}{}", VFS_PREFIX, normalized))
+    fs::write(pointer_path, format!("{}{}", VFS_PREFIX, normalized))?;
+    vfs_cache().invalidate(pointer_path);
+    Ok(())
 }
 
 /// Check if an asset file exists on disk, transparently following VFS pointers.
@@ -245,5 +309,58 @@ mod tests {
         write_vfs_pointer(&pointer, "defaults/images/chars/Apollo/3.gif").unwrap();
         // Target does NOT exist
         assert!(!asset_exists(dir.path(), "defaults/images/charsStill/Apollo/3.gif"));
+    }
+
+    #[test]
+    fn test_vfs_pointer_cache_staleness_invalidation() {
+        vfs_cache_reset();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("alias.gif");
+
+        fs::write(&path, "AAO_VFS_ALIAS:defaults/images/chars/Apollo/3.gif").unwrap();
+        assert_eq!(
+            read_vfs_pointer(&path).as_deref(),
+            Some("defaults/images/chars/Apollo/3.gif")
+        );
+
+        // Overwrite with a DIFFERENT pointer (same size, changed mtime)
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(&path, "AAO_VFS_ALIAS:defaults/images/chars/Edgeworth/1.gif").unwrap();
+        assert_eq!(
+            read_vfs_pointer(&path).as_deref(),
+            Some("defaults/images/chars/Edgeworth/1.gif"),
+            "cache must not serve the stale target"
+        );
+    }
+
+    #[test]
+    fn test_vfs_write_pointer_invalidates_cache() {
+        vfs_cache_reset();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("alias2.gif");
+
+        // Write a real (non-pointer) file and cache the "not a pointer" result
+        fs::write(&path, "not a pointer text file").unwrap();
+        assert_eq!(read_vfs_pointer(&path), None);
+
+        // Convert it into a pointer via the public writer — must be observed
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        write_vfs_pointer(&path, "defaults/images/chars/Apollo/3.gif").unwrap();
+        assert_eq!(
+            read_vfs_pointer(&path).as_deref(),
+            Some("defaults/images/chars/Apollo/3.gif"),
+            "write_vfs_pointer must invalidate the cached 'not a pointer' result"
+        );
+    }
+
+    #[test]
+    fn test_vfs_pointer_cache_negative_result() {
+        vfs_cache_reset();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plain.txt");
+        fs::write(&path, "plain").unwrap();
+        // First read populates the cache with None; second read must still be None
+        assert_eq!(read_vfs_pointer(&path), None);
+        assert_eq!(read_vfs_pointer(&path), None);
     }
 }

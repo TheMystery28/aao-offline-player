@@ -411,64 +411,97 @@ fn handle_request(request: tiny_http::Request, config: &ServerConfig) {
 /// On desktop both directories are the same. On Android/iOS they differ:
 /// engine_dir is the read-only bundled resources, data_dir is the app's
 /// private writable storage.
-pub(crate) fn resolve_path(config: &ServerConfig, relative: &str) -> Option<PathBuf> {
-    if relative.is_empty() || relative == "/" {
-        let path = config.engine_dir.join("player.html");
-        return if path.is_file() { Some(path) } else { None };
-    }
-
-    if relative.contains("..") {
-        return None;
-    }
-
-    // Pipeline: find candidate file, then resolve VFS pointers at the end.
-    let mut candidate: Option<PathBuf> = None;
-
-    // Route case/, defaults/, plugins/ to writable data directory.
-    if relative.starts_with("case/") || relative.starts_with("defaults/") || relative.starts_with("plugins/") {
-        let path = config.data_dir.join(relative);
-        if path.is_file() {
-            candidate = Some(path);
-        }
-        // Fall through to engine_dir in case defaults are bundled (future-proof)
-    }
-
-    // Static engine files (JS, CSS, HTML, img, Languages) from engine_dir.
-    if candidate.is_none() {
-        let path = config.engine_dir.join(relative);
-        if path.is_file() {
-            candidate = Some(path);
-        }
-    }
-
-    // Case-insensitive fallback for Linux/Android (case-sensitive filesystems).
+/// Path resolution for serving requests.
+///
+/// Resolves a sanitized relative path against `data_dir` (case/, defaults/,
+/// plugins/) and `engine_dir` (static engine files), with the optional
+/// case-insensitive fallback used on case-sensitive filesystems, and VFS
+/// pointer chasing at the end.
+pub(crate) struct PathResolver {
+    engine_dir: PathBuf,
+    data_dir: PathBuf,
     #[cfg(not(target_os = "windows"))]
-    if candidate.is_none() {
-        let base = if relative.starts_with("case/") || relative.starts_with("defaults/") {
-            config.data_dir.join(relative)
-        } else {
-            config.engine_dir.join(relative)
-        };
-        candidate = case_insensitive_resolve(&base);
+    case_insensitive: bool,
+}
+
+impl PathResolver {
+    pub fn new(engine_dir: PathBuf, data_dir: PathBuf) -> Self {
+        Self {
+            engine_dir,
+            data_dir,
+            #[cfg(not(target_os = "windows"))]
+            case_insensitive: true,
+        }
     }
 
-    // VFS pointer resolution: follow aliases to the real file (supports multi-hop chains).
-    if let Some(path) = candidate {
-        let resolved = crate::downloader::vfs::resolve_path(&path, &config.data_dir, &config.engine_dir);
-        // If the file is a VFS pointer whose target is missing, resolve_path returns the
-        // pointer itself — don't serve the pointer content, return 404 instead.
-        if resolved == path {
-            if crate::downloader::vfs::read_vfs_pointer(&path).is_some() {
-                return None; // Broken pointer
+    pub fn resolve(&self, relative: &str) -> Option<PathBuf> {
+        if relative.is_empty() || relative == "/" {
+            let path = self.engine_dir.join("player.html");
+            return if path.is_file() { Some(path) } else { None };
+        }
+
+        if relative.contains("..") {
+            return None;
+        }
+
+        // Pipeline: find candidate file, then resolve VFS pointers at the end.
+        let mut candidate: Option<PathBuf> = None;
+
+        // Route case/, defaults/, plugins/ to writable data directory.
+        if relative.starts_with("case/")
+            || relative.starts_with("defaults/")
+            || relative.starts_with("plugins/")
+        {
+            let path = self.data_dir.join(relative);
+            if path.is_file() {
+                candidate = Some(path);
+            }
+            // Fall through to engine_dir in case defaults are bundled (future-proof)
+        }
+
+        // Static engine files (JS, CSS, HTML, img, Languages) from engine_dir.
+        if candidate.is_none() {
+            let path = self.engine_dir.join(relative);
+            if path.is_file() {
+                candidate = Some(path);
             }
         }
-        if resolved.is_file() {
-            return Some(resolved);
-        }
-        return None;
-    }
 
-    None
+        // Case-insensitive fallback for Linux/Android (case-sensitive filesystems).
+        #[cfg(not(target_os = "windows"))]
+        if candidate.is_none() && self.case_insensitive {
+            let base = if relative.starts_with("case/") || relative.starts_with("defaults/") {
+                self.data_dir.join(relative)
+            } else {
+                self.engine_dir.join(relative)
+            };
+            candidate = case_insensitive_resolve(&base);
+        }
+
+        // VFS pointer resolution: follow aliases to the real file (supports multi-hop chains).
+        if let Some(path) = candidate {
+            let resolved =
+                crate::downloader::vfs::resolve_path(&path, &self.data_dir, &self.engine_dir);
+            // If the file is a VFS pointer whose target is missing, resolve_path returns the
+            // pointer itself — don't serve the pointer content, return 404 instead.
+            if resolved == path {
+                if crate::downloader::vfs::read_vfs_pointer(&path).is_some() {
+                    return None; // Broken pointer
+                }
+            }
+            if resolved.is_file() {
+                return Some(resolved);
+            }
+            return None;
+        }
+
+        None
+    }
+}
+
+/// Resolve a URL path to a filesystem path. Thin wrapper over [`PathResolver`].
+pub(crate) fn resolve_path(config: &ServerConfig, relative: &str) -> Option<PathBuf> {
+    PathResolver::new(config.engine_dir.clone(), config.data_dir.clone()).resolve(relative)
 }
 
 /// Case-insensitive file resolution: given a candidate path, if the file doesn't
@@ -1833,5 +1866,44 @@ mod tests {
 
         // Both return identical data
         assert_eq!(result.data, result2.data, "Both paths should serve the same content");
+    }
+
+    #[test]
+    fn test_path_resolver_basic_resolution() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("player.html"), "<html>").unwrap();
+        let js_dir = dir.path().join("Javascript");
+        std::fs::create_dir_all(&js_dir).unwrap();
+        std::fs::write(js_dir.join("common.js"), "// js").unwrap();
+
+        let resolver = PathResolver::new(dir.path().to_path_buf(), dir.path().to_path_buf());
+
+        assert!(resolver.resolve("player.html").unwrap().is_file());
+        assert!(resolver.resolve("Javascript/common.js").unwrap().is_file());
+        assert!(resolver.resolve("").unwrap().ends_with("player.html"));
+        assert!(resolver.resolve("missing/file.js").is_none());
+        assert!(resolver.resolve("../etc/passwd").is_none());
+    }
+
+    #[test]
+    fn test_path_resolver_equivalence_with_resolve_path() {
+        let engine = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        std::fs::write(engine.path().join("player.html"), "<html>").unwrap();
+        let assets = data.path().join("case/42/assets");
+        std::fs::create_dir_all(&assets).unwrap();
+        std::fs::write(assets.join("img.png"), b"PNG").unwrap();
+
+        let config = test_config_split(engine.path(), data.path());
+        let resolver = PathResolver::new(engine.path().to_path_buf(), data.path().to_path_buf());
+
+        for rel in ["", "player.html", "case/42/assets/img.png", "missing"] {
+            assert_eq!(
+                resolve_path(&config, rel).map(|p| p.to_string_lossy().into_owned()),
+                resolver.resolve(rel).map(|p| p.to_string_lossy().into_owned()),
+                "resolver must match resolve_path for '{}'",
+                rel
+            );
+        }
     }
 }
