@@ -70,6 +70,34 @@ var ThemeManager = (function() {
 		applyPanelArrangement();
 		applyNarrowMode();
 		applyAccessibility();
+		applyTabPosition();
+	}
+
+	/**
+	 * Swap the caseScreen / tabbed evidence-settings order while tab mode is
+	 * active. Uses inline order so it overrides the wide-mode arrangement-*
+	 * CSS classes; when no tabbed zone exists, inline orders are cleared so
+	 * panelArrangement is the single source of truth again.
+	 */
+	function applyTabPosition() {
+		var position = EngineConfig.get('layout.tabPosition') || 'right';
+		var courtrecord = document.getElementById('courtrecord');
+		var screens = document.getElementById('screens');
+		if (!courtrecord || !screens) return;
+
+		var tabsActive = !!document.querySelector('.tabbed-zone-bar');
+		if (!tabsActive) {
+			courtrecord.style.order = '';
+			screens.style.order = '';
+			return;
+		}
+		if (position === 'left') {
+			courtrecord.style.order = '1';
+			screens.style.order = '2';
+		} else {
+			screens.style.order = '1';
+			courtrecord.style.order = '2';
+		}
 	}
 
 	/**
@@ -414,7 +442,9 @@ var ThemeManager = (function() {
 		var root = document.documentElement;
 		root.style.setProperty('--evidence-flex', String(EVIDENCE_BASE_FLEX));
 		root.style.setProperty('--settings-flex', String(SETTINGS_BASE_FLEX));
-		root.style.setProperty('--screen-scale', '1');
+		// Note: --screen-scale intentionally NOT overridden here. It mirrors the
+		// user's layout.screenScale config (asserted by tests); non-wide layouts
+		// are handled by computeAutoFitScreenSize's width capping instead.
 		root.style.setProperty('--body-max-width', '100vw');
 		computeAutoFitScreenSize();
 	}
@@ -503,6 +533,7 @@ var ThemeManager = (function() {
 		if (typeof SettingsPanel !== 'undefined' && SettingsPanel.updateLayoutTier) {
 			SettingsPanel.updateLayoutTier(tabsActive ? 'tabs' : currentLayoutTier, wideIsPossible);
 		}
+		applyTabPosition();
 	}
 
 	// ============================================================
@@ -729,6 +760,7 @@ var ThemeManager = (function() {
 		'display.hideHeader': applyHideHeader,
 		'display.fullscreen': applyFullscreen,
 		'layout.panelArrangement': applyPanelArrangement,
+		'layout.tabPosition': applyTabPosition,
 		'layout.evidenceWidth': applyPanelWidths,
 		'layout.settingsWidth': applyPanelWidths
 	};
@@ -823,6 +855,9 @@ var ThemeManager = (function() {
 		 * Does nothing in wide mode (no tabbed zone).
 		 */
 		cycleTab: cycleTab,
+
+		/** Re-apply the tab-position order (exposed for tests and plugins). */
+		applyTabPosition: applyTabPosition,
 
 		/**
 		 * Compute the minimum bodyWidth scale that keeps wide mode.

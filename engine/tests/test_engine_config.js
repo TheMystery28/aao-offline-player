@@ -170,6 +170,19 @@ function testEngineConfig() {
 		EngineConfig.reset();
 	})();
 
+	// --- tabPosition default ---
+	(function() {
+		EngineConfig.reset();
+		TestHarness.assertEqual(
+			EngineConfig.get('layout.tabPosition'),
+			'right',
+			'layout.tabPosition defaults to "right"'
+		);
+		var all = EngineConfig.getAll();
+		TestHarness.assertDefined(all.layout.tabPosition, 'getAll() exposes layout.tabPosition');
+		window.localStorage.removeItem('aao_engine_config');
+	})();
+
 	// Final cleanup
 	EngineConfig.reset();
 	window.localStorage.removeItem('aao_engine_config');

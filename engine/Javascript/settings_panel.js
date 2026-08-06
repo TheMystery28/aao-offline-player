@@ -23,9 +23,12 @@ Modules.load(new Object({
 var SettingsPanel = (function() {
 	const controls = [];
 	let pickerContainer = null;
+	let tabPickerContainer = null;
 	let rowGroup = null;
 	let mixedGroup = null;
+	let rowPickerLegend = null;
 	let narrowModeWrapper = null;
+	let tabPositionWrapper = null;
 	let layoutDetailsRef = null;
 	let bodyWidthWrapper = null;
 	let bodyWidthSlider = null;
@@ -417,6 +420,7 @@ var SettingsPanel = (function() {
 			legend.appendChild(span);
 		}
 		wrapper.appendChild(legend);
+		rowPickerLegend = legend;
 
 		pickerContainer = document.createElement('div');
 		pickerContainer.className = 'layout-picker';
@@ -454,9 +458,57 @@ var SettingsPanel = (function() {
 		});
 	}
 
-	function createRowThumb(def, configPath) {
+	/**
+	 * Build a 2-thumb picker for the tab-mode position (right|left).
+	 * Thumbs use the tab-layout visual: [S][T] = tabs right, [T][S] = tabs left.
+	 */
+	function buildTabPositionPicker(container, configPath) {
+		var wrapper = document.createElement('div');
+		wrapper.className = 'layout-picker-wrapper tab-position-picker';
+
+		var title = document.createElement('span');
+		title.className = 'regular_label';
+		title.setAttribute('data-locale-content', 'tab_position');
+		title.style.display = 'block';
+		wrapper.appendChild(title);
+
+		// Legend describing the two tab-mode blocks (screen + tabbed evidence/settings)
+		var legend = document.createElement('div');
+		legend.className = 'layout-picker-legend';
+		var legendItems = [
+			{ cls: 'legend-screen', text: 'Screen' },
+			{ cls: 'legend-tab', text: 'Tabs' }
+		];
+		for (var li = 0; li < legendItems.length; li++) {
+			var span = document.createElement('span');
+			span.className = legendItems[li].cls;
+			span.appendChild(document.createTextNode(legendItems[li].text));
+			legend.appendChild(span);
+		}
+		wrapper.appendChild(legend);
+
+		var group = document.createElement('div');
+		group.className = 'layout-picker';
+		group.appendChild(createRowThumb({ value: 'right', blocks: ['s', 't'] }, configPath, 'tab-layout'));
+		group.appendChild(createRowThumb({ value: 'left', blocks: ['t', 's'] }, configPath, 'tab-layout'));
+		wrapper.appendChild(group);
+
+		container.appendChild(wrapper);
+		tabPositionWrapper = wrapper;
+		tabPickerContainer = group;
+
+		// Selection highlight + sync on config changes (row-picker parity)
+		updatePickerSelectionIn(tabPickerContainer, configPath);
+		controls.push({
+			element: tabPickerContainer,
+			path: configPath,
+			sync: function() { updatePickerSelectionIn(tabPickerContainer, configPath); }
+		});
+	}
+
+	function createRowThumb(def, configPath, layoutClass) {
 		var thumb = document.createElement('div');
-		thumb.className = 'layout-thumb row-layout';
+		thumb.className = 'layout-thumb ' + (layoutClass || 'row-layout');
 		thumb.setAttribute('data-value', def.value);
 		for (var i = 0; i < def.blocks.length; i++) {
 			var block = document.createElement('span');
@@ -508,10 +560,10 @@ var SettingsPanel = (function() {
 		return thumb;
 	}
 
-	function updatePickerSelection(configPath) {
-		if (!pickerContainer) return;
+	function updatePickerSelectionIn(container, configPath) {
+		if (!container) return;
 		var current = String(EngineConfig.get(configPath));
-		var thumbs = pickerContainer.querySelectorAll('.layout-thumb');
+		var thumbs = container.querySelectorAll('.layout-thumb');
 		for (var i = 0; i < thumbs.length; i++) {
 			if (thumbs[i].getAttribute('data-value') === current) {
 				thumbs[i].classList.add('selected');
@@ -519,6 +571,10 @@ var SettingsPanel = (function() {
 				thumbs[i].classList.remove('selected');
 			}
 		}
+	}
+
+	function updatePickerSelection(configPath) {
+		updatePickerSelectionIn(pickerContainer, configPath);
 	}
 
 	function isRowLayout(value) {
@@ -612,6 +668,7 @@ var SettingsPanel = (function() {
 		addSlider(layoutContent, 'layout.evidenceWidth', 'evidence_width', 0.3, 2.0, 0.1, { layout: true });
 		addSlider(layoutContent, 'layout.settingsWidth', 'settings_width', 0.3, 2.0, 0.1, { layout: true });
 		buildLayoutPicker(layoutContent, 'layout.panelArrangement');
+		buildTabPositionPicker(layoutContent, 'layout.tabPosition');
 		addSelect(layoutContent, 'layout.narrowMode', 'narrow_mode', [
 			{ value: 'tabs', label: 'Tabs' },
 			{ value: 'stack', label: 'Stack' }
@@ -694,7 +751,15 @@ var SettingsPanel = (function() {
 			showHide(pickerContainer, isWide);
 			showHide(rowGroup, isWide);
 			showHide(mixedGroup, isWide);
+			showHide(rowPickerLegend, isWide);
 			showHide(narrowModeWrapper, showNarrow);
+			showHide(tabPositionWrapper, tier === 'tabs');
+			// Re-apply the selection whenever the picker becomes visible, so the
+			// current (default) thumb is already outlined the moment tab mode
+			// shows it — even if the panel was rebuilt after the initial apply.
+			if (tier === 'tabs') {
+				updatePickerSelectionIn(tabPickerContainer, 'layout.tabPosition');
+			}
 			showHide(bodyWidthWrapper, isWide);
 			showHide(evidenceWidthWrapper, isWide);
 			showHide(settingsWidthWrapper, isWide);

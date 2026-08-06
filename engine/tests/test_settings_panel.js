@@ -194,7 +194,124 @@ function testSettingsPanel() {
 		SettingsPanel.updateLayoutTier('wide', true);
 	})();
 
+	// --- tab mode hides row-picker legend, keeps tab legend ---
+	(function() {
+		if (!container) return;
+		var rowLegend = container.querySelector('.layout-picker-wrapper .layout-picker-legend');
+		var tabLegend = container.querySelector('.tab-position-picker .layout-picker-legend');
+		if (!rowLegend || !tabLegend) return;
+		SettingsPanel.updateLayoutTier('tabs', true);
+		TestHarness.assertEqual(getComputedStyle(rowLegend).display, 'none', 'tab mode: Screen/Evidence/Settings legend hidden');
+		TestHarness.assert(getComputedStyle(tabLegend).display !== 'none', 'tab mode: Screen/Tabs legend visible');
+		SettingsPanel.updateLayoutTier('wide', true);
+		TestHarness.assert(getComputedStyle(rowLegend).display !== 'none', 'wide mode: Screen/Evidence/Settings legend visible');
+	})();
+
 	// Cleanup
 	EngineConfig.reset();
 	window.localStorage.removeItem('aao_engine_config');
+
+	// --- tab position picker ---
+	(function() {
+		if (!container) return;
+		// Fresh panel build with defaults only — the default thumb must already be
+		// selected/outlined (row-picker parity), before any user interaction.
+		EngineConfig.reset();
+		window.localStorage.removeItem('aao_engine_config');
+		SettingsPanel._init();
+		var freshPicker = document.querySelector('.tab-position-picker');
+		TestHarness.assert(freshPicker !== null, 'Tab position picker exists after fresh init');
+		if (freshPicker) {
+			var freshRight = freshPicker.querySelector('.layout-thumb[data-value="right"]');
+			TestHarness.assert(
+				freshRight && freshRight.classList.contains('selected'),
+				'Tab position picker: default right thumb selected on fresh build'
+			);
+			var freshLeft = freshPicker.querySelector('.layout-thumb[data-value="left"]');
+			TestHarness.assert(
+				freshLeft && !freshLeft.classList.contains('selected'),
+				'Tab position picker: left thumb not selected on fresh build'
+			);
+		}
+
+		var picker = container.querySelector('.tab-position-picker');
+		TestHarness.assert(picker !== null, 'Tab position picker exists');
+		if (!picker) return;
+		var thumbs = picker.querySelectorAll('.layout-thumb.tab-layout');
+		TestHarness.assertEqual(thumbs.length, 2, 'Tab position picker has 2 thumbnails');
+		TestHarness.assert(
+			container.querySelector('[data-locale-content="tab_position"]') !== null,
+			'Tab position label exists'
+		);
+		TestHarness.assert(
+			picker.querySelector('.layout-picker-legend') !== null,
+			'Tab position picker has a legend'
+		);
+
+		// Selection highlight follows the current config (row-picker parity)
+		var leftThumb = picker.querySelector('.layout-thumb[data-value="left"]');
+		var rightThumb = picker.querySelector('.layout-thumb[data-value="right"]');
+		EngineConfig.set('layout.tabPosition', 'left');
+		TestHarness.assert(
+			leftThumb && leftThumb.classList.contains('selected'),
+			'Tab position picker: left thumb selected when config is left'
+		);
+		TestHarness.assert(
+			rightThumb && !rightThumb.classList.contains('selected'),
+			'Tab position picker: right thumb not selected when config is left'
+		);
+		EngineConfig.set('layout.tabPosition', 'right');
+		TestHarness.assert(
+			rightThumb && rightThumb.classList.contains('selected'),
+			'Tab position picker: right thumb selected when config is right'
+		);
+		EngineConfig.reset();
+	})();
+
+	// --- updateLayoutTier: tab position picker visible only in tabs ---
+	(function() {
+		if (!container) return;
+		var picker = container.querySelector('.tab-position-picker');
+		if (!picker) return;
+
+		SettingsPanel.updateLayoutTier('tabs', true);
+		TestHarness.assert(
+			picker.style.display !== 'none',
+			'updateLayoutTier tabs: tab position picker visible'
+		);
+		// Becoming visible must re-apply the selection so the default thumb is
+		// already outlined the moment tab mode shows the picker.
+		var rightThumb = picker.querySelector('.layout-thumb[data-value="right"]');
+		TestHarness.assert(
+			rightThumb && rightThumb.classList.contains('selected'),
+			'updateLayoutTier tabs: default thumb selected when picker becomes visible'
+		);
+
+		// Even if the selection was lost (panel rebuilt, classes cleared), showing
+		// the picker must restore it from the current config.
+		var allThumbs = picker.querySelectorAll('.layout-thumb');
+		for (var ti = 0; ti < allThumbs.length; ti++) {
+			allThumbs[ti].classList.remove('selected');
+		}
+		SettingsPanel.updateLayoutTier('tabs', true);
+		TestHarness.assert(
+			rightThumb && rightThumb.classList.contains('selected'),
+			'updateLayoutTier tabs: lost selection restored when picker shown'
+		);
+
+		SettingsPanel.updateLayoutTier('wide', true);
+		TestHarness.assert(
+			picker.style.display === 'none',
+			'updateLayoutTier wide: tab position picker hidden'
+		);
+
+		SettingsPanel.updateLayoutTier('narrow', false);
+		TestHarness.assert(
+			picker.style.display === 'none',
+			'updateLayoutTier narrow: tab position picker hidden'
+		);
+
+		// Restore
+		SettingsPanel.updateLayoutTier('wide', true);
+	})();
 }

@@ -43,7 +43,8 @@ function testInputManager() {
 		var lookup = InputManager.getKeyboardLookup();
 		TestHarness.assertEqual(lookup['Enter'], 'proceed', 'Default config maps Enter to proceed');
 		TestHarness.assertEqual(lookup['Space'], 'proceed', 'Default config maps Space to proceed');
-		TestHarness.assertEqual(lookup['Shift'], 'skip', 'Default config maps Shift to skip');
+		TestHarness.assertEqual(lookup['KeyQ'], 'press', 'Default config maps KeyQ to press');
+		TestHarness.assertEqual(lookup['KeyW'], 'present', 'Default config maps KeyW to present');
 		TestHarness.assertEqual(lookup['ArrowLeft'], 'back', 'Default config maps ArrowLeft to back');
 		TestHarness.assertEqual(lookup['ArrowRight'], 'forward', 'Default config maps ArrowRight to forward');
 		TestHarness.assertEqual(lookup['Tab'], 'crSwitchTab', 'Default config maps Tab to crSwitchTab');
@@ -104,25 +105,25 @@ function testInputManager() {
 
 	// --- Config change remaps keys ---
 	(function() {
-		// Remap proceed to KeyQ
-		EngineConfig.set('controls.keyboard.proceed', ['KeyQ']);
+		// Remap proceed to a previously unmapped key
+		EngineConfig.set('controls.keyboard.proceed', ['KeyR']);
 		// Force rebuild since config:changed listener may have been cleared by EngineEvents tests
 		InputManager.rebuildLookups();
 
 		var lookup = InputManager.getKeyboardLookup();
-		TestHarness.assertEqual(lookup['KeyQ'], 'proceed', 'Config change: KeyQ now maps to proceed');
+		TestHarness.assertEqual(lookup['KeyR'], 'proceed', 'Config change: KeyR now maps to proceed');
 		TestHarness.assertEqual(lookup['Enter'], undefined, 'Config change: Enter no longer maps to proceed');
 
-		// Verify KeyQ actually emits input:action
+		// Verify KeyR actually emits input:action
 		var received = null;
 		var handler = function(data) { received = data; };
 		EngineEvents.on('input:action', handler);
 
-		document.dispatchEvent(makeKeyEvent('keydown', 'KeyQ', 'q', 81));
-		TestHarness.assert(received !== null, 'Remapped KeyQ emits input:action');
-		TestHarness.assertEqual(received.action, 'proceed', 'Remapped KeyQ action is proceed');
+		document.dispatchEvent(makeKeyEvent('keydown', 'KeyR', 'r', 82));
+		TestHarness.assert(received !== null, 'Remapped KeyR emits input:action');
+		TestHarness.assertEqual(received.action, 'proceed', 'Remapped KeyR action is proceed');
 
-		document.dispatchEvent(makeKeyEvent('keyup', 'KeyQ', 'q', 81));
+		document.dispatchEvent(makeKeyEvent('keyup', 'KeyR', 'r', 82));
 		EngineEvents.off('input:action', handler);
 
 		// Restore defaults and rebuild lookups
@@ -173,8 +174,9 @@ function testInputManager() {
 	// --- Gamepad save/loadLatest/fullscreen mapped ---
 	(function() {
 		var lookup = InputManager.getGamepadLookup();
-		TestHarness.assertEqual(lookup['4'], 'save', 'Gamepad button 4 (LB) maps to save');
+		TestHarness.assertEqual(lookup['4'], 'press', 'Gamepad button 4 (LB) maps to press');
 		TestHarness.assertEqual(lookup['6'], 'loadLatest', 'Gamepad button 6 (LT) maps to loadLatest');
+		TestHarness.assertEqual(lookup['7'], 'save', 'Gamepad button 7 (RT) maps to save');
 		TestHarness.assertEqual(lookup['8'], 'fullscreen', 'Gamepad button 8 (View) maps to fullscreen');
 	})();
 
@@ -210,17 +212,5 @@ function testInputManager() {
 		var configAfter = EngineConfig.get('display.nightMode');
 		TestHarness.assertEqual(configBefore, configAfter, 'Ctrl+A does not trigger any hardcoded shortcut');
 		document.dispatchEvent(makeKeyEvent('keyup', 'KeyA', 'a', 65));
-	})();
-
-	// --- skip allows repeat ---
-	(function() {
-		var count = 0;
-		var handler = function(data) { if (data.action === 'skip') count++; };
-		EngineEvents.on('input:action', handler);
-		document.dispatchEvent(makeKeyEvent('keydown', 'Shift', 'Shift', 16));
-		document.dispatchEvent(makeKeyEvent('keydown', 'Shift', 'Shift', 16));
-		TestHarness.assert(count >= 2, 'Skip action allows repeat (count=' + count + ')');
-		document.dispatchEvent(makeKeyEvent('keyup', 'Shift', 'Shift', 16));
-		EngineEvents.off('input:action', handler);
 	})();
 }

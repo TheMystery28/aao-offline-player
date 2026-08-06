@@ -420,4 +420,71 @@ function testThemeManager() {
 	document.documentElement.style.removeProperty('--mobile-screen-scale');
 	document.documentElement.style.removeProperty('--font-scale');
 	document.documentElement.style.removeProperty('--line-spacing');
+
+	// --- tab position (order swap while tabbed zone exists) ---
+	(function() {
+		var section = document.querySelector('#content > section');
+		var courtrecord = document.getElementById('courtrecord');
+		var screens = document.getElementById('screens');
+		if (!section || !courtrecord || !screens) return;
+
+		// No tab bar → applyTabPosition must clear any inline orders
+		EngineConfig.set('layout.tabPosition', 'left');
+		ThemeManager.reapply();
+		TestHarness.assertEqual(
+			courtrecord.style.order, '',
+			'tabPosition: no tabbed zone → courtrecord inline order cleared'
+		);
+		TestHarness.assertEqual(
+			screens.style.order, '',
+			'tabPosition: no tabbed zone → screens inline order cleared'
+		);
+
+		// Fake a tabbed zone (same DOM signal createTabbedZone maintains)
+		var fakeBar = document.createElement('div');
+		fakeBar.className = 'tabbed-zone-bar';
+		courtrecord.insertBefore(fakeBar, courtrecord.firstChild);
+
+		EngineConfig.set('layout.tabPosition', 'left');
+		ThemeManager.reapply();
+		TestHarness.assertEqual(
+			courtrecord.style.order, '1',
+			'tabPosition: left → courtrecord order 1 (tabbed zone left)'
+		);
+		TestHarness.assertEqual(
+			screens.style.order, '2',
+			'tabPosition: left → screens order 2'
+		);
+
+		EngineConfig.set('layout.tabPosition', 'right');
+		ThemeManager.reapply();
+		TestHarness.assertEqual(
+			screens.style.order, '1',
+			'tabPosition: right → screens order 1 (tabbed zone right)'
+		);
+		TestHarness.assertEqual(
+			courtrecord.style.order, '2',
+			'tabPosition: right → courtrecord order 2'
+		);
+
+		// Removing the tab bar clears orders again (arrangement classes take over)
+		courtrecord.removeChild(fakeBar);
+		ThemeManager.reapply();
+		TestHarness.assertEqual(
+			courtrecord.style.order, '',
+			'tabPosition: tabbed zone removed → inline orders cleared'
+		);
+		TestHarness.assertEqual(
+			screens.style.order, '',
+			'tabPosition: tabbed zone removed → screens inline order cleared'
+		);
+
+		// Public API exposure
+		TestHarness.assertType(
+			ThemeManager.applyTabPosition, 'function',
+			'applyTabPosition is a function on public API'
+		);
+
+		EngineConfig.reset();
+	})();
 }

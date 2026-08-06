@@ -38,7 +38,8 @@
         "panelArrangement": "1-2-3",
         "evidenceWidth": 1.0,
         "settingsWidth": 1.0,
-        "narrowMode": "stack"
+        "narrowMode": "stack",
+        "tabPosition": "right"
     },
     "features": {
         "debugPanel": false,

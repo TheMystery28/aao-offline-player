@@ -40,6 +40,7 @@
 "evidence_width" : "Evidence width",
 "settings_width" : "Settings width",
 "panel_arrangement" : "Panel arrangement",
+"tab_position" : "Tab position",
 "narrow_mode" : "Narrow mode",
 "hide_header" : "Hide header",
 "fullscreen" : "Fullscreen",

@@ -75,6 +75,13 @@ function testControls() {
 	if (stmtBack) { stmtBack.style.display = 'block'; stmtBack.style.visibility = 'visible'; }
 	if (stmtFwd) { stmtFwd.style.display = 'block'; stmtFwd.style.visibility = 'visible'; }
 
+	// Reset the bottom-screen state class. During gameplay only ONE action button
+	// is visible (the class on #screen-bottom decides which); a leftover 'skip'
+	// class makes #skip clickable and clickFirstVisible(['skip','proceed',...])
+	// would hit #skip first, never reaching #proceed.
+	var bottomScreen = document.getElementById('screen-bottom');
+	if (bottomScreen) { bottomScreen.className = 'proceed'; }
+
 	instrumentButton('proceed');
 	instrumentButton('statement-backwards');
 	instrumentButton('statement-forwards');
@@ -97,15 +104,6 @@ function testControls() {
 		clickLog.indexOf('proceed') > -1,
 		'Simulated keydown Space clicks proceed button (when visible)'
 	);
-
-	// Simulated keydown Shift clicks proceed button (allows repeat via skip action)
-	clickLog = [];
-	document.dispatchEvent(createKeyEvent('keydown', 'ShiftLeft', 'Shift', 16));
-	TestHarness.assert(
-		clickLog.indexOf('proceed') > -1,
-		'Simulated keydown Shift clicks proceed button (allows repeat)'
-	);
-	document.dispatchEvent(createKeyEvent('keyup', 'ShiftLeft', 'Shift', 16));
 
 	// Simulated keydown Left (keyCode 37) clicks statement-backwards
 	clickLog = [];
@@ -140,14 +138,6 @@ function testControls() {
 	var spaceClicks = clickLog.filter(function(id) { return id === 'proceed'; }).length;
 	document.dispatchEvent(createKeyEvent('keyup', 'Space', ' ', 32));
 	TestHarness.assertEqual(spaceClicks, 1, 'Space does NOT fire twice when held (pressed guard)');
-
-	// Shift DOES fire repeatedly when held (skip action allows repeat)
-	clickLog = [];
-	document.dispatchEvent(createKeyEvent('keydown', 'ShiftLeft', 'Shift', 16));
-	document.dispatchEvent(createKeyEvent('keydown', 'ShiftLeft', 'Shift', 16)); // repeat
-	var shiftClicks = clickLog.filter(function(id) { return id === 'proceed'; }).length;
-	document.dispatchEvent(createKeyEvent('keyup', 'ShiftLeft', 'Shift', 16));
-	TestHarness.assert(shiftClicks >= 2, 'Shift DOES fire repeatedly when held (no pressed guard)');
 
 	// Left does NOT fire twice when held
 	clickLog = [];

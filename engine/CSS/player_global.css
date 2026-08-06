@@ -1322,6 +1322,7 @@ a.courtrecord-switchview:active {
 .layout-picker-legend .legend-screen::before { background: #333; }
 .layout-picker-legend .legend-evidence::before { background: #6a4; }
 .layout-picker-legend .legend-settings::before { background: #b84; }
+.layout-picker-legend .legend-tab::before { background: #58a; }
 
 .layout-picker {
 	display: flex;
@@ -1363,9 +1364,11 @@ a.courtrecord-switchview:active {
 .layout-thumb .block-s { background: #333; }
 .layout-thumb .block-e { background: #6a4; }
 .layout-thumb .block-p { background: #b84; }
+.layout-thumb .block-t { background: #58a; }
 
 /* Row layout: 3 vertical strips side by side */
-.layout-thumb.row-layout .block {
+.layout-thumb.row-layout .block,
+.layout-thumb.tab-layout .block {
 	flex: 1;
 	height: 100%;
 	min-width: 0;
