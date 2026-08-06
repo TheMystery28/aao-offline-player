@@ -328,11 +328,20 @@ impl Drop for LocalhostServer {
 /// Serves all files via `serve_file()` — used for audio on Android (bypasses
 /// Chromium custom-protocol Range bug) and localStorage migration on desktop.
 pub fn start_server(config: ServerConfig) -> Result<LocalhostServer, crate::error::AppError> {
-    let port = portpicker::pick_unused_port()
-        .ok_or_else(|| "No available port found for localhost server".to_string())?;
+    // Bind atomically to an ephemeral port: binding 127.0.0.1:0 lets the OS
+    // allocate the port and hand the listener to tiny_http in one step.
+    // The previous portpicker probe (bind → release → re-bind) had a TOCTOU
+    // window where a concurrent process could grab the port (os error 10048),
+    // observed in CI parallel tests on v1.3.4.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to bind localhost server listener: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to read localhost server port: {}", e))?
+        .port();
 
     // Explicit 127.0.0.1 avoids the localhost → [::1] resolution on some systems.
-    let server = Server::http(format!("127.0.0.1:{}", port))
+    let server = Server::from_listener(listener, None)
         .map_err(|e| format!("Failed to start localhost server on port {}: {}", port, e))?;
 
     let config = Arc::new(config);
@@ -909,6 +918,46 @@ mod tests {
         // player.html exists in the test fixture (created by setup)
         let (status, _, _) = http_get(port, "/player.html");
         assert_eq!(status, 200);
+    }
+
+    /// Regression (v1.3.4 CI failure): start_server must bind atomically.
+    /// The old portpicker probe (bind → release → re-bind) had a TOCTOU window
+    /// where a concurrent test grabbed the port (os error 10048). Under the
+    /// atomic bind contract, many parallel startups must ALL succeed and each
+    /// server must respond.
+    #[test]
+    fn test_start_server_parallel_no_port_collision() {
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            handles.push(std::thread::spawn(|| {
+                let dir = tempfile::tempdir().unwrap();
+                std::fs::write(dir.path().join("player.html"), "<html>player</html>").unwrap();
+                let config = test_config(dir.path());
+                let ms = start_server(config)
+                    .expect("parallel start_server must not fail with port collision");
+                let (status, _, _) = http_get(ms.port(), "/player.html");
+                (ms.port(), status)
+            }));
+        }
+        let results: Vec<(u16, u16)> = handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect();
+        let ports: std::collections::HashSet<u16> = results.iter().map(|(p, _)| *p).collect();
+        assert_eq!(ports.len(), results.len(), "parallel servers must get distinct ports");
+        for (_, status) in results {
+            assert_eq!(status, 200, "each parallel server must respond");
+        }
+    }
+
+    /// Regression: the port returned by start_server is bound at creation time
+    /// (atomic bind contract) — no window between picking and binding.
+    #[test]
+    fn test_start_server_port_bound_immediately() {
+        let (port, _dir, _ms) = setup_localhost_server();
+        let stream = std::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+            .expect("port returned by start_server must be reachable immediately");
+        drop(stream);
     }
 
     #[test]
