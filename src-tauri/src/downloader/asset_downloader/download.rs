@@ -378,9 +378,11 @@ pub(crate) async fn download_single_asset(
 
     if !status.is_success() {
         if status.is_redirection() {
-            return Err(format!("HTTP {} redirect to: {} (reqwest did not follow)", status_code, location).into());
+            return Err(AppError::Other(format!(
+                "HTTP {} redirect to: {} (reqwest did not follow)", status_code, location
+            )));
         }
-        return Err(format!("HTTP {}", status_code).into());
+        return Err(AppError::HttpStatus { status: status_code, url: url.to_string() });
     }
 
     // Content-type validation: reject HTML error pages for media assets
@@ -556,7 +558,7 @@ pub(crate) async fn do_request(
                             .header("User-Agent", "AAO-Offline-Player/0.1")
                             .send()
                             .await
-                            .map_err(|e| format!("Failed to follow redirect to {}: {}", encoded_loc, e))?);
+                            .map_err(|e| AppError::Other(format!("Failed to follow redirect to {}: {}", encoded_loc, e)))?);
                     }
                 }
                 // Redirect but no Location — return as-is, caller handles error
@@ -588,15 +590,15 @@ pub(crate) async fn do_request(
         .await
         .map_err(|e| {
             if e.is_timeout() {
-                format!("timeout: {}", e)
+                AppError::Timeout(e.to_string())
             } else if e.is_connect() {
-                format!("connection error: {}", e)
+                AppError::Network(e.to_string())
             } else if e.is_request() {
-                format!("request error: {}", e)
+                AppError::Other(format!("request error: {}", e))
             } else if e.is_redirect() {
-                format!("redirect error: {}", e)
+                AppError::Other(format!("redirect error: {}", e))
             } else {
-                format!("HTTP error: {}", e)
+                AppError::Other(format!("HTTP error: {}", e))
             }
         })?;
 

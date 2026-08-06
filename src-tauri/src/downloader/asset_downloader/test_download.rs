@@ -948,3 +948,24 @@ async fn test_skip_existing_large_file_returns_zero_hash() {
         "large skipped files must not be hashed (sentinel 0)"
     );
 }
+
+#[tokio::test]
+async fn test_download_http_status_typed_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server).await;
+
+    let client = test_client();
+    let dir = tempfile::tempdir().unwrap();
+    let log = DownloadLog::new(&dir.path().join("dl.log")).unwrap();
+    let url = format!("{}/missing.png", server.uri());
+
+    let err = download_single_asset(
+        &client, &url, &dir.path().to_path_buf(), "missing.png", &log, "sprite",
+    ).await.unwrap_err();
+
+    // The message must be exactly "HTTP 404" (frontend string-matches "404")
+    assert_eq!(err.to_string(), "HTTP 404", "message contract broken");
+    assert_eq!(err.kind(), "http_status", "must be typed as http_status");
+}

@@ -4,7 +4,6 @@ use std::path::Path;
 use crate::error::AppError;
 use super::helpers::{hash_file, rewrite_value_recursive};
 use super::index::DedupIndex;
-use crate::downloader::DownloaderError;
 use crate::downloader::manifest::{read_manifest, write_manifest};
 use crate::downloader::paths::normalize_path;
 
@@ -49,7 +48,7 @@ pub fn dedup_case_assets(
     case_id: u32,
     data_dir: &Path,
     index: Option<&DedupIndex>,
-) -> Result<(usize, u64), DownloaderError> {
+) -> Result<(usize, u64), AppError> {
     let case_dir = data_dir.join("case").join(case_id.to_string());
     let assets_dir = case_dir.join("assets");
     if !assets_dir.is_dir() {
@@ -61,7 +60,7 @@ pub fn dedup_case_assets(
     let index: Option<&DedupIndex> = match index {
         Some(idx) => Some(idx),
         None => {
-            fallback_index = DedupIndex::open(data_dir).map_err(|e| DownloaderError::Other(e.to_string())).ok();
+            fallback_index = DedupIndex::open(data_dir).map_err(|e| AppError::Other(e.to_string())).ok();
             fallback_index.as_ref()
         }
     };
@@ -82,7 +81,7 @@ pub fn dedup_case_assets_with_index(
     case_id: u32,
     data_dir: &Path,
     index: &DedupIndex,
-) -> Result<(usize, u64), DownloaderError> {
+) -> Result<(usize, u64), AppError> {
     let case_dir = data_dir.join("case").join(case_id.to_string());
     let assets_dir = case_dir.join("assets");
     if !assets_dir.is_dir() {
@@ -158,10 +157,10 @@ pub fn dedup_case_assets_with_index(
                 continue;
             }
             let shared_path = promote_to_shared(data_dir, &source, content_hash, index)
-                .map_err(|e| DownloaderError::Other(e.to_string()))?;
+                .map_err(|e| AppError::Other(e.to_string()))?;
             // Rewrite the other case to point to the shared copy
             rewrite_other_case(data_dir, &match_path, &shared_path, index)
-                .map_err(|e| DownloaderError::Other(e.to_string()))?;
+                .map_err(|e| AppError::Other(e.to_string()))?;
             shared_path
         };
 
@@ -203,7 +202,7 @@ pub fn dedup_case_assets_with_index(
         // Save updated manifest
         manifest.assets.total_downloaded = manifest.asset_map.len();
         write_manifest(&manifest, &case_dir)
-            .map_err(|e| DownloaderError::Other(e.to_string()))?;
+            .map_err(|e| AppError::Other(e.to_string()))?;
 
         // Save updated trial_data
         if trial_data_modified {
@@ -473,7 +472,7 @@ pub fn clear_unused_defaults(data_dir: &Path, index: Option<&DedupIndex>) -> Res
 }
 
 /// List all case directories under `data_dir/case/` with parseable numeric IDs.
-pub fn list_case_dirs(data_dir: &Path) -> Result<Vec<(u32, std::path::PathBuf)>, DownloaderError> {
+pub fn list_case_dirs(data_dir: &Path) -> Result<Vec<(u32, std::path::PathBuf)>, AppError> {
     let cases_dir = data_dir.join("case");
     if !cases_dir.is_dir() {
         return Ok(Vec::new());

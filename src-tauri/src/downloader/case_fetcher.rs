@@ -11,7 +11,7 @@ use reqwest::Client;
 use serde_json::Value;
 
 use crate::error::AppError;
-use super::{CaseInfo, DownloaderError, SitePaths, AAONLINE_BASE};
+use super::{CaseInfo, SitePaths, AAONLINE_BASE};
 
 /// Quick check if aaonline.fr is reachable (HEAD with short timeout).
 /// Uses the shared client — no per-call client construction.
@@ -129,14 +129,14 @@ static CFG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 
 /// Parse bridge.js.php response text into SitePaths.
 /// Extracted for testability — the HTTP fetch is separate.
-pub(crate) fn parse_bridge_js_response(text: &str) -> Result<SitePaths, DownloaderError> {
+pub(crate) fn parse_bridge_js_response(text: &str) -> Result<SitePaths, AppError> {
     let captures = CFG_REGEX
         .captures(text)
-        .ok_or_else(|| DownloaderError::Other("Could not find cfg variable in bridge.js.php".to_string()))?;
+        .ok_or_else(|| AppError::Other("Could not find cfg variable in bridge.js.php".to_string()))?;
 
     let cfg_json = captures
         .get(1)
-        .ok_or_else(|| DownloaderError::Other("Could not extract cfg JSON".to_string()))?
+        .ok_or_else(|| AppError::Other("Could not extract cfg JSON".to_string()))?
         .as_str();
 
     let cfg: Value = serde_json::from_str(cfg_json)?;
@@ -202,9 +202,9 @@ pub(crate) async fn fetch_site_paths_from(client: &Client, base: &str) -> Result
 
 /// Parse trial.js.php response text into (CaseInfo, trial_data, raw_info_json, raw_data_json).
 /// Extracted for testability — the HTTP fetch is separate.
-pub(crate) fn parse_trial_js_response(text: &str, fallback_id: u32) -> Result<(CaseInfo, Value, String, String), DownloaderError> {
+pub(crate) fn parse_trial_js_response(text: &str, fallback_id: u32) -> Result<(CaseInfo, Value, String, String), AppError> {
     let info_json = extract_json_parse_arg(text, "trial_information")
-        .ok_or_else(|| DownloaderError::Other("Could not find trial_information in response".to_string()))?;
+        .ok_or_else(|| AppError::Other("Could not find trial_information in response".to_string()))?;
 
     let info_value: Value = serde_json::from_str(&info_json)?;
 
@@ -231,7 +231,7 @@ pub(crate) fn parse_trial_js_response(text: &str, fallback_id: u32) -> Result<(C
     };
 
     let data_json = extract_json_parse_arg(text, "initial_trial_data")
-        .ok_or_else(|| DownloaderError::Other("Could not find initial_trial_data in response".to_string()))?;
+        .ok_or_else(|| AppError::Other("Could not find initial_trial_data in response".to_string()))?;
 
     let trial_data: Value = serde_json::from_str(&data_json)?;
 

@@ -5,7 +5,6 @@ use redb::{Database, MultimapTableDefinition, ReadableDatabase, TableDefinition}
 
 use crate::error::AppError;
 use super::helpers::{hash_file, normalize_ext};
-use crate::downloader::DownloaderError;
 use crate::downloader::paths::normalize_path;
 
 /// Primary index: relative_path → (file_size, xxh3_hash)
@@ -73,7 +72,7 @@ impl DedupIndex {
 
     /// Register multiple files in the index in a single transaction.
     /// More efficient than calling register() per file.
-    pub fn register_batch(&self, entries: &[(&str, u64, u64)]) -> Result<(), DownloaderError> {
+    pub fn register_batch(&self, entries: &[(&str, u64, u64)]) -> Result<(), AppError> {
         if entries.is_empty() {
             return Ok(());
         }
@@ -94,7 +93,7 @@ impl DedupIndex {
 
     /// Remove a file from the index.
     /// Reads old entry to get hash for the secondary key, then removes from both tables.
-    pub fn unregister(&self, relative_path: &str) -> Result<(), DownloaderError> {
+    pub fn unregister(&self, relative_path: &str) -> Result<(), AppError> {
         let relative_path = normalize_path(relative_path);
         let old_entry = {
             let txn = self.db.begin_read()?;
@@ -155,7 +154,7 @@ impl DedupIndex {
     /// Scan a directory and register all files not already in the db.
     /// Used on first run or when the index is out of date.
     /// Returns the count of newly registered files.
-    pub fn scan_and_register(&self, data_dir: &Path, prefix: &str) -> Result<usize, DownloaderError> {
+    pub fn scan_and_register(&self, data_dir: &Path, prefix: &str) -> Result<usize, AppError> {
         let dir = data_dir.join(prefix);
         if !dir.is_dir() {
             return Ok(0);
@@ -177,7 +176,7 @@ impl DedupIndex {
         base_dir: &Path,
         db: &Database,
         pending: &mut Vec<(String, u64, u64)>,
-    ) -> Result<(), DownloaderError> {
+    ) -> Result<(), AppError> {
         let read_dir = match fs::read_dir(dir) {
             Ok(rd) => rd,
             Err(_) => return Ok(()),
@@ -236,7 +235,7 @@ impl DedupIndex {
 
     /// Scan all case asset directories and register files not already indexed.
     /// Keys: `case/{id}/assets/{filename}`. Used for migrating pre-existing downloads.
-    pub fn scan_and_register_cases(&self, data_dir: &Path) -> Result<usize, DownloaderError> {
+    pub fn scan_and_register_cases(&self, data_dir: &Path) -> Result<usize, AppError> {
         let cases_dir = data_dir.join("case");
         if !cases_dir.is_dir() {
             return Ok(0);
@@ -380,7 +379,7 @@ impl DedupIndex {
     /// Returns `(case_id, filename, size, ext, hash)` for all `case/*/assets/*` entries.
     ///
     /// Wrapped in catch_unwind: redb may panic on corrupt data.
-    pub fn query_case_assets(&self) -> Result<Vec<(u32, String, u64, String, u64)>, DownloaderError> {
+    pub fn query_case_assets(&self) -> Result<Vec<(u32, String, u64, String, u64)>, AppError> {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let txn = self.db.begin_read().ok()?;
             let table = txn.open_table(HASH_BY_PATH).ok()?;

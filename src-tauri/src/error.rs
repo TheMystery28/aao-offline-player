@@ -38,6 +38,22 @@ pub enum AppError {
     #[error("URL parse error: {0}")]
     Url(#[from] url::ParseError),
 
+    /// HTTP error with a non-success status code, at the URL that failed.
+    #[error("HTTP {status}")]
+    HttpStatus { status: u16, url: String },
+
+    /// Request timed out (message keeps the historical "timeout: " prefix).
+    #[error("timeout: {0}")]
+    Timeout(String),
+
+    /// Connection-level failure (message keeps the historical "connection error: " prefix).
+    #[error("connection error: {0}")]
+    Network(String),
+
+    /// Operation was cancelled by the user.
+    #[error("Cancelled")]
+    Cancelled,
+
     /// Catch-all for contextual error messages and gradual migration.
     #[error("{0}")]
     Other(String),
@@ -61,10 +77,28 @@ impl From<String> for AppError {
     }
 }
 
-/// Bridge: convert existing DownloaderError to AppError at module boundaries.
-impl From<crate::downloader::DownloaderError> for AppError {
-    fn from(e: crate::downloader::DownloaderError) -> Self {
-        AppError::Other(e.to_string())
+impl AppError {
+    /// Stable machine-readable classifier for the error.
+    /// The frontend can branch on this without parsing message strings.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            AppError::Io(_) => "io",
+            AppError::Json(_) => "json",
+            AppError::Zip(_) => "zip",
+            AppError::Db(_) => "db",
+            AppError::DbStorage(_) => "db_storage",
+            AppError::DbTable(_) => "db_table",
+            AppError::DbCommit(_) => "db_commit",
+            AppError::DbTransaction(_) => "db_transaction",
+            AppError::Http(_) => "http",
+            AppError::Regex(_) => "regex",
+            AppError::Url(_) => "url",
+            AppError::HttpStatus { .. } => "http_status",
+            AppError::Timeout(_) => "timeout",
+            AppError::Network(_) => "network",
+            AppError::Cancelled => "cancelled",
+            AppError::Other(_) => "other",
+        }
     }
 }
 
@@ -105,17 +139,67 @@ mod tests {
     }
 
     #[test]
-    fn test_from_downloader_error() {
-        let dl_err = crate::downloader::DownloaderError::Other("download failed".to_string());
-        let err: AppError = dl_err.into();
-        assert_eq!(err.to_string(), "download failed");
-    }
-
-    #[test]
     fn test_serialization_matches_string_contract() {
         let msg = "Failed to read file: No such file or directory";
         let string_json = serde_json::to_value(msg).unwrap();
         let app_json = serde_json::to_value(&AppError::Other(msg.to_string())).unwrap();
         assert_eq!(string_json, app_json);
+    }
+
+    #[test]
+    fn test_http_status_variant_message_and_kind() {
+        let err = AppError::HttpStatus { status: 404, url: "https://aaonline.fr/x.png".to_string() };
+        assert_eq!(err.to_string(), "HTTP 404", "message must match the old Other(...) text");
+        assert_eq!(err.kind(), "http_status");
+    }
+
+    #[test]
+    fn test_timeout_variant_message_and_kind() {
+        let err = AppError::Timeout("operation timed out".to_string());
+        assert!(err.to_string().starts_with("timeout: "), "got: {}", err);
+        assert_eq!(err.kind(), "timeout");
+    }
+
+    #[test]
+    fn test_network_variant_message_and_kind() {
+        let err = AppError::Network("connection refused".to_string());
+        assert_eq!(err.to_string(), "connection error: connection refused");
+        assert_eq!(err.kind(), "network");
+    }
+
+    #[test]
+    fn test_cancelled_variant() {
+        let err = AppError::Cancelled;
+        assert_eq!(err.to_string(), "Cancelled");
+        assert_eq!(err.kind(), "cancelled");
+    }
+
+    #[test]
+    fn test_kind_covers_all_variants() {
+        // Every variant whose inner error has a public constructor.
+        // reqwest::Error and the redb error types have NO public constructor,
+        // so their kind() arms are guaranteed by the exhaustive match in kind()
+        // (the compiler rejects a missing arm).
+        let cases: Vec<AppError> = vec![
+            AppError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "x")),
+            AppError::Json(serde_json::from_str::<serde_json::Value>("nope").unwrap_err()),
+            AppError::Zip(zip::result::ZipError::FileNotFound),
+            AppError::Regex(regex::Regex::new("(").unwrap_err()),
+            AppError::Url(url::Url::parse("http://[::1").unwrap_err()),
+            AppError::HttpStatus { status: 500, url: "u".to_string() },
+            AppError::Timeout("t".to_string()),
+            AppError::Network("n".to_string()),
+            AppError::Cancelled,
+            AppError::Other("misc".to_string()),
+        ];
+        for err in &cases {
+            assert!(!err.kind().is_empty(), "kind() must never return empty for {:?}", err);
+        }
+        assert_eq!(AppError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "x")).kind(), "io");
+        assert_eq!(AppError::HttpStatus { status: 404, url: "u".to_string() }.kind(), "http_status");
+        assert_eq!(AppError::Timeout("t".to_string()).kind(), "timeout");
+        assert_eq!(AppError::Network("n".to_string()).kind(), "network");
+        assert_eq!(AppError::Other("x".into()).kind(), "other");
+        assert_eq!(AppError::Cancelled.kind(), "cancelled");
     }
 }
