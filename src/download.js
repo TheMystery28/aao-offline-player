@@ -136,7 +136,7 @@ export function initDownload(ctx) {
           seq.list.length + " parts):\n\n";
         for (let i = 0; i < partNames.length; i++) {
           const partId = seq.list[i].id;
-          const alreadyDl = knownCaseIds.indexOf(partId) !== -1;
+          const alreadyDl = knownCaseIds.has(partId);
           msg += (i + 1) + ". " + partNames[i] + (alreadyDl ? " (already downloaded)" : "") + "\n";
         }
         const allIds = seq.list.map(function (p) { return p.id; });
@@ -193,7 +193,7 @@ export function initDownload(ctx) {
 
     // Duplicate check (for single case)
     const knownCaseIds = getKnownCaseIds();
-    if (knownCaseIds.indexOf(caseId) !== -1) {
+    if (knownCaseIds.has(caseId)) {
       showConfirmModal(
         "Case " + caseId + " is already in your library.\nDownload again? (This will overwrite it.)",
         "Download Again",

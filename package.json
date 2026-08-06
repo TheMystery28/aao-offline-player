@@ -8,7 +8,8 @@
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --apk",
-    "test:engine": "bash scripts/run-tests.sh"
+    "test:engine": "bash scripts/run-tests.sh",
+    "test:frontend": "node --test \"tests/*.test.mjs\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

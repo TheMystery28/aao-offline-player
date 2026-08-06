@@ -31,6 +31,7 @@
 
 const { invoke, Channel } = window.__TAURI__.core;
 // helpers.js imports are used by the extracted modules (library.js, collections.js), not directly here
+import { createKnownIds } from './knownIds.js';
 import { initSettings } from './settings.js';
 import { initImport } from './importSection.js';
 import { initPlayer } from './player.js';
@@ -123,7 +124,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   const libraryLoading = document.getElementById("library-loading");
 
   // Track known case IDs for duplicate detection
-  const knownCaseIds = [];
+  const knownCaseIds = createKnownIds();
 
   // --- Shared context bag ---
   // All modules access cross-module functions through this object at call-time.

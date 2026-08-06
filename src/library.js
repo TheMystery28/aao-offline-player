@@ -208,9 +208,9 @@ export function initLibrary(ctx) {
         cachedCollections = results[1];
         console.log("[LIBRARY] list_cases returned " + cachedCases.length + " cases, " +
           cachedCollections.length + " collections");
-        ctx.knownCaseIds.length = 0;
+        ctx.knownCaseIds.clear();
         for (let i = 0; i < cachedCases.length; i++) {
-          ctx.knownCaseIds.push(cachedCases[i].case_id);
+          ctx.knownCaseIds.add(cachedCases[i].case_id);
         }
         applySearchAndSort();
         ctx.loadStorageInfo();
