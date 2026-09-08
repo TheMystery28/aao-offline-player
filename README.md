@@ -1,3 +1,11 @@
+# ⚠️ Project Status: Archived
+
+This project is no longer actively maintained. It is fully functional as of August 8, 2026, and should remain stable unless breaking changes are made to aaonline.fr (which is unlikely). Feel free to fork it if you wish to continue development.
+
+### Technical Notes for Forkers
+* **Status:** The project is essentially finished. Remaining polish mainly involves refining warning messages and reducing false negatives.
+* **The Engine (`engine/`):** The JavaScript engine was extracted from aaonline.fr and modified to suit this project's needs without altering core behavior. I only made low-risk modifications guaranteed not to cause side effects (e.g., replacing `localStorage` saves with `IndexedDB`). Any future major effort should focus on refactoring this engine so subsequent changes are straightforward. Though be warned, matching legacy behavior makes this a can of worms and pointlessly difficult. It just works for now.
+
 # AAO Offline Player
 
 A desktop and mobile app (Tauri v2) that lets users download, manage, and play Ace Attorney Online cases completely offline.
